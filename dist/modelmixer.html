@@ -210,7 +210,7 @@ input[type='range']::-moz-range-thumb { width: 14px; height: 14px; border-radius
 .stage-body { display: grid; grid-template-columns: minmax(0, 1fr) 280px; }
 .canvas-col { padding: 16px; border-right: 1px solid var(--line); min-width: 0; }
 .canvas-wrap { position: relative; width: 100%; max-width: 620px; aspect-ratio: 1; margin: 0 auto; border-radius: 14px; overflow: hidden; border: 1px solid var(--line); background: #090c16; }
-#mainCanvas { width: 100%; height: 100%; display: block; }
+#mainCanvas, #pinCanvas { width: 100%; height: 100%; display: block; }
 .busy { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 10px; background: rgba(7, 9, 18, 0.55); backdrop-filter: blur(2px); font-weight: 600; }
 .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.2); border-top-color: white; animation: spin 0.7s linear infinite; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -457,6 +457,30 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
 @media (max-width: 820px) { .robust-head { flex-direction: column; } }
 .chart-panel { min-width: 0; } .chart svg { max-width: 100%; }
 
+/* ---------- compare mode ---------- */
+.cmp-row { width: 100%; }
+.cmp-pane { margin: 0; }
+.cmp-row.on { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.cmp-row.on .canvas-wrap { max-width: none; }
+.cmp-pane figcaption { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.cmp-pane figcaption .who { font-weight: 800; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; border-radius: 6px; padding: 2px 7px; }
+.cmp-pane.pin .who { background: rgba(251, 191, 36, 0.14); color: #fbbf24; }
+.cmp-pane.now .who { background: rgba(109, 139, 255, 0.16); color: #9db0ff; }
+.cmp-pane figcaption .rl { grid-column: 1 / -1; grid-row: 2; font-family: var(--mono); color: #cdd3e3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp-pane figcaption .acc { justify-self: end; font-family: var(--mono); font-weight: 700; color: #e8ebf4; }
+.cmp-pane.pin .canvas-wrap { border-color: rgba(251, 191, 36, 0.35); }
+.cmp-row.on .cmp-pane.now .canvas-wrap { border-color: rgba(109, 139, 255, 0.45); }
+.pin-actions { display: flex; gap: 6px; }
+.btn.pin-on { border-color: rgba(251, 191, 36, 0.5); color: #fbbf24; }
+.mval .vs { display: block; text-align: right; font-size: 10.5px; color: var(--muted); font-weight: 500; }
+.mval .vs.up { color: #34d399; } .mval .vs.down { color: #f87171; }
+.cmp-box { margin-top: 12px; border: 1px solid rgba(251, 191, 36, 0.3); background: rgba(251, 191, 36, 0.05); border-radius: 12px; padding: 10px 12px; font-size: 12.5px; line-height: 1.5; }
+.cmp-box .cmp-title { font-size: 11px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #fbbf24; margin-bottom: 6px; }
+.cmp-box .cmp-grid { display: grid; grid-template-columns: auto auto; gap: 2px 12px; font-family: var(--mono); font-size: 12px; }
+.cmp-box .cmp-grid span:nth-child(odd) { color: var(--muted); font-family: inherit; }
+.cmp-box .note { color: var(--muted); font-size: 11.5px; margin-top: 6px; }
+@media (max-width: 520px) { .cmp-row.on { grid-template-columns: minmax(0, 1fr); } }
+
 </style>
 </head>
 <body>
@@ -490,10 +514,22 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
             <div class="stage-head" id="stageHead"></div>
             <div class="stage-body">
               <div class="canvas-col">
-                <div class="canvas-wrap">
-                  <canvas id="mainCanvas"></canvas>
-                  <div class="blocked" id="blocked" hidden></div>
-                  <div class="busy" id="busy" hidden><span class="spinner"></span><span id="busyText">Mixing…</span></div>
+                <div class="cmp-row" id="cmpRow">
+                  <figure class="cmp-pane pin" id="pinPane" hidden>
+                    <figcaption id="pinCap"></figcaption>
+                    <div class="canvas-wrap">
+                      <canvas id="pinCanvas"></canvas>
+                      <div class="blocked" id="pinBlocked" hidden></div>
+                    </div>
+                  </figure>
+                  <figure class="cmp-pane now">
+                    <figcaption id="nowCap" hidden></figcaption>
+                    <div class="canvas-wrap">
+                      <canvas id="mainCanvas"></canvas>
+                      <div class="blocked" id="blocked" hidden></div>
+                      <div class="busy" id="busy" hidden><span class="spinner"></span><span id="busyText">Mixing…</span></div>
+                    </div>
+                  </figure>
                 </div>
                 <div class="canvas-legend">
                   <span><i class="sw c0"></i>class 0</span>
@@ -1898,7 +1934,44 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
     });
   }
 
-  Object.assign(MM, { BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  /** Short human label for a recipe, e.g. "TIES · k 0.30 · λ 1.00 · aligned". */
+  const ABBR = { density: 'k', lambda: 'λ', drop: 'p', gamma: 'γ', t: 't', eps: 'ε', alpha: 'α', seed: 'seed' };
+  function recipeLabel(id, params, align, K) {
+    const m = MM.METHOD_BY_ID[id];
+    const parts = [m.short];
+    for (const d of m.params) {
+      const v = params[d.key];
+      if (d.type === 'range') {
+        if (d.key === 'seed' && +v === d.default) continue;
+        parts.push(`${ABBR[d.key] || d.key} ${d.step >= 1 ? v : (+v).toFixed(2)}`);
+      } else if (d.type === 'select') {
+        const o = d.options.find(([k]) => k === String(v));
+        parts.push(d.key === 'steps' ? `${v} steps` : (o ? o[1] : String(v)).replace(/ \(.*\)$/, ''));
+      } else if (d.type === 'weights') {
+        const w = params.weights.slice(0, K);
+        if (w.some((x) => x !== w[0])) parts.push(`w ${w.map((x) => (+x).toFixed(2)).join('/')}`);
+      } else if (d.type === 'layers') {
+        parts.push(params.layers.map((i) => 'ABC'[i]).join('·'));
+      }
+    }
+    if (align) parts.push('aligned');
+    return parts.join(' · ');
+  }
+
+  /** Compare two scored results on the same tasks: accuracy deltas (b − a) and how often they disagree. */
+  function compareResults(tasks, a, b) {
+    let dis = 0, tot = 0;
+    const perTask = tasks.map((t, i) => {
+      const pa = a.predict(t.test.X, t.test.n), pb = b.predict(t.test.X, t.test.n);
+      let d = 0;
+      for (let j = 0; j < t.test.n; j++) if ((pa[j] > 0.5) !== (pb[j] > 0.5)) d++;
+      dis += d; tot += t.test.n;
+      return { dAcc: b.accs[i] - a.accs[i], disagree: d / t.test.n };
+    });
+    return { perTask, disagree: dis / tot, dAvg: b.avg - a.avg, dRetention: b.retention - a.retention };
+  }
+
+  Object.assign(MM, { recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();
 
 </script>
@@ -2197,6 +2270,7 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
     method: 'ties', params: {},
     overlay: { points: true, regions: true, router: true },
     tab: 'lab',
+    pin: null, // { method, params, align } recipe pinned for side-by-side comparison
     exp: {
       base: 'mistralai/Mistral-7B-v0.1',
       models: ['teknium/OpenHermes-2.5-Mistral-7B', 'meta-math/MetaMath-Mistral-7B', 'HuggingFaceH4/zephyr-7b-beta'],
@@ -2209,16 +2283,17 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
   try {
     const saved = JSON.parse(localStorage.getItem('modelmixer:v1') || 'null');
     if (saved) {
-      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab']) if (saved[k] !== undefined) S[k] = saved[k];
+      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin']) if (saved[k] !== undefined) S[k] = saved[k];
       if (saved.params) for (const id in saved.params) if (S.params[id]) Object.assign(S.params[id], saved.params[id]);
       if (saved.exp) Object.assign(S.exp, saved.exp);
       if (!MM.METHOD_BY_ID[S.method]) S.method = 'ties';
+      if (S.pin && !MM.METHOD_BY_ID[S.pin.method]) S.pin = null;
     }
   } catch (e) { /* storage unavailable */ }
   function persist() {
     try {
-      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp } = S;
-      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp }));
+      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin } = S;
+      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin }));
     } catch (e) { /* ignore */ }
   }
 
@@ -2544,6 +2619,63 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
 
   // ---------------- STAGE + METRICS ----------------
   let current = null;
+  let cmp = null;
+  // ---------------- COMPARE (pin a recipe, tweak, see both) ----------------
+  const pinCache = { key: null, T: null, r: null };
+  const cloneParams = (p) => JSON.parse(JSON.stringify(p));
+  function pinnedResult() {
+    if (!S.pin || !T || !T.experts) return null;
+    const key = JSON.stringify(S.pin);
+    if (pinCache.T !== T || pinCache.key !== key) {
+      pinCache.r = MM.scoreMethod(T, MM.bundleCtx(T, S.pin.align), S.pin.method, S.pin.params);
+      pinCache.key = key; pinCache.T = T;
+    }
+    return pinCache.r;
+  }
+  const labelOf = (rec) => MM.recipeLabel(rec.method, rec.params, rec.align, S.experts.length);
+  const nowRecipe = () => ({ method: S.method, params: cloneParams(S.params[S.method]), align: S.align });
+  function drawPin(pin, r) {
+    const on = !!S.pin;
+    $('#cmpRow').classList.toggle('on', on);
+    $('#pinPane').hidden = !on;
+    $('#nowCap').hidden = !on;
+    if (!on) return;
+    $('#pinCap').innerHTML = `<span class="who">A · pinned</span><span class="rl" title="${esc(labelOf(S.pin))}">${esc(labelOf(S.pin))}</span><span class="acc">${pin && !pin.blocked ? pct(pin.avg) : '—'}</span>`;
+    $('#nowCap').innerHTML = `<span class="who">B · now</span><span class="rl" title="${esc(labelOf(nowRecipe()))}">${esc(labelOf(nowRecipe()))}</span><span class="acc">${r && !r.blocked ? pct(r.avg) : '—'}</span>`;
+    const cv = $('#pinCanvas'), bl = $('#pinBlocked');
+    if (!pin || pin.blocked) {
+      bl.hidden = false;
+      bl.innerHTML = `<div class="blocked-card"><div class="lock-big">🔒</div><b>Pinned recipe can’t run here</b><p>${pin ? pin.blocked : ''}</p></div>`;
+      cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+      return;
+    }
+    bl.hidden = true;
+    const ctx = MM.bundleCtx(T, S.pin.align);
+    MM.drawBoundary(cv, pin.predict, {
+      tasks: ctx.tasks, showPoints: S.overlay.points, showRegions: S.overlay.regions,
+      gates: pin.router && S.overlay.router ? pin.router.gates : null, K: ctx.K,
+    });
+  }
+  function setAlign(v) {
+    if (S.align === v) return;
+    S.align = v; arenaStale = robustStale = true; renderIngredients();
+  }
+  $('#stageHead').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-pin]');
+    if (!b) return;
+    const act = b.dataset.pin;
+    if (act === 'pin') { S.pin = nowRecipe(); toast('Pinned as A. Now change the method or knobs to compare.'); }
+    else if (act === 'unpin') { S.pin = null; }
+    else if (act === 'swap' && S.pin) {
+      const old = S.pin;
+      S.pin = nowRecipe();
+      S.params[old.method] = cloneParams(old.params);
+      setAlign(old.align);
+      if (S.method !== old.method) { selectMethod(old.method); persist(); return; }
+    }
+    persist();
+    refresh();
+  });
   function refresh(light) {
     if (!light) renderControls();
     const ctx = getCtx();
@@ -2555,10 +2687,13 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
       const t0 = performance.now();
       const r = compute(m.id, ctx);
       current = r;
+      const pin = pinnedResult();
+      cmp = pin && !pin.blocked && !r.blocked ? MM.compareResults(T.tasks, pin, r) : null;
       $('#busy').hidden = true;
       drawStage(r, ctx);
+      drawPin(pin, r);
       renderStageHead(m, r);
-      renderMetrics(r);
+      renderMetrics(r, pin);
       renderInsight(m, r, ctx);
       const ms = performance.now() - t0;
       if (!training) status(`${m.name} · mixed in ${ms.toFixed(0)} ms`);
@@ -2604,9 +2739,13 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
     if (m.req.base) badges.push('<span class="badge">needs base</span>');
     if (m.req.data) badges.push('<span class="badge">needs data</span>');
     if (m.req.training) badges.push('<span class="badge">needs training</span>');
+    const canPin = r && !r.blocked;
+    const pinBtns = S.pin
+      ? `<div class="pin-actions"><button class="btn ghost sm" data-pin="swap" title="Make the pinned recipe current and pin this one">⇄ Swap</button><button class="btn ghost sm pin-on" data-pin="unpin" title="Leave compare mode">✕ Unpin A</button></div>`
+      : `<button class="btn ghost sm" data-pin="pin" ${canPin ? '' : 'disabled'} title="Freeze this recipe as A, then change the method or knobs to compare against it">📌 Pin to compare</button>`;
     $('#stageHead').innerHTML = `
       <div class="sh-title"><span class="fam-tag" style="--fc:${f.color}">${f.name}</span><h2>${m.name}</h2></div>
-      <div class="badges">${badges.join('')}</div>`;
+      <div class="badges">${badges.join('')}${pinBtns}</div>`;
     const tg = [['points', 'Points'], ['regions', 'Regions']];
     if (m.id === 'moe') tg.push(['router', 'Router']);
     $('#overlayToggles').innerHTML = tg.map(([k, l]) => `<button class="tg ${S.overlay[k] ? 'on' : ''}" data-ov="${k}">${l}</button>`).join('');
@@ -2619,8 +2758,10 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
     refresh(true);
   });
 
-  function renderMetrics(r) {
+  function renderMetrics(r, pin) {
     if (r.blocked) { $('#metrics').innerHTML = ''; return; }
+    const sgn = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}`;
+    const cls = (x) => (x > 0.005 ? 'up' : x < -0.005 ? 'down' : '');
     const K = T.K;
     const rows = r.accs.map((a, i) => {
       const ex = T.expertAccs[i][i], bs = T.baseAccs ? T.baseAccs[i] : null;
@@ -2628,7 +2769,7 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
       const delta = a - ex;
       return `<div class="mrow" style="--c:${MM.MODEL_COLORS[i]}">
         <div class="mtop"><span><i class="dot"></i>${LETTERS[i]} · ${MM.TASKS[t.task].name}${t.flip ? ' (inv)' : ''}</span>
-          <span class="mval">${pct(a)} <small class="${delta >= -0.01 ? 'up' : 'down'}">${delta >= 0 ? '+' : ''}${(delta * 100).toFixed(1)}</small></span></div>
+          <span class="mval">${pct(a)} <small class="${delta >= -0.01 ? 'up' : 'down'}">${delta >= 0 ? '+' : ''}${(delta * 100).toFixed(1)}</small>${cmp ? `<small class="vs ${cls(cmp.perTask[i].dAcc)}">vs A ${sgn(cmp.perTask[i].dAcc)}</small>` : ''}</span></div>
         <div class="mbar"><div class="fill" style="width:${a * 100}%"></div>
           <i class="mark ex" style="left:${ex * 100}%" title="Expert ${LETTERS[i]} alone: ${pct(ex)}"></i>
           ${bs !== null ? `<i class="mark bs" style="left:${bs * 100}%" title="Base: ${pct(bs)}"></i>` : ''}
@@ -2643,7 +2784,26 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
         <div class="kpi"><small>Avg accuracy</small><b>${pct(r.avg)}</b></div>
         <div class="kpi ${tone}"><small>Skill retention</small><b>${pct(r.retention)}</b></div>
       </div>
-      ${(r.warnings || []).map((w) => `<div class="warn-box">⚠ ${w}</div>`).join('')}`;
+      ${(r.warnings || []).map((w) => `<div class="warn-box">⚠ ${w}</div>`).join('')}
+      ${cmp ? compareBox(r, pin) : ''}`;
+  }
+
+  function compareBox(r, pin) {
+    const sgn = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
+    const mult = (x) => (x > 1.05 ? `${x.toFixed(1)}×` : '1×');
+    const needs = (id) => { const q = MM.METHOD_BY_ID[id].req; return [q.base && 'base', q.data && 'data', q.training && 'training'].filter(Boolean).join(', ') || 'nothing'; };
+    const verdict = Math.abs(cmp.dAvg) < 0.005 ? 'B and A are within half a point of each other on average.'
+      : `B is <b>${cmp.dAvg > 0 ? 'better' : 'worse'}</b> than A by ${Math.abs(cmp.dAvg * 100).toFixed(1)} pts on average.`;
+    const noise = Math.abs(cmp.dAvg) < 0.03 ? '<div class="note">Gaps under ~3 pts are often seed noise here. Confirm with the Arena’s multi-seed check before committing to a recipe.</div>' : '';
+    return `<div class="cmp-box"><div class="cmp-title">B (now) vs A (pinned)</div>
+      <div>${verdict}</div>
+      <div class="cmp-grid">
+        <span>Avg accuracy</span><span>${sgn(cmp.dAvg)}</span>
+        <span>Skill retention</span><span>${sgn(cmp.dRetention)}</span>
+        <span>Predictions differ</span><span>${pct(cmp.disagree)} of test points</span>
+        <span>Inference</span><span>${mult(pin.cost)} → ${mult(r.cost)}</span>
+        <span>Needs</span><span>${needs(S.pin.method)} → ${needs(S.method)}</span>
+      </div>${noise}</div>`;
   }
 
   // ---------------- INSIGHT ----------------

@@ -28,7 +28,7 @@ python3 scripts/bundle.py
 
 | Tab | What it does |
 | --- | --- |
-| **Mix Lab** | Pick a scenario and experts, choose a mixing method, tune its knobs live. See the merged model's decision boundary, a per-task scorecard against each expert and the base, what the method needs, how it works, its strengths and *missing pieces*, a weight-provenance map and task-vector geometry. |
+| **Mix Lab** | Pick a scenario and experts, choose a mixing method, tune its knobs live. **Pin to compare** freezes a recipe as A so you can tweak B and see both decision maps side by side with per-task deltas. See the merged model's decision boundary, a per-task scorecard against each expert and the base, what the method needs, how it works, its strengths and *missing pieces*, a weight-provenance map and task-vector geometry. |
 | **Arena** | Every method on the same experts: leaderboard (accuracy, retention, inference cost, memory, requirements), a **multi-seed robustness check** (5 seeds, mean ± sd, wins and stability, and a verdict on whether the winner is real), a gallery of decision maps, the A→B interpolation path (loss barriers, with and without neuron alignment) and a λ sweep for Task Arithmetic / TIES / DARE. |
 | **Atlas** | A capability matrix (needs base? data? training? single-model inference? tolerates different inits? handles interference?), a "which mix should I reach for" guide, method families and a glossary. |
 | **Export** | Generates the matching mergekit (`mergekit-yaml` / `mergekit-moe`) config from your lab recipe, plus pointers to open-source implementations for methods mergekit doesn't cover. |

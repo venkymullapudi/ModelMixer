@@ -112,5 +112,42 @@
     });
   }
 
-  Object.assign(MM, { BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  /** Short human label for a recipe, e.g. "TIES · k 0.30 · λ 1.00 · aligned". */
+  const ABBR = { density: 'k', lambda: 'λ', drop: 'p', gamma: 'γ', t: 't', eps: 'ε', alpha: 'α', seed: 'seed' };
+  function recipeLabel(id, params, align, K) {
+    const m = MM.METHOD_BY_ID[id];
+    const parts = [m.short];
+    for (const d of m.params) {
+      const v = params[d.key];
+      if (d.type === 'range') {
+        if (d.key === 'seed' && +v === d.default) continue;
+        parts.push(`${ABBR[d.key] || d.key} ${d.step >= 1 ? v : (+v).toFixed(2)}`);
+      } else if (d.type === 'select') {
+        const o = d.options.find(([k]) => k === String(v));
+        parts.push(d.key === 'steps' ? `${v} steps` : (o ? o[1] : String(v)).replace(/ \(.*\)$/, ''));
+      } else if (d.type === 'weights') {
+        const w = params.weights.slice(0, K);
+        if (w.some((x) => x !== w[0])) parts.push(`w ${w.map((x) => (+x).toFixed(2)).join('/')}`);
+      } else if (d.type === 'layers') {
+        parts.push(params.layers.map((i) => 'ABC'[i]).join('·'));
+      }
+    }
+    if (align) parts.push('aligned');
+    return parts.join(' · ');
+  }
+
+  /** Compare two scored results on the same tasks: accuracy deltas (b − a) and how often they disagree. */
+  function compareResults(tasks, a, b) {
+    let dis = 0, tot = 0;
+    const perTask = tasks.map((t, i) => {
+      const pa = a.predict(t.test.X, t.test.n), pb = b.predict(t.test.X, t.test.n);
+      let d = 0;
+      for (let j = 0; j < t.test.n; j++) if ((pa[j] > 0.5) !== (pb[j] > 0.5)) d++;
+      dis += d; tot += t.test.n;
+      return { dAcc: b.accs[i] - a.accs[i], disagree: d / t.test.n };
+    });
+    return { perTask, disagree: dis / tot, dAvg: b.avg - a.avg, dRetention: b.retention - a.retention };
+  }
+
+  Object.assign(MM, { recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

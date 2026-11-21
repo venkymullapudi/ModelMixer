@@ -42,10 +42,22 @@
             <div class="stage-head" id="stageHead"></div>
             <div class="stage-body">
               <div class="canvas-col">
-                <div class="canvas-wrap">
-                  <canvas id="mainCanvas"></canvas>
-                  <div class="blocked" id="blocked" hidden></div>
-                  <div class="busy" id="busy" hidden><span class="spinner"></span><span id="busyText">Mixing…</span></div>
+                <div class="cmp-row" id="cmpRow">
+                  <figure class="cmp-pane pin" id="pinPane" hidden>
+                    <figcaption id="pinCap"></figcaption>
+                    <div class="canvas-wrap">
+                      <canvas id="pinCanvas"></canvas>
+                      <div class="blocked" id="pinBlocked" hidden></div>
+                    </div>
+                  </figure>
+                  <figure class="cmp-pane now">
+                    <figcaption id="nowCap" hidden></figcaption>
+                    <div class="canvas-wrap">
+                      <canvas id="mainCanvas"></canvas>
+                      <div class="blocked" id="blocked" hidden></div>
+                      <div class="busy" id="busy" hidden><span class="spinner"></span><span id="busyText">Mixing…</span></div>
+                    </div>
+                  </figure>
                 </div>
                 <div class="canvas-legend">
                   <span><i class="sw c0"></i>class 0</span>

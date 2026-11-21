@@ -123,6 +123,37 @@
       assert(Math.abs(r.accs[0] - T.expertAccs[0][0]) < 1e-9, `${pct(r.accs[0])} vs ${pct(T.expertAccs[0][0])}`);
     });
 
+    test('compareResults: identical recipes agree everywhere', () => {
+      const a = MM.scoreMethod(T, ctx, 'ties', params('ties', T.K));
+      const b = MM.scoreMethod(T, ctx, 'ties', params('ties', T.K));
+      const c = MM.compareResults(T.tasks, a, b);
+      assert(c.disagree === 0 && c.dAvg === 0 && c.perTask.every((t) => t.dAcc === 0), JSON.stringify(c));
+    });
+
+    test('compareResults: deltas match accuracies, disagreement bounds the gap', () => {
+      const a = MM.scoreMethod(T, ctx, 'linear', params('linear', T.K));
+      const b = MM.scoreMethod(T, ctx, 'regmean', params('regmean', T.K));
+      const c = MM.compareResults(T.tasks, a, b);
+      assert(Math.abs(c.dAvg - (b.avg - a.avg)) < 1e-12, 'dAvg mismatch');
+      c.perTask.forEach((t, i) => {
+        assert(Math.abs(t.dAcc - (b.accs[i] - a.accs[i])) < 1e-12, `task ${i} dAcc mismatch`);
+        // a point can only change correctness if the two models disagree on it
+        assert(t.disagree + 1e-12 >= Math.abs(t.dAcc), `task ${i}: disagree ${t.disagree} < |Δacc| ${Math.abs(t.dAcc)}`);
+      });
+      return `Linear → RegMean ${pct(c.dAvg)} avg, differ on ${pct(c.disagree)}`;
+    });
+
+    test('recipeLabel names the knobs', () => {
+      const p = params('ties', 2);
+      const l = MM.recipeLabel('ties', p, true, 2);
+      assert(l === 'TIES · k 0.30 · λ 1.00 · aligned', l);
+      const w = params('linear', 2); w.weights = [1, 0.5, 1];
+      assert(MM.recipeLabel('linear', w, false, 2) === 'Linear · w 1.00/0.50', MM.recipeLabel('linear', w, false, 2));
+      assert(MM.recipeLabel('linear', params('linear', 2), false, 2) === 'Linear', 'equal weights should be omitted');
+      const d = MM.recipeLabel('dare', params('dare', 2), false, 2);
+      assert(d === 'DARE · p 0.50 · λ 1.00 · DARE-TIES', d);
+    });
+
     // ---------- strangers ----------
     const Ts = MM.trainBundleSync(scenario('strangers'));
     test('Strangers: task-vector methods are blocked without a base', () => {
