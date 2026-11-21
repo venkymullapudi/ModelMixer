@@ -279,6 +279,31 @@
       assert(back.layerwise === true && back.grad.join() === '0.2,0.5,0.8', JSON.stringify(back));
     });
 
+    test('Karcher mean of two models = normalised-direction midpoint at the average norm', () => {
+      // For two equal-weight models the Karcher mean has a closed form: direction ∝ uA + uB, norm = mean norm.
+      // (SLERP interpolates the raw vectors, so its midpoint points along A + B and differs when norms differ.)
+      const k = MM.runMethod('karcher', ctx, params('karcher', 2)).params;
+      const [A, B] = T.experts;
+      T.layout.tensors.forEach((t) => {
+        let na = 0, nb = 0;
+        for (let i = t.off; i < t.off + t.size; i++) { na += A[i] * A[i]; nb += B[i] * B[i]; }
+        na = Math.sqrt(na); nb = Math.sqrt(nb);
+        const mid = []; let nm = 0;
+        for (let i = t.off; i < t.off + t.size; i++) { const v = A[i] / na + B[i] / nb; mid.push(v); nm += v * v; }
+        nm = Math.sqrt(nm);
+        const R = (na + nb) / 2;
+        let err = 0;
+        for (let j = 0; j < mid.length; j++) err = Math.max(err, Math.abs(k[t.off + j] - (R * mid[j]) / nm));
+        assert(err < 1e-4 * R + 1e-6, `${t.name}: max error ${err}`);
+      });
+    });
+
+    test('DELLA with ε = 0 and density 1 equals TIES at density 1', () => {
+      const d = MM.runMethod('della', ctx, Object.assign(params('della', 2), { density: 1, epsilon: 0 })).params;
+      const t = MM.runMethod('ties', ctx, Object.assign(params('ties', 2), { density: 1 })).params;
+      for (let i = 0; i < d.length; i++) assert(Math.abs(d[i] - t[i]) < 1e-6, `differs at ${i}`);
+    });
+
     test('Linear with weights [1, 0] reproduces Expert A', () => {
       const p = params('linear', T.K);
       p.weights = [1, 0];

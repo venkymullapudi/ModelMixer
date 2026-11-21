@@ -22,8 +22,8 @@
   const ADVISOR_DEFAULTS = { base: 'yes', goal: 'skills', count: '2', conflict: 'no', data: 'no', train: 'no', deploy: 'single' };
 
   // Rough prior for "a good default in practice" before situation-specific adjustments.
-  const PRIOR = { ties: 7, dare: 7, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
-  const WEIGHT_SPACE = ['linear', 'slerp', 'model_stock', 'fisher', 'regmean', 'stitch'];
+  const PRIOR = { ties: 7, dare: 7, della: 7, karcher: 5, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
+  const WEIGHT_SPACE = ['linear', 'slerp', 'karcher', 'model_stock', 'fisher', 'regmean', 'stitch'];
 
   function adviseRecipe(answers) {
     const a = Object.assign({}, ADVISOR_DEFAULTS, answers || {});
@@ -74,6 +74,7 @@
       ban('slerp', 'Interpolates exactly two models. Chain merges, or use a multi-model method.');
       bump('ties', 1, 'Built for many experts: trims and elects signs across all of them');
       bump('dare', 1, 'Sparsifying each vector keeps many experts from colliding');
+      bump('karcher', 2, 'Norm-preserving SLERP for any number of models');
       bump('stitch', -1, null);
     }
 
@@ -82,7 +83,8 @@
       bump('model_stock', 4, 'Designed for several fine-tunes of one recipe: finds the centre from their geometry');
       bump('linear', 3, 'Model-soup averaging of same-skill runs is a well-tested default');
       bump('slerp', 2, 'Smooth, norm-preserving blend of two runs');
-      ['ties', 'dare', 'breadcrumbs'].forEach((id) => bump(id, -2, 'Sign election and dropping pay off with different skills, not repeated runs'));
+      bump('karcher', 3, 'Geometric mean of several runs: SLERP without chaining');
+      ['ties', 'dare', 'della', 'breadcrumbs'].forEach((id) => bump(id, -2, 'Sign election and dropping pay off with different skills, not repeated runs'));
       bump('moe', -3, 'Nothing for a router to choose between: the experts know the same thing');
       bump('distill', -1, null);
     } else if (a.conflict === 'no' && a.deploy !== 'single') {
@@ -93,6 +95,7 @@
     if (a.conflict === 'some') {
       bump('ties', 2, 'Resolves sign conflicts where skills overlap');
       bump('dare', 1, 'Random sparsification reduces overlap between task vectors');
+      bump('della', 1, 'Magnitude-aware dropping keeps the important updates while reducing overlap');
       bump('breadcrumbs', 1, 'Dropping outliers and tiny updates reduces interference');
       bump('task_arithmetic', -1, 'Plain sums let overlapping updates cancel');
       bump('linear', -1, 'Averaging dilutes overlapping skills');

@@ -225,6 +225,56 @@
       return weightResult(ctx, P, { info, warnings });
     },
 
+    // Karcher (Fréchet) mean on the unit sphere, per tensor: SLERP generalised to any number of models.
+    karcher(ctx, p) {
+      const K = ctx.K, E = ctx.experts, w = normalized(weightsFor(p, K)), P = zerosLike(E[0]);
+      const MAX_IT = 20;
+      let itSum = 0, angSum = 0, nT = 0;
+      for (const T of ctx.layout.tensors) {
+        const o = T.off, n = T.size;
+        const norms = E.map((e) => norm(e, o, n));
+        const U = E.map((e, i) => { const u = new Float64Array(n), s = norms[i] > 1e-12 ? 1 / norms[i] : 0; for (let k = 0; k < n; k++) u[k] = e[o + k] * s; return u; });
+        const m = new Float64Array(n);
+        U.forEach((u, i) => { for (let k = 0; k < n; k++) m[k] += w[i] * u[k]; });
+        const unit = (v) => { let s = 0; for (let k = 0; k < n; k++) s += v[k] * v[k]; s = Math.sqrt(s); if (s > 1e-12) for (let k = 0; k < n; k++) v[k] /= s; return s; };
+        if (unit(m) <= 1e-12) m.set(U[0]);
+        let it = 0;
+        for (; it < MAX_IT; it++) {
+          // gradient step: average of log maps log_m(u_i), then move along the geodesic (exp map)
+          const g = new Float64Array(n);
+          for (let i = 0; i < K; i++) {
+            let c = 0;
+            for (let k = 0; k < n; k++) c += m[k] * U[i][k];
+            c = Math.max(-1, Math.min(1, c));
+            const th = Math.acos(c);
+            if (th < 1e-9) continue;
+            const f = (w[i] * th) / Math.sin(th);
+            for (let k = 0; k < n; k++) g[k] += f * (U[i][k] - c * m[k]);
+          }
+          let gn = 0;
+          for (let k = 0; k < n; k++) gn += g[k] * g[k];
+          gn = Math.sqrt(gn);
+          if (gn < 1e-9) break;
+          const cg = Math.cos(gn), sg = Math.sin(gn) / gn;
+          for (let k = 0; k < n; k++) m[k] = cg * m[k] + sg * g[k];
+          unit(m);
+        }
+        const rad = norms.reduce((a, r, i) => a + w[i] * r, 0);
+        for (let k = 0; k < n; k++) P[o + k] = rad * m[k];
+        if (T.kind === 'w') {
+          let a = 0;
+          for (let i = 0; i < K; i++) { let c = 0; for (let k = 0; k < n; k++) c += m[k] * U[i][k]; a += w[i] * Math.acos(Math.max(-1, Math.min(1, c))); }
+          angSum += a; itSum += it; nT++;
+        }
+      }
+      return weightResult(ctx, P, {
+        info: [
+          { label: 'Mean angle to experts', value: `${((angSum / nT) * 180 / Math.PI).toFixed(1)}°` },
+          { label: 'Iterations per tensor', value: itSum ? (itSum / nT).toFixed(1) : 'none (start was exact)' },
+        ],
+      });
+    },
+
     model_stock(ctx) {
       const taus = taskVectors(ctx), K = ctx.K, P = new Float32Array(ctx.base);
       const info = [];
@@ -312,6 +362,47 @@
       ];
       if (p.mode === 'ties') info.push({ label: 'Sign conflicts resolved', value: overlaps ? pct(conflicts / overlaps) : '—' });
       return weightResult(ctx, P, { info });
+    },
+
+    // DELLA: magnitude-ranked drop probabilities (MagPrune), rescale, then TIES-style sign election.
+    della(ctx, p) {
+      const taus = taskVectors(ctx), K = ctx.K, dens = +p.density, eps = +p.epsilon, lam = +p.lambda;
+      const rng = MM.mulberry32(2000 + (+p.seed || 0));
+      let kept = 0, total = 0;
+      const sparse = taus.map((t) => {
+        const r = zerosLike(t);
+        for (const T of ctx.layout.tensors) {
+          const rows = T.kind === 'w' ? T.rows : 1, cols = T.kind === 'w' ? T.cols : T.size;
+          for (let row = 0; row < rows; row++) {
+            const o = T.off + row * cols;
+            const idx = Array.from({ length: cols }, (_, k) => k).sort((a, b) => Math.abs(t[o + a]) - Math.abs(t[o + b]));
+            for (let rank = 0; rank < cols; rank++) {
+              const k = idx[rank];
+              const kp = Math.min(1, Math.max(0.01, dens - eps / 2 + (cols > 1 ? (eps * rank) / (cols - 1) : eps / 2)));
+              total++;
+              if (rng() < kp) { r[o + k] = t[o + k] / kp; kept++; }
+            }
+          }
+        }
+        return r;
+      });
+      const P = new Float32Array(ctx.base);
+      let conflicts = 0, overlaps = 0;
+      for (let j = 0; j < P.length; j++) {
+        let sum = 0, pos = 0, neg = 0;
+        for (let i = 0; i < K; i++) { const x = sparse[i][j]; sum += x; if (x > 0) pos++; else if (x < 0) neg++; }
+        if (pos + neg > 1) { overlaps++; if (pos && neg) conflicts++; }
+        const sg = Math.sign(sum);
+        let acc = 0, cnt = 0;
+        for (let i = 0; i < K; i++) { const x = sparse[i][j]; if (x !== 0 && Math.sign(x) === sg) { acc += x; cnt++; } }
+        P[j] += lam * (cnt ? acc / cnt : 0);
+      }
+      return weightResult(ctx, P, {
+        info: [
+          { label: 'Entries kept (magnitude-weighted)', value: pct(kept / total) },
+          { label: 'Sign conflicts resolved', value: overlaps ? pct(conflicts / overlaps) : '—' },
+        ],
+      });
     },
 
     breadcrumbs(ctx, p) {

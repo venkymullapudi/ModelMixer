@@ -48,6 +48,17 @@
       params: [{ key: 't', type: 'range', label: 't  (0 = A, 1 = B)', min: 0, max: 1, step: 0.01, default: 0.5 }],
     },
     {
+      id: 'karcher', name: 'Karcher Mean', short: 'Karcher', family: 'avg', minModels: 2,
+      tagline: 'SLERP for any number of models: the geometric mean on the sphere.',
+      how: ['Normalise each expert’s tensor to a direction on the unit sphere.', 'Iteratively find the direction with the smallest summed squared arc distance to every expert (the Karcher / Fréchet mean).', 'Rescale it to the weighted average norm.'],
+      formula: 'm* = argmin_m Σᵢ wᵢ·arccos(⟨m, uᵢ⟩)²,   θ = (Σᵢ wᵢ‖θᵢ‖)·m*',
+      pros: ['Generalises SLERP beyond two models', 'Keeps weight norms instead of shrinking them like a plain average', 'No base, data or training needed'],
+      cons: ['Still a blend: distinct skills get diluted', 'Needs neuron alignment for models without a shared base', 'Iterative, so a little slower than a plain average'],
+      req: { base: false, data: false, training: false }, multiInit: false, interference: 'no',
+      mergekit: 'karcher', oss: [OSS.mergekit], paper: 'Karcher, 1977 — Riemannian centre of mass (mergekit: karcher)',
+      params: [W],
+    },
+    {
       id: 'model_stock', name: 'Model Stock', short: 'Stock', family: 'avg', minModels: 2,
       tagline: 'Use the geometry between fine-tunes to decide how far to move from the base.',
       how: ['Compute each expert’s offset from the base, per layer.', 'Measure the angle between offsets.', 'Pull the average back toward the base by ratio t = K·cosθ / (1+(K−1)·cosθ).'],
@@ -98,6 +109,22 @@
         { key: 'mode', type: 'select', label: 'Combine', options: [['ties', 'DARE-TIES (sign elect)'], ['linear', 'DARE-Linear (sum)']], default: 'ties' },
         { key: 'seed', type: 'range', label: 'Random seed', min: 0, max: 20, step: 1, default: 0 },
         W,
+      ],
+    },
+    {
+      id: 'della', name: 'DELLA', short: 'DELLA', family: 'tv',
+      tagline: 'DARE, but drop small updates more often than large ones.',
+      how: ['Rank each task vector’s entries by magnitude within every row.', 'Keep each entry with a probability that rises with its rank (MagPrune), then rescale survivors by 1/p_keep.', 'Elect a sign per weight and average the agreeing survivors, as in TIES.'],
+      formula: 'p_keep(r) = k − ε/2 + ε·r/(n−1),   τ̃ = m ⊙ τ / p_keep',
+      pros: ['Keeps the large updates that DARE may randomly lose', 'Sign election handles conflicts', 'Rescaling keeps the expected update unchanged'],
+      cons: ['Three knobs (density, ε, λ) to tune', 'Still random: results vary by seed', 'Needs the base model'],
+      req: { base: true, data: false, training: false }, multiInit: false, interference: 'yes',
+      mergekit: 'della', oss: [OSS.mergekit], paper: 'Deep et al., 2024 — DELLA-Merging',
+      params: [
+        { key: 'density', type: 'range', label: 'Density k (avg keep rate)', min: 0.05, max: 1, step: 0.01, default: 0.8 },
+        { key: 'epsilon', type: 'range', label: 'Magnitude spread ε', min: 0, max: 0.5, step: 0.01, default: 0.4 },
+        { key: 'lambda', type: 'range', label: 'Scaling λ', min: 0, max: 2, step: 0.05, default: 1 },
+        { key: 'seed', type: 'range', label: 'Random seed', min: 0, max: 20, step: 1, default: 0 },
       ],
     },
     {
@@ -204,6 +231,8 @@
     breadcrumbs: 'Recipes for large models usually keep most entries (density near 0.9) and cut the top ~1% (gamma 0.01). These tiny experts have little redundancy, so the toy default is much sparser (0.1) with a gentler outlier cut (0.005).',
     fisher: 'Estimate the diagonal Fisher on a few hundred examples per task. ε should only guard against division by zero: on the toy, even a 0.1% floor costs several points.',
     task_arithmetic: 'λ is usually tuned on held-out data; values between 0.3 and 1 are common starting points.',
+    della: 'Like DARE, DELLA tolerates aggressive sparsity on large language models. ε sets how strongly magnitude shifts the keep probability; tune density first.',
+    karcher: 'Typically used to blend several fine-tunes of one model, where SLERP would need to be chained pairwise.',
     regmean: 'Collect layer-input Gram matrices from a few hundred examples per task. α a little below 1 is the usual stabiliser.',
   };
   for (const id in REAL_WORLD) METHOD_BY_ID[id].realWorld = REAL_WORLD[id];
@@ -213,7 +242,7 @@
   const GRADIENT = {
     slerp: { key: 't', label: 't', min: 0, max: 1, step: 0.01 },
     linear: { key: 'balance', label: 'A ↔ B balance', min: 0, max: 1, step: 0.05, k2: true },
-    task_arithmetic: LAMBDA_G, ties: LAMBDA_G, dare: LAMBDA_G, breadcrumbs: LAMBDA_G,
+    task_arithmetic: LAMBDA_G, ties: LAMBDA_G, dare: LAMBDA_G, della: LAMBDA_G, breadcrumbs: LAMBDA_G,
   };
   for (const id in GRADIENT) METHOD_BY_ID[id].gradient = GRADIENT[id];
   const LAYER_NAMES = ['Hidden 1', 'Hidden 2', 'Output'];

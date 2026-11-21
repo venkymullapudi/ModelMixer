@@ -1128,6 +1128,10 @@
         return { yaml: `merge_method: linear\nmodels:\n${list((i) => `      weight: ${lw ? gl((v) => (i === 0 ? 1 - v : v)) : w(i)}`)}\nparameters:\n  normalize: true\n${dt}\n`, note: gnote };
       case 'slerp':
         return { yaml: `merge_method: slerp\nbase_model: ${models[0]}\nmodels:\n  - model: ${models[0]}\n  - model: ${models[1]}\nparameters:\n  t: ${lw ? gl((v) => v) : (+p.t).toFixed(2)}\n${dt}\n`, note: [K > 2 ? 'SLERP takes exactly two models — the third is left out.' : '', gnote].filter(Boolean).join(' ') };
+      case 'karcher':
+        return { yaml: `merge_method: karcher\nmodels:\n${list((i) => `      weight: ${w(i)}`)}\nparameters:\n  max_iter: 20\n  tol: 1.0e-9\n${dt}\n` };
+      case 'della':
+        return { yaml: `merge_method: della\nbase_model: ${base}\nmodels:\n${list(() => `      density: ${(+p.density).toFixed(2)}\n      epsilon: ${(+p.epsilon).toFixed(2)}\n      weight: 1.0`)}\nparameters:\n  lambda: ${lw ? gl((v) => v) : (+p.lambda).toFixed(2)}\n  normalize: true\n${dt}\n`, note: gnote };
       case 'model_stock':
         return { yaml: `merge_method: model_stock\nbase_model: ${base}\nmodels:\n${list()}\n${dt}\n` };
       case 'task_arithmetic':

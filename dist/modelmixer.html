@@ -1320,6 +1320,17 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       params: [{ key: 't', type: 'range', label: 't  (0 = A, 1 = B)', min: 0, max: 1, step: 0.01, default: 0.5 }],
     },
     {
+      id: 'karcher', name: 'Karcher Mean', short: 'Karcher', family: 'avg', minModels: 2,
+      tagline: 'SLERP for any number of models: the geometric mean on the sphere.',
+      how: ['Normalise each expert’s tensor to a direction on the unit sphere.', 'Iteratively find the direction with the smallest summed squared arc distance to every expert (the Karcher / Fréchet mean).', 'Rescale it to the weighted average norm.'],
+      formula: 'm* = argmin_m Σᵢ wᵢ·arccos(⟨m, uᵢ⟩)²,   θ = (Σᵢ wᵢ‖θᵢ‖)·m*',
+      pros: ['Generalises SLERP beyond two models', 'Keeps weight norms instead of shrinking them like a plain average', 'No base, data or training needed'],
+      cons: ['Still a blend: distinct skills get diluted', 'Needs neuron alignment for models without a shared base', 'Iterative, so a little slower than a plain average'],
+      req: { base: false, data: false, training: false }, multiInit: false, interference: 'no',
+      mergekit: 'karcher', oss: [OSS.mergekit], paper: 'Karcher, 1977 — Riemannian centre of mass (mergekit: karcher)',
+      params: [W],
+    },
+    {
       id: 'model_stock', name: 'Model Stock', short: 'Stock', family: 'avg', minModels: 2,
       tagline: 'Use the geometry between fine-tunes to decide how far to move from the base.',
       how: ['Compute each expert’s offset from the base, per layer.', 'Measure the angle between offsets.', 'Pull the average back toward the base by ratio t = K·cosθ / (1+(K−1)·cosθ).'],
@@ -1370,6 +1381,22 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
         { key: 'mode', type: 'select', label: 'Combine', options: [['ties', 'DARE-TIES (sign elect)'], ['linear', 'DARE-Linear (sum)']], default: 'ties' },
         { key: 'seed', type: 'range', label: 'Random seed', min: 0, max: 20, step: 1, default: 0 },
         W,
+      ],
+    },
+    {
+      id: 'della', name: 'DELLA', short: 'DELLA', family: 'tv',
+      tagline: 'DARE, but drop small updates more often than large ones.',
+      how: ['Rank each task vector’s entries by magnitude within every row.', 'Keep each entry with a probability that rises with its rank (MagPrune), then rescale survivors by 1/p_keep.', 'Elect a sign per weight and average the agreeing survivors, as in TIES.'],
+      formula: 'p_keep(r) = k − ε/2 + ε·r/(n−1),   τ̃ = m ⊙ τ / p_keep',
+      pros: ['Keeps the large updates that DARE may randomly lose', 'Sign election handles conflicts', 'Rescaling keeps the expected update unchanged'],
+      cons: ['Three knobs (density, ε, λ) to tune', 'Still random: results vary by seed', 'Needs the base model'],
+      req: { base: true, data: false, training: false }, multiInit: false, interference: 'yes',
+      mergekit: 'della', oss: [OSS.mergekit], paper: 'Deep et al., 2024 — DELLA-Merging',
+      params: [
+        { key: 'density', type: 'range', label: 'Density k (avg keep rate)', min: 0.05, max: 1, step: 0.01, default: 0.8 },
+        { key: 'epsilon', type: 'range', label: 'Magnitude spread ε', min: 0, max: 0.5, step: 0.01, default: 0.4 },
+        { key: 'lambda', type: 'range', label: 'Scaling λ', min: 0, max: 2, step: 0.05, default: 1 },
+        { key: 'seed', type: 'range', label: 'Random seed', min: 0, max: 20, step: 1, default: 0 },
       ],
     },
     {
@@ -1476,6 +1503,8 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     breadcrumbs: 'Recipes for large models usually keep most entries (density near 0.9) and cut the top ~1% (gamma 0.01). These tiny experts have little redundancy, so the toy default is much sparser (0.1) with a gentler outlier cut (0.005).',
     fisher: 'Estimate the diagonal Fisher on a few hundred examples per task. ε should only guard against division by zero: on the toy, even a 0.1% floor costs several points.',
     task_arithmetic: 'λ is usually tuned on held-out data; values between 0.3 and 1 are common starting points.',
+    della: 'Like DARE, DELLA tolerates aggressive sparsity on large language models. ε sets how strongly magnitude shifts the keep probability; tune density first.',
+    karcher: 'Typically used to blend several fine-tunes of one model, where SLERP would need to be chained pairwise.',
     regmean: 'Collect layer-input Gram matrices from a few hundred examples per task. α a little below 1 is the usual stabiliser.',
   };
   for (const id in REAL_WORLD) METHOD_BY_ID[id].realWorld = REAL_WORLD[id];
@@ -1485,7 +1514,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
   const GRADIENT = {
     slerp: { key: 't', label: 't', min: 0, max: 1, step: 0.01 },
     linear: { key: 'balance', label: 'A ↔ B balance', min: 0, max: 1, step: 0.05, k2: true },
-    task_arithmetic: LAMBDA_G, ties: LAMBDA_G, dare: LAMBDA_G, breadcrumbs: LAMBDA_G,
+    task_arithmetic: LAMBDA_G, ties: LAMBDA_G, dare: LAMBDA_G, della: LAMBDA_G, breadcrumbs: LAMBDA_G,
   };
   for (const id in GRADIENT) METHOD_BY_ID[id].gradient = GRADIENT[id];
   const LAYER_NAMES = ['Hidden 1', 'Hidden 2', 'Output'];
@@ -1737,6 +1766,56 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       return weightResult(ctx, P, { info, warnings });
     },
 
+    // Karcher (Fréchet) mean on the unit sphere, per tensor: SLERP generalised to any number of models.
+    karcher(ctx, p) {
+      const K = ctx.K, E = ctx.experts, w = normalized(weightsFor(p, K)), P = zerosLike(E[0]);
+      const MAX_IT = 20;
+      let itSum = 0, angSum = 0, nT = 0;
+      for (const T of ctx.layout.tensors) {
+        const o = T.off, n = T.size;
+        const norms = E.map((e) => norm(e, o, n));
+        const U = E.map((e, i) => { const u = new Float64Array(n), s = norms[i] > 1e-12 ? 1 / norms[i] : 0; for (let k = 0; k < n; k++) u[k] = e[o + k] * s; return u; });
+        const m = new Float64Array(n);
+        U.forEach((u, i) => { for (let k = 0; k < n; k++) m[k] += w[i] * u[k]; });
+        const unit = (v) => { let s = 0; for (let k = 0; k < n; k++) s += v[k] * v[k]; s = Math.sqrt(s); if (s > 1e-12) for (let k = 0; k < n; k++) v[k] /= s; return s; };
+        if (unit(m) <= 1e-12) m.set(U[0]);
+        let it = 0;
+        for (; it < MAX_IT; it++) {
+          // gradient step: average of log maps log_m(u_i), then move along the geodesic (exp map)
+          const g = new Float64Array(n);
+          for (let i = 0; i < K; i++) {
+            let c = 0;
+            for (let k = 0; k < n; k++) c += m[k] * U[i][k];
+            c = Math.max(-1, Math.min(1, c));
+            const th = Math.acos(c);
+            if (th < 1e-9) continue;
+            const f = (w[i] * th) / Math.sin(th);
+            for (let k = 0; k < n; k++) g[k] += f * (U[i][k] - c * m[k]);
+          }
+          let gn = 0;
+          for (let k = 0; k < n; k++) gn += g[k] * g[k];
+          gn = Math.sqrt(gn);
+          if (gn < 1e-9) break;
+          const cg = Math.cos(gn), sg = Math.sin(gn) / gn;
+          for (let k = 0; k < n; k++) m[k] = cg * m[k] + sg * g[k];
+          unit(m);
+        }
+        const rad = norms.reduce((a, r, i) => a + w[i] * r, 0);
+        for (let k = 0; k < n; k++) P[o + k] = rad * m[k];
+        if (T.kind === 'w') {
+          let a = 0;
+          for (let i = 0; i < K; i++) { let c = 0; for (let k = 0; k < n; k++) c += m[k] * U[i][k]; a += w[i] * Math.acos(Math.max(-1, Math.min(1, c))); }
+          angSum += a; itSum += it; nT++;
+        }
+      }
+      return weightResult(ctx, P, {
+        info: [
+          { label: 'Mean angle to experts', value: `${((angSum / nT) * 180 / Math.PI).toFixed(1)}°` },
+          { label: 'Iterations per tensor', value: itSum ? (itSum / nT).toFixed(1) : 'none (start was exact)' },
+        ],
+      });
+    },
+
     model_stock(ctx) {
       const taus = taskVectors(ctx), K = ctx.K, P = new Float32Array(ctx.base);
       const info = [];
@@ -1824,6 +1903,47 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       ];
       if (p.mode === 'ties') info.push({ label: 'Sign conflicts resolved', value: overlaps ? pct(conflicts / overlaps) : '—' });
       return weightResult(ctx, P, { info });
+    },
+
+    // DELLA: magnitude-ranked drop probabilities (MagPrune), rescale, then TIES-style sign election.
+    della(ctx, p) {
+      const taus = taskVectors(ctx), K = ctx.K, dens = +p.density, eps = +p.epsilon, lam = +p.lambda;
+      const rng = MM.mulberry32(2000 + (+p.seed || 0));
+      let kept = 0, total = 0;
+      const sparse = taus.map((t) => {
+        const r = zerosLike(t);
+        for (const T of ctx.layout.tensors) {
+          const rows = T.kind === 'w' ? T.rows : 1, cols = T.kind === 'w' ? T.cols : T.size;
+          for (let row = 0; row < rows; row++) {
+            const o = T.off + row * cols;
+            const idx = Array.from({ length: cols }, (_, k) => k).sort((a, b) => Math.abs(t[o + a]) - Math.abs(t[o + b]));
+            for (let rank = 0; rank < cols; rank++) {
+              const k = idx[rank];
+              const kp = Math.min(1, Math.max(0.01, dens - eps / 2 + (cols > 1 ? (eps * rank) / (cols - 1) : eps / 2)));
+              total++;
+              if (rng() < kp) { r[o + k] = t[o + k] / kp; kept++; }
+            }
+          }
+        }
+        return r;
+      });
+      const P = new Float32Array(ctx.base);
+      let conflicts = 0, overlaps = 0;
+      for (let j = 0; j < P.length; j++) {
+        let sum = 0, pos = 0, neg = 0;
+        for (let i = 0; i < K; i++) { const x = sparse[i][j]; sum += x; if (x > 0) pos++; else if (x < 0) neg++; }
+        if (pos + neg > 1) { overlaps++; if (pos && neg) conflicts++; }
+        const sg = Math.sign(sum);
+        let acc = 0, cnt = 0;
+        for (let i = 0; i < K; i++) { const x = sparse[i][j]; if (x !== 0 && Math.sign(x) === sg) { acc += x; cnt++; } }
+        P[j] += lam * (cnt ? acc / cnt : 0);
+      }
+      return weightResult(ctx, P, {
+        info: [
+          { label: 'Entries kept (magnitude-weighted)', value: pct(kept / total) },
+          { label: 'Sign conflicts resolved', value: overlaps ? pct(conflicts / overlaps) : '—' },
+        ],
+      });
     },
 
     breadcrumbs(ctx, p) {
@@ -2314,8 +2434,8 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
   const ADVISOR_DEFAULTS = { base: 'yes', goal: 'skills', count: '2', conflict: 'no', data: 'no', train: 'no', deploy: 'single' };
 
   // Rough prior for "a good default in practice" before situation-specific adjustments.
-  const PRIOR = { ties: 7, dare: 7, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
-  const WEIGHT_SPACE = ['linear', 'slerp', 'model_stock', 'fisher', 'regmean', 'stitch'];
+  const PRIOR = { ties: 7, dare: 7, della: 7, karcher: 5, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
+  const WEIGHT_SPACE = ['linear', 'slerp', 'karcher', 'model_stock', 'fisher', 'regmean', 'stitch'];
 
   function adviseRecipe(answers) {
     const a = Object.assign({}, ADVISOR_DEFAULTS, answers || {});
@@ -2366,6 +2486,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       ban('slerp', 'Interpolates exactly two models. Chain merges, or use a multi-model method.');
       bump('ties', 1, 'Built for many experts: trims and elects signs across all of them');
       bump('dare', 1, 'Sparsifying each vector keeps many experts from colliding');
+      bump('karcher', 2, 'Norm-preserving SLERP for any number of models');
       bump('stitch', -1, null);
     }
 
@@ -2374,7 +2495,8 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       bump('model_stock', 4, 'Designed for several fine-tunes of one recipe: finds the centre from their geometry');
       bump('linear', 3, 'Model-soup averaging of same-skill runs is a well-tested default');
       bump('slerp', 2, 'Smooth, norm-preserving blend of two runs');
-      ['ties', 'dare', 'breadcrumbs'].forEach((id) => bump(id, -2, 'Sign election and dropping pay off with different skills, not repeated runs'));
+      bump('karcher', 3, 'Geometric mean of several runs: SLERP without chaining');
+      ['ties', 'dare', 'della', 'breadcrumbs'].forEach((id) => bump(id, -2, 'Sign election and dropping pay off with different skills, not repeated runs'));
       bump('moe', -3, 'Nothing for a router to choose between: the experts know the same thing');
       bump('distill', -1, null);
     } else if (a.conflict === 'no' && a.deploy !== 'single') {
@@ -2385,6 +2507,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     if (a.conflict === 'some') {
       bump('ties', 2, 'Resolves sign conflicts where skills overlap');
       bump('dare', 1, 'Random sparsification reduces overlap between task vectors');
+      bump('della', 1, 'Magnitude-aware dropping keeps the important updates while reducing overlap');
       bump('breadcrumbs', 1, 'Dropping outliers and tiny updates reduces interference');
       bump('task_arithmetic', -1, 'Plain sums let overlapping updates cancel');
       bump('linear', -1, 'Averaging dilutes overlapping skills');
@@ -3979,6 +4102,10 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
         return { yaml: `merge_method: linear\nmodels:\n${list((i) => `      weight: ${lw ? gl((v) => (i === 0 ? 1 - v : v)) : w(i)}`)}\nparameters:\n  normalize: true\n${dt}\n`, note: gnote };
       case 'slerp':
         return { yaml: `merge_method: slerp\nbase_model: ${models[0]}\nmodels:\n  - model: ${models[0]}\n  - model: ${models[1]}\nparameters:\n  t: ${lw ? gl((v) => v) : (+p.t).toFixed(2)}\n${dt}\n`, note: [K > 2 ? 'SLERP takes exactly two models — the third is left out.' : '', gnote].filter(Boolean).join(' ') };
+      case 'karcher':
+        return { yaml: `merge_method: karcher\nmodels:\n${list((i) => `      weight: ${w(i)}`)}\nparameters:\n  max_iter: 20\n  tol: 1.0e-9\n${dt}\n` };
+      case 'della':
+        return { yaml: `merge_method: della\nbase_model: ${base}\nmodels:\n${list(() => `      density: ${(+p.density).toFixed(2)}\n      epsilon: ${(+p.epsilon).toFixed(2)}\n      weight: 1.0`)}\nparameters:\n  lambda: ${lw ? gl((v) => v) : (+p.lambda).toFixed(2)}\n  normalize: true\n${dt}\n`, note: gnote };
       case 'model_stock':
         return { yaml: `merge_method: model_stock\nbase_model: ${base}\nmodels:\n${list()}\n${dt}\n` };
       case 'task_arithmetic':
