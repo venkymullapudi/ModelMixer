@@ -16,6 +16,7 @@
     method: 'ties', params: {},
     overlay: { points: true, regions: true, router: true },
     tab: 'lab',
+    advisor: {}, // answers to the recipe advisor
     pin: null, // { method, params, align } recipe pinned for side-by-side comparison
     exp: {
       base: 'mistralai/Mistral-7B-v0.1',
@@ -29,7 +30,7 @@
   try {
     const saved = JSON.parse(localStorage.getItem('modelmixer:v1') || 'null');
     if (saved) {
-      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin']) if (saved[k] !== undefined) S[k] = saved[k];
+      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor']) if (saved[k] !== undefined) S[k] = saved[k];
       if (saved.params) for (const id in saved.params) if (S.params[id]) Object.assign(S.params[id], saved.params[id]);
       if (saved.exp) Object.assign(S.exp, saved.exp);
       if (!MM.METHOD_BY_ID[S.method]) S.method = 'ties';
@@ -38,8 +39,8 @@
   } catch (e) { /* storage unavailable */ }
   function persist() {
     try {
-      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin } = S;
-      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin }));
+      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor } = S;
+      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor }));
     } catch (e) { /* ignore */ }
   }
 
@@ -990,6 +991,75 @@
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
+
+  // ---------------- RECIPE ADVISOR ----------------
+  const advDlg = $('#advisor');
+  let advResult = null;
+  function openAdvisor() {
+    renderAdvisor();
+    if (typeof advDlg.showModal === 'function') { if (!advDlg.open) advDlg.showModal(); } else advDlg.setAttribute('open', '');
+  }
+  function closeAdvisor() { if (advDlg.open) { if (typeof advDlg.close === 'function') advDlg.close(); else advDlg.removeAttribute('open'); } }
+  function renderAdvisor() {
+    const a = Object.assign({}, MM.ADVISOR_DEFAULTS, S.advisor);
+    $('#advQs').innerHTML = MM.ADVISOR_QUESTIONS.map((q) => `<div class="adv-q"><h4>${q.q}</h4>${q.hint ? `<small>${q.hint}</small>` : ''}
+      <div class="seg ${q.options.length > 2 ? 'col' : ''}" data-adv="${q.key}">${q.options.map(([v, l]) => `<button data-v="${v}" class="${a[q.key] === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>`).join('');
+    const r = (advResult = MM.adviseRecipe(a));
+    const sc = MM.SCENARIOS.find((x) => x.id === r.scenario);
+    const uniq = (xs) => Array.from(new Set(xs));
+    const cost = (m) => (m.inferenceK === true ? 'K× compute' : m.inferenceK === 'memory' ? 'K× memory' : '1× model');
+    const cards = r.recs.slice(0, 3).map((x, i) => {
+      const m = MM.METHOD_BY_ID[x.id], f = MM.FAMILIES[m.family];
+      const pros = uniq([...x.reasons.filter((t) => !/^Shared base/.test(t)), m.pros[0]]).slice(0, 3);
+      const cons = uniq([...x.caveats, m.cons[0]]).slice(0, 2);
+      return `<div class="rec ${i === 0 ? 'first' : ''}" style="--fc:${f.color}">
+        <div class="rec-top"><span class="rec-rank">#${i + 1}</span><b>${m.name}</b><span class="fam-tag" style="--fc:${f.color}">${f.name}</span><span class="badge">${cost(m)}</span></div>
+        <ul>${pros.map((t) => `<li class="pro">${t}</li>`).join('')}${cons.map((t) => `<li class="con">${t}</li>`).join('')}${!pros.length && !cons.length ? `<li class="pro">${m.tagline}</li>` : ''}</ul>
+        <div class="rec-actions">
+          <button class="btn sm ${i === 0 ? 'primary' : ''}" data-adv-try="${x.id}">Try it in the Lab · ${sc.name}${r.align ? ' + alignment' : ''}</button>
+          <button class="btn ghost sm" data-adv-export="${x.id}">${m.mergekit ? 'Export mergekit config' : 'Open-source pointers'}</button>
+        </div></div>`;
+    }).join('');
+    const alts = r.recs.slice(3).map((x) => `<div class="alt"><b>${MM.METHOD_BY_ID[x.id].name}</b><span>${uniq(x.caveats)[0] || uniq(x.reasons)[0] || MM.METHOD_BY_ID[x.id].tagline}</span></div>`).join('');
+    const outs = r.excluded.map((x) => `<div class="alt"><b>${MM.METHOD_BY_ID[x.id].name}</b><span>${x.why}</span></div>`).join('');
+    $('#advRecs').innerHTML = `${r.notes.map((n) => `<div class="adv-note">${n}</div>`).join('')}
+      ${cards || '<p class="muted">Nothing fits every constraint. Relax one of them (data, training or serving) to see options.</p>'}
+      ${alts ? `<details class="adv-more"><summary>Other options that fit (${r.recs.length - 3})</summary>${alts}</details>` : ''}
+      ${outs ? `<details class="adv-more"><summary>Ruled out (${r.excluded.length})</summary>${outs}</details>` : ''}`;
+  }
+  $('#advQs').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-adv] button');
+    if (!b) return;
+    S.advisor = Object.assign({}, S.advisor, { [b.closest('[data-adv]').dataset.adv]: b.dataset.v });
+    persist();
+    renderAdvisor();
+  });
+  $('#advRecs').addEventListener('click', (ev) => {
+    const t = ev.target.closest('[data-adv-try]'), x = ev.target.closest('[data-adv-export]');
+    if (!t && !x) return;
+    const id = (t || x).dataset.advTry || (t || x).dataset.advExport;
+    closeAdvisor();
+    if (x) {
+      S.method = id; persist(); renderPicker(); refresh();
+      setTab('export');
+      return;
+    }
+    const sc = MM.SCENARIOS.find((s) => s.id === advResult.scenario);
+    const switching = !sameScenario(sc);
+    if (switching) { S.experts = sc.experts.map((e) => ({ ...e })); S.init = sc.init; }
+    S.align = advResult.align;
+    S.method = id;
+    arenaStale = robustStale = true;
+    setTab('lab');
+    renderPicker();
+    if (switching) scheduleRetrain();
+    else { persist(); renderIngredients(); refresh(); }
+    toast(`${MM.METHOD_BY_ID[id].name} on the ${sc.name} scenario${S.align ? ', neurons aligned' : ''}`);
+  });
+  $('#openAdvisor').addEventListener('click', openAdvisor);
+  $('#closeAdvisor').addEventListener('click', closeAdvisor);
+  advDlg.addEventListener('click', (ev) => { if (ev.target === advDlg) closeAdvisor(); });
+  document.addEventListener('click', (ev) => { if (ev.target.closest('[data-open-advisor]')) openAdvisor(); });
 
   // ---------------- tabs ----------------
   function setTab(tab) {

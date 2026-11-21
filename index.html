@@ -27,6 +27,7 @@
       <button data-tab="atlas">Atlas</button>
       <button data-tab="export">Export</button>
     </nav>
+    <button class="btn advisor-btn" id="openAdvisor" title="Answer a few questions about your real models and get a ranked recipe">✨ <span>Recipe advisor</span></button>
     <div class="status" id="status"><span class="pulse"></span><span id="statusText">Warming up…</span></div>
   </header>
 
@@ -124,6 +125,7 @@
           <h1>Atlas</h1>
           <p>What each kind of mixing needs, what it gives you, and what it is missing.</p>
         </div>
+        <button class="btn primary" data-open-advisor>✨ Get a recipe for my models</button>
       </div>
       <div class="panel board-wrap"><div id="matrix"></div></div>
       <h2 class="section-title">Which mix should I reach for?</h2>
@@ -161,6 +163,20 @@
     </section>
   </main>
 
+  <dialog class="advisor" id="advisor" aria-labelledby="advTitle">
+    <div class="adv-head">
+      <div>
+        <h2 id="advTitle">Recipe advisor</h2>
+        <p class="muted">Describe your <b>real</b> models. Recommendations update as you answer, and you can try the top picks on the closest toy scenario in the lab.</p>
+      </div>
+      <button class="btn ghost sm" id="closeAdvisor" aria-label="Close">✕</button>
+    </div>
+    <div class="adv-body">
+      <div class="adv-qs" id="advQs"></div>
+      <div class="adv-recs" id="advRecs"></div>
+    </div>
+  </dialog>
+
   <div class="toast" id="toast"></div>
 
   <script src="js/nn.js"></script>
@@ -168,6 +184,7 @@
   <script src="js/methods.js"></script>
   <script src="js/merge.js"></script>
   <script src="js/lab.js"></script>
+  <script src="js/advisor.js"></script>
   <script src="js/viz.js"></script>
   <script src="js/app.js"></script>
 </body>

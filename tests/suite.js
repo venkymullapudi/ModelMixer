@@ -78,6 +78,49 @@
       assert(c.blocked === 'x', 'blocked passthrough');
     });
 
+    // ---------- recipe advisor ----------
+    const advise = (o) => MM.adviseRecipe(o);
+    const top = (r, n) => r.recs.slice(0, n || 3).map((x) => x.id);
+    test('Advisor default (shared base, no data, one model) recommends task-vector merges', () => {
+      const r = advise({});
+      assert(['ties', 'dare', 'task_arithmetic'].includes(r.recs[0].id), `top is ${r.recs[0].id}`);
+      const out = r.excluded.map((x) => x.id);
+      ['fisher', 'regmean', 'distill', 'ensemble', 'moe'].forEach((id) => assert(out.includes(id), `${id} should be ruled out`));
+      assert(r.scenario === 'two' && r.align === false, `${r.scenario}/${r.align}`);
+      return top(r).join(', ');
+    });
+    test('Advisor: no shared base rules out task vectors and turns on alignment', () => {
+      const r = advise({ base: 'no' });
+      const out = r.excluded.map((x) => x.id);
+      ['task_arithmetic', 'ties', 'dare', 'breadcrumbs'].forEach((id) => assert(out.includes(id), `${id} not ruled out`));
+      assert(r.scenario === 'strangers' && r.align === true, `${r.scenario}/${r.align}`);
+      assert(r.recs.find((x) => x.id === 'linear').caveats.some((c) => /align/i.test(c)), 'linear should carry an alignment caveat');
+      const r2 = advise({ base: 'no', deploy: 'any', train: 'yes', data: 'yes' });
+      assert(['ensemble', 'moe', 'distill'].includes(r2.recs[0].id), `top is ${r2.recs[0].id}`);
+    });
+    test('Advisor: hard constraints are respected', () => {
+      const r = advise({ count: '3+' });
+      assert(r.excluded.some((x) => x.id === 'slerp'), 'SLERP should be out for 3+ models');
+      assert(r.scenario === 'three', r.scenario);
+      const rr = advise({ deploy: 'router', data: 'yes', train: 'yes' });
+      assert(rr.excluded.some((x) => x.id === 'ensemble') && !rr.excluded.some((x) => x.id === 'moe'), 'router: ensemble out, MoE in');
+      for (const combo of [{}, { base: 'no' }, { deploy: 'any', data: 'yes', train: 'yes' }, { goal: 'same', count: '3+' }]) {
+        const x = advise(combo);
+        x.recs.forEach((rec) => {
+          const m = MM.METHOD_BY_ID[rec.id];
+          assert(!(m.req.data && x.answers.data === 'no') && !(m.req.training && x.answers.train === 'no'), `${rec.id} violates constraints`);
+        });
+        assert(x.recs.length + x.excluded.length === MM.METHODS.length, 'every method accounted for');
+      }
+    });
+    test('Advisor: data → RegMean; same-skill runs → Model Stock; conflict → note', () => {
+      assert(advise({ data: 'yes' }).recs[0].id === 'regmean', `data top is ${advise({ data: 'yes' }).recs[0].id}`);
+      assert(advise({ goal: 'same' }).recs[0].id === 'model_stock', `same top is ${advise({ goal: 'same' }).recs[0].id}`);
+      const c = advise({ conflict: 'yes', deploy: 'router', data: 'yes', train: 'yes' });
+      assert(c.notes.some((n) => /contradictory/.test(n)) && c.scenario === 'overlap', 'conflict note/scenario');
+      assert(c.recs.find((x) => x.id === 'moe').caveats.some((t) => /router/i.test(t)), 'MoE should warn about routing identical inputs');
+    });
+
     // ---------- training ----------
     const cfgTwo = scenario('two');
     const T = MM.trainBundleSync(cfgTwo);
