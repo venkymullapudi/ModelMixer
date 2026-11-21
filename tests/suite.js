@@ -118,6 +118,106 @@
       assert(st.recipe.params.layers.join() === '1,1,0', `layers clamped to K=2: ${st.recipe.params.layers}`);
     });
 
+    // ---------- mergekit import ----------
+    test('parseYAML: maps, lists of maps, inline lists, comments, quotes', () => {
+      const y = MM.parseYAML(`# comment
+merge_method: ties   # trailing comment
+base_model: "org/base#1"
+models:
+  - model: a/one
+    parameters:
+      density: 0.5
+      weight: [0, 0.5, 1]
+  - model: b/two
+parameters: {normalize: false, int8_mask: true}
+dtype: bfloat16`);
+      assert(y.merge_method === 'ties' && y.base_model === 'org/base#1', JSON.stringify(y));
+      assert(y.models.length === 2 && y.models[0].parameters.density === 0.5 && y.models[0].parameters.weight.join() === '0,0.5,1' && y.models[1].model === 'b/two', JSON.stringify(y.models));
+      assert(y.parameters.normalize === false && y.parameters.int8_mask === true && y.dtype === 'bfloat16', JSON.stringify(y.parameters));
+    });
+    test('importMergekit: canonical SLERP gradient, filters, DARE, TIES, passthrough, MoE, errors', () => {
+      const sl = MM.importMergekit(`slices:
+merge_method: slerp
+base_model: a/one
+models:
+  - model: a/one
+  - model: b/two
+parameters:
+  t: [0, 0.5, 0.3, 0.7, 1]
+dtype: bfloat16`);
+      assert(sl.ok && sl.method === 'slerp' && sl.params.layerwise && sl.params.grad.join() === '0,0.3,1', JSON.stringify(sl));
+      const flt = MM.importMergekit(`merge_method: slerp
+models:
+  - model: a
+  - model: b
+parameters:
+  t:
+    - filter: self_attn
+      value: [0, 0.5, 0.3, 0.7, 1]
+    - filter: mlp
+      value: [1, 0.5, 0.7, 0.3, 0]
+    - value: 0.5`);
+      assert(flt.ok && flt.params.t === 0.5 && !flt.params.layerwise && flt.warnings.some((w) => /filters/.test(w)), JSON.stringify(flt));
+      const da = MM.importMergekit(`merge_method: dare_ties
+base_model: base
+models:
+  - model: base
+  - model: x
+    parameters: {density: 0.53, weight: 0.4}
+  - model: y
+    parameters: {density: 0.53, weight: 0.4}
+parameters:
+  int8_mask: true`);
+      assert(da.ok && da.method === 'dare' && da.K === 2 && Math.abs(da.params.drop - 0.47) < 1e-9 && da.params.lambda === 0.4 && da.params.mode === 'ties', JSON.stringify(da));
+      assert(da.notes.some((n) => /base model listed/.test(n)), 'base listed under models should be dropped with a note');
+      const ti = MM.importMergekit(`merge_method: ties
+base_model: base
+models:
+  - model: x
+    parameters: {density: 0.2, weight: 1.0}
+  - model: y
+    parameters: {density: 0.4, weight: 1.0}
+parameters:
+  normalize: true`);
+      assert(ti.ok && Math.abs(ti.params.density - 0.3) < 1e-9 && ti.params.lambda === 1 && ti.warnings.some((w) => /density differs/.test(w)), JSON.stringify(ti));
+      const pt = MM.importMergekit(`merge_method: passthrough
+slices:
+  - sources:
+      - model: a
+        layer_range: [0, 24]
+  - sources:
+      - model: b
+        layer_range: [8, 32]`);
+      assert(pt.ok && pt.method === 'stitch' && pt.params.layers.join() === '0,0,1', JSON.stringify(pt));
+      const moe = MM.importMergekit(`base_model: a
+gate_mode: hidden
+experts_per_token: 2
+experts:
+  - source_model: a
+    positive_prompts: ["chat"]
+  - source_model: b
+    positive_prompts: ["math"]`);
+      assert(moe.ok && moe.method === 'moe' && moe.params.mode === 'soft' && moe.models.join() === 'a,b', JSON.stringify(moe));
+      // base_model only counts for base-relative methods: SLERP's is an endpoint, mergekit-moe's is usually an expert
+      assert(sl.base === null && moe.base === null && da.base === 'base' && ti.base === 'base', `bases: ${sl.base} / ${moe.base} / ${da.base} / ${ti.base}`);
+      // passthrough keeps a known model order so Export → Import round-trips
+      const ord = MM.importMergekit('merge_method: passthrough\nslices:\n  - sources:\n      - model: b\n        layer_range: [0, 11]\n  - sources:\n      - model: a\n        layer_range: [11, 22]\n  - sources:\n      - model: b\n        layer_range: [22, 32]', { order: ['a', 'b'] });
+      assert(ord.models.join() === 'a,b' && ord.params.layers.join() === '1,0,1', JSON.stringify(ord));
+      assert(!MM.importMergekit('merge_method: frankenstein\nmodels:\n  - model: a\n  - model: b').ok, 'unknown method accepted');
+      assert(!MM.importMergekit('merge_method: linear\nmodels:\n  - model: a').ok, 'one model accepted');
+      assert(!MM.importMergekit('just some text').ok, 'non-mapping accepted');
+      const big = MM.importMergekit(`merge_method: ties
+base_model: base
+models:
+  - model: x
+    parameters: {density: 0.5, weight: 5}
+  - model: y
+    parameters: {density: 0.5, weight: 5}
+parameters:
+  normalize: false`);
+      assert(big.ok && big.params.lambda === 2 && big.warnings.some((w) => /clamped/.test(w)), `λ should clamp to the lab range: ${JSON.stringify(big.params)}`);
+    });
+
     // ---------- recipe advisor ----------
     const advise = (o) => MM.adviseRecipe(o);
     const top = (r, n) => r.recs.slice(0, n || 3).map((x) => x.id);

@@ -168,6 +168,14 @@
           <div id="exportNotes"></div>
         </div>
       </div>
+      <div class="panel import-panel">
+        <h2>Import a mergekit config</h2>
+        <p class="muted">Paste a mergekit YAML (linear, slerp, karcher, task_arithmetic, ties, dare_ties / dare_linear, della, breadcrumbs, sce, model_stock, passthrough or a mergekit-moe config). Its method, knobs and gradient lists load into the Lab, so you can see how forgiving the recipe is on the toys. The model names fill the export form.</p>
+        <label for="mkIn" class="sr-only">mergekit YAML</label>
+        <textarea id="mkIn" rows="10" spellcheck="false" placeholder="merge_method: ties&#10;base_model: mistralai/Mistral-7B-v0.1&#10;models:&#10;  - model: …"></textarea>
+        <div class="row"><button class="btn primary" id="mkLoad">Load into the Lab</button><button class="btn ghost" id="mkExample">Paste an example</button></div>
+        <div id="mkOut" aria-live="polite"></div>
+      </div>
     </section>
   </main>
 
@@ -194,6 +202,7 @@
   <script src="js/lab.js"></script>
   <script src="js/advisor.js"></script>
   <script src="js/share.js"></script>
+  <script src="js/mkimport.js"></script>
   <script src="js/viz.js"></script>
   <script src="js/app.js"></script>
 </body>

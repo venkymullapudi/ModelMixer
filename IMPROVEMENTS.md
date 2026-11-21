@@ -15,14 +15,19 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Import a mergekit config:** paste a mergekit YAML (linear, slerp, ties, dare_ties/dare_linear, della, sce, breadcrumbs, task_arithmetic, karcher, gradient lists) and load it as a Lab recipe, the reverse of Export. Practitioners can then sanity-check a real recipe's knobs on the toys.
-2. **Web Worker engine:** run training, sweeps and seed checks in a worker so the UI never stalls, even in background tabs that throttle timers.
-3. **Newer methods, part 3:** Localize-and-Stitch (learned sparse masks per task), plus an AdaMerging variant with a confidence-calibrated objective.
-4. **Digits extras:** a conflict scenario (0-vs-1 with 1-vs-7, where both claim the "1"s), a per-pixel saliency view of what each merge kept, and digit-aware advisor evidence.
-5. **Phone layout check:** re-verify the newer panels (heat map, head-to-head, compare box, advisor) at 375 px and fix any overflow.
+1. **Web Worker engine:** run training, sweeps and seed checks in a worker so the UI never stalls, even in background tabs that throttle timers.
+2. **Newer methods, part 3:** Localize-and-Stitch (learned sparse masks per task), plus an AdaMerging variant with a confidence-calibrated objective.
+3. **Digits extras:** a conflict scenario (0-vs-1 with 1-vs-7, where both claim the "1"s), a per-pixel saliency view of what each merge kept, and digit-aware advisor evidence.
+4. **Phone layout check:** re-verify the newer panels (heat map, head-to-head, compare box, advisor) at 375 px and fix any overflow.
 
 ## Done
 
+- 2026-11-22: **Import a mergekit config** (Export tab), the reverse of Export. It uses a small YAML-subset parser (maps, lists of maps, inline lists and maps, quotes, comments) and a mapper for linear, slerp, nuslerp, karcher, task_arithmetic, ties, dare_ties / dare_linear, della / della_linear, breadcrumbs (and _ties), sce, model_stock, passthrough slices and mergekit-moe:
+  - gradient lists are sampled at the first, middle and last layer;
+  - per-module filters, differing per-model densities, a base listed among the models, values out of range and method variants the lab doesn't model are reported as "Approximated";
+  - it sets the expert count to 2 or 3, switches to a shared base when needed, and fills the export form with the model names and dtype.
+
+  A Playwright round trip (Export → Import) is exact for all 14 tested recipes, including per-layer SLERP and per-layer λ. It caught two bugs, now fixed and tested: SLERP's `base_model` (an endpoint) and mergekit-moe's (usually an expert) overwrote the base, which broke later task-vector imports; and passthrough slices reordered the experts. `js/mkimport.js`, 2 tests (55 total). axe-core still reports 0.
 - 2026-11-22: **Accessibility pass** (prioritised because the UI had grown a lot and "great UI" was a core requirement). The axe-core audit of every view (Lab, Arena, Atlas, Export, advisor) went from **7 failing rules to 0**:
   - **Labels:** every slider, select and input is labelled.
   - **Formula box:** the scrollable box is keyboard-focusable.

@@ -1497,6 +1497,57 @@
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   });
 
+  // ---------------- IMPORT A MERGEKIT CONFIG ----------------
+  const MK_EXAMPLE = `# the classic mergekit SLERP gradient: early layers from A, late layers from B
+merge_method: slerp
+base_model: mistralai/Mistral-7B-v0.1
+models:
+  - model: mistralai/Mistral-7B-v0.1
+  - model: teknium/OpenHermes-2.5-Mistral-7B
+parameters:
+  t: [0, 0.5, 0.3, 0.7, 1]
+dtype: bfloat16
+`;
+  $('#mkExample').addEventListener('click', () => { $('#mkIn').value = MK_EXAMPLE; $('#mkIn').focus(); });
+  $('#mkLoad').addEventListener('click', () => {
+    const r = MM.importMergekit($('#mkIn').value, { order: S.exp.models });
+    const out = $('#mkOut');
+    if (!r.ok) { out.innerHTML = `<div class="verdict bad"><b>Couldn’t import:</b> ${esc(r.error)}</div>`; return; }
+    const notes = r.notes.slice();
+    let retrain = false;
+    // expert count follows the config (2 or 3)
+    while (S.experts.length > r.K) { S.experts.pop(); retrain = true; }
+    while (S.experts.length < r.K) {
+      if (MM.taskKind(S.experts[0].task) === 'digits') {
+        const used = new Set(S.experts.map((e) => e.task));
+        S.experts.push({ task: ['d45', 'd67', 'd89', 'd23', 'd01'].find((t) => !used.has(t)) || 'd45' });
+      } else {
+        const used = new Set(S.experts.map((e) => e.region));
+        S.experts.push({ task: 'xor', region: ['top', 'right', 'left', 'center'].find((x) => !used.has(x)) || 'top' });
+      }
+      retrain = true;
+    }
+    if (retrain) notes.push(`The lab now has ${r.K} experts to match the config’s ${r.K} models.`);
+    const meta = MM.METHOD_BY_ID[r.method];
+    if (meta.req.base && S.init === 'independent') { S.init = 'shared'; S.align = false; retrain = true; notes.push('Switched the lab to a shared base, which this method needs.'); }
+    S.method = r.method;
+    S.params[r.method] = Object.assign(MM.defaultParams(meta, r.K), r.params);
+    S.exp.models = r.models.concat(S.exp.models.slice(r.models.length)).slice(0, 3);
+    if (r.base) S.exp.base = r.base;
+    if (r.dtype && ['bfloat16', 'float16', 'float32'].includes(r.dtype)) S.exp.dtype = r.dtype;
+    arenaStale = robustStale = true;
+    renderPicker();
+    if (retrain) scheduleRetrain(); else { persist(); refresh(); }
+    renderExport();
+    const label = MM.recipeLabel(r.method, S.params[r.method], S.align, r.K);
+    out.innerHTML = `<div class="verdict ${r.warnings.length ? 'mid' : 'good'}"><b>Loaded:</b> <code>${esc(label)}</code> with ${r.K} experts.
+        ${notes.length ? `<ul class="mk-list">${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+        ${r.warnings.length ? `<div class="mk-warn"><b>Approximated</b><ul class="mk-list">${r.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul></div>` : ''}
+        <div class="row"><button class="btn sm primary" id="mkOpen">Open in the Lab</button></div></div>`;
+    toast(`Imported ${meta.name}`);
+  });
+  $('#mkOut').addEventListener('click', (ev) => { if (ev.target.closest('#mkOpen')) setTab('lab'); });
+
   // ---------------- RECIPE ADVISOR ----------------
   const advDlg = $('#advisor');
   let advResult = null;
