@@ -4,7 +4,6 @@
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const LETTERS = 'ABC';
-  const BASE_STEPS = 200, LR = 0.01, FT_LR = 0.1;
   const pct = (x) => `${(x * 100).toFixed(1)}%`;
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const frame = () => new Promise((r) => setTimeout(r, 0));
@@ -46,6 +45,7 @@
   let trainToken = 0;
   let training = false;
   let arenaStale = true;
+  let robustStale = true; // robustness results no longer match the current settings
 
   // ---------------- status / toast ----------------
   function status(text, busy) {
@@ -63,69 +63,30 @@
   async function train() {
     const token = ++trainToken;
     training = true;
-    arenaStale = true;
+    arenaStale = robustStale = true;
     renderIngredients();
     status('Training experts…', true);
-    const K = S.experts.length;
-    const layout = MM.makeLayout([2, S.hidden, S.hidden, 1], MM.makeEncoder(9, MM.EXTENT, 0.5));
-    const tasks = S.experts.map((e, i) => MM.makeTaskData(e, i, S.seed));
-    const shared = S.init === 'shared';
-    const total = shared ? BASE_STEPS + K * S.ftSteps : K * (BASE_STEPS + S.ftSteps);
-    let done = 0;
-    const losses = [];
-    const live = { layout, tasks, base: null, experts: [] };
-    T = Object.assign(T || {}, { live });
-
-    const run = async (gen, onTick) => {
-      let chunk = 0;
+    const it = MM.trainBundle({ experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed: S.seed });
+    let total = 1, done = 0, sinceTick = 0;
+    try {
       for (;;) {
+        let r;
         for (let i = 0; i < 12; i++) {
-          const r = gen.next();
-          if (r.done) { onTick && onTick(); return; }
-          done++;
-          if (done % 3 === 0) losses.push(r.value.loss);
+          r = it.next();
+          if (r.done) break;
+          const ev = r.value;
+          if (ev.type === 'start') { total = ev.total; T = Object.assign(T || {}, { live: ev.live }); }
+          else if (ev.type === 'step') { done++; if (++sinceTick % 48 === 0) drawThumb(ev.which, ev.P, T.live.tasks); }
+          else if (ev.type === 'done') drawThumb(ev.which, ev.P, T.live.tasks);
         }
+        if (r.done) { T = r.value; break; }
         if (token !== trainToken) throw new Error('cancelled');
-        setProgress(done / total, losses);
-        if (++chunk % 4 === 0 && onTick) onTick();
+        setProgress(done / total, T.live.losses);
         await frame();
       }
-    };
-
-    try {
-      let base = null;
-      const experts = [];
-      if (shared) {
-        base = MM.initParams(layout, S.seed);
-        live.base = base;
-        const pre = MM.concat([MM.genericSet(S.seed, 900), MM.pretrainSet(tasks, 0.05, S.seed)]);
-        await run(MM.trainGen(layout, base, pre.X, pre.Y, pre.n, BASE_STEPS, LR), () => drawThumb('base', base, tasks));
-        for (let i = 0; i < K; i++) {
-          const e = new Float32Array(base);
-          live.experts[i] = e;
-          const d = tasks[i].train;
-          await run(MM.sgdGen(layout, e, d.X, d.Y, d.n, S.ftSteps, FT_LR, 0.9), () => drawThumb(i, e, tasks));
-          experts.push(e);
-        }
-      } else {
-        for (let i = 0; i < K; i++) {
-          const e = MM.initParams(layout, S.seed * 13 + 101 * (i + 1));
-          live.experts[i] = e;
-          const d = tasks[i].train;
-          await run(MM.trainGen(layout, e, d.X, d.Y, d.n, BASE_STEPS + S.ftSteps, LR), () => drawThumb(i, e, tasks));
-          experts.push(e);
-        }
-      }
-      const pred = (P) => (X, n) => MM.predictProb(layout, P, X, n);
-      T = {
-        layout, base, experts, tasks, K, losses,
-        expertAccs: experts.map((e) => MM.evaluate(pred(e), tasks)),
-        baseAccs: base ? MM.evaluate(pred(base), tasks) : null,
-        ctx: {},
-      };
       training = false;
-      setProgress(1, losses);
-      status(`${K} experts ready · ${layout.total.toLocaleString()} params each`);
+      setProgress(1, T.losses);
+      status(`${T.K} experts ready · ${T.layout.total.toLocaleString()} params each`);
       renderIngredients();
       renderPicker();
       refresh();
@@ -144,22 +105,11 @@
 
   function getCtx() {
     if (!T || !T.experts) return null;
-    const key = S.align ? 'aligned' : 'raw';
-    if (!T.ctx[key]) {
-      let experts = T.experts, moved = null;
-      if (S.align) { const r = MM.alignExperts(T.layout, T.base, T.experts); experts = r.experts; moved = r.moved; }
-      T.ctx[key] = { layout: T.layout, base: T.base, experts, K: experts.length, tasks: T.tasks, cache: {}, seed: S.seed, moved };
-    }
-    return T.ctx[key];
+    return MM.bundleCtx(T, S.align);
   }
 
   function compute(id, ctx) {
-    const r = MM.runMethod(id, ctx, S.params[id]);
-    if (r.blocked) return r;
-    r.accs = MM.evaluate(r.predict, ctx.tasks);
-    r.avg = r.accs.reduce((a, b) => a + b, 0) / r.accs.length;
-    r.retention = r.accs.reduce((a, acc, i) => a + acc / Math.max(1e-6, T.expertAccs[i][i]), 0) / r.accs.length;
-    return r;
+    return MM.scoreMethod(T, ctx, id, S.params[id]);
   }
 
   // ---------------- thumbnails ----------------
@@ -306,7 +256,7 @@
     } else if (t.id === 'alignToggle') {
       S.align = t.checked;
       persist();
-      arenaStale = true;
+      arenaStale = robustStale = true;
       status(S.align ? 'Aligning neurons…' : 'Alignment off', S.align);
       setTimeout(() => {
         renderIngredients();
@@ -396,7 +346,7 @@
     if (t.dataset.param) { p[t.dataset.param] = +t.value; $(`[data-out="${t.dataset.param}"]`).textContent = fmt(t.value, +t.step); }
     else if (t.dataset.weight !== undefined) { p.weights[+t.dataset.weight] = +t.value; $(`[data-wout="${t.dataset.weight}"]`).textContent = (+t.value).toFixed(2); }
     else return;
-    persist(); arenaStale = true;
+    persist(); arenaStale = robustStale = true;
     queueRefresh();
   });
   $('#controls').addEventListener('click', (ev) => {
@@ -407,7 +357,7 @@
     else if (b.closest('[data-param-seg]')) p[b.closest('[data-param-seg]').dataset.paramSeg] = b.dataset.v;
     else if (b.closest('[data-layer]')) p.layers[+b.closest('[data-layer]').dataset.layer] = +b.dataset.v;
     else return;
-    persist(); arenaStale = true;
+    persist(); arenaStale = robustStale = true;
     refresh();
   });
 
@@ -459,7 +409,7 @@
   $('#blocked').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-goto-method]');
     if (!b) return;
-    if (b.dataset.gotoMethod === 'linear') { S.align = true; renderIngredients(); }
+    if (b.dataset.gotoMethod === 'linear') { S.align = true; arenaStale = robustStale = true; renderIngredients(); }
     selectMethod(b.dataset.gotoMethod);
   });
 
@@ -644,6 +594,112 @@
     const b = ev.target.closest('[data-open]');
     if (b) { setTab('lab'); selectMethod(b.dataset.open); }
   });
+
+  // ---------------- ROBUSTNESS (multi-seed) ----------------
+  const ROBUST_SEEDS = 5;
+  let robustToken = 0;
+  async function runRobust() {
+    if (!T || !T.experts || training) { toast('Wait for training to finish'); return; }
+    const token = ++robustToken;
+    const btn = $('#runRobust');
+    btn.disabled = true;
+    const ids = MM.METHODS.map((m) => m.id);
+    const seeds = Array.from({ length: ROBUST_SEEDS }, (_, i) => S.seed + i * 101);
+    const cfg = { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps };
+    const steps = ROBUST_SEEDS * (ids.length + 1);
+    let doneSteps = 0;
+    const prog = (label) => {
+      $('#robust').innerHTML = `<div class="loading"><span class="spinner"></span> ${label}</div><div class="rprog"><div style="width:${(100 * doneSteps / steps).toFixed(0)}%"></div></div>`;
+    };
+    const runs = [];
+    try {
+      for (let s = 0; s < seeds.length; s++) {
+        let bundle = T;
+        if (s > 0) {
+          prog(`Seed ${s + 1}/${ROBUST_SEEDS}: training experts…`);
+          await frame();
+          const it = MM.trainBundle({ ...cfg, seed: seeds[s] });
+          let r, k = 0;
+          while (!(r = it.next()).done) {
+            if (++k % 150 === 0) { await frame(); if (token !== robustToken) return; }
+          }
+          bundle = r.value;
+        }
+        doneSteps++;
+        const ctx = MM.bundleCtx(bundle, S.align);
+        const run = {};
+        for (const id of ids) {
+          prog(`Seed ${s + 1}/${ROBUST_SEEDS}: mixing with ${MM.METHOD_BY_ID[id].short}…`);
+          await frame();
+          if (token !== robustToken) return;
+          const r = MM.scoreMethod(bundle, ctx, id, S.params[id]);
+          run[id] = r.blocked ? { blocked: r.blocked } : { avg: r.avg, retention: r.retention, accs: r.accs };
+          doneSteps++;
+        }
+        runs.push(run);
+      }
+      robustStale = false;
+      renderRobust(MM.summarizeSeeds(runs, ids));
+    } finally {
+      if (token === robustToken) btn.disabled = false;
+    }
+  }
+  $('#runRobust').addEventListener('click', runRobust);
+
+  function renderRobust(sum) {
+    const ok = sum.filter((x) => !x.blocked).sort((a, b) => b.mean - a.mean);
+    const blocked = sum.filter((x) => x.blocked);
+    if (!ok.length) { $('#robust').innerHTML = '<p class="muted">Every method is blocked for this scenario.</p>'; return; }
+    const top = ok[0], second = ok[1];
+    const tie = second && top.mean - top.sd <= second.mean + second.sd;
+    const tied = tie ? ok.filter((x) => top.mean - top.sd <= x.mean + x.sd).map((x) => MM.METHOD_BY_ID[x.id].name) : [];
+    const name = (id) => MM.METHOD_BY_ID[id].name;
+    const verdict = tie
+      ? `<div class="verdict mid"><b>No clear winner.</b> ${tied.slice(0, 4).join(', ')}${tied.length > 4 ? ` and ${tied.length - 4} more` : ''} overlap within one standard deviation — pick among them on cost and requirements, not accuracy.</div>`
+      : `<div class="verdict good"><b>${name(top.id)} wins reliably:</b> ${pct(top.mean)} ± ${(top.sd * 100).toFixed(1)} across ${top.seeds} seeds, clear of ${name(second ? second.id : top.id)} (${second ? pct(second.mean) : '—'}).</div>`;
+    // Practitioner's pick: one model, no data, no training. Prefer the steadier option when means are close.
+    const cheap = ok.filter((x) => { const m = MM.METHOD_BY_ID[x.id]; return !m.req.data && !m.req.training && m.family !== 'output'; });
+    let pick = null;
+    if (cheap.length) {
+      const best = cheap[0];
+      const steadier = cheap.find((x) => x !== best && x.sd < best.sd * 0.75 && best.mean - x.mean < best.sd);
+      pick = steadier
+        ? `<b>Free merge pick:</b> ${name(best.id)} has the best mean (${pct(best.mean)} ± ${(best.sd * 100).toFixed(1)}), but ${name(steadier.id)} is within noise (${pct(steadier.mean)}) and steadier (± ${(steadier.sd * 100).toFixed(1)}), with a worst task of ${pct(steadier.worstTask)} vs ${pct(best.worstTask)}.`
+        : `<b>Free merge pick:</b> ${name(best.id)} (${pct(best.mean)} ± ${(best.sd * 100).toFixed(1)}), the best option that needs no data, no training and only 1× inference.`;
+    }
+    const lo = Math.max(0, Math.floor(Math.min(...ok.map((x) => x.min)) * 20) / 20 - 0.05), hi = 1;
+    const X = (v) => `${(((v - lo) / (hi - lo)) * 100).toFixed(2)}%`;
+    const stab = (sd) => (sd < 0.02 ? ['good', 'stable'] : sd < 0.05 ? ['mid', 'some spread'] : ['bad', 'noisy']);
+    const rows = ok.map((x, i) => {
+      const m = MM.METHOD_BY_ID[x.id], f = MM.FAMILIES[m.family];
+      const [cls, word] = stab(x.sd);
+      return `<tr data-open="${x.id}">
+        <td class="rank">${i + 1}</td>
+        <td><span class="fam-dot" style="background:${f.color}"></span><b>${m.name}</b><small>${f.name}</small></td>
+        <td class="mono"><b>${pct(x.mean)}</b> <span class="muted">± ${(x.sd * 100).toFixed(1)}</span></td>
+        <td><div class="rtrack" title="Each dot is one seed">
+          <i class="rband" style="left:${X(Math.max(lo, x.mean - x.sd))};width:calc(${X(Math.min(hi, x.mean + x.sd))} - ${X(Math.max(lo, x.mean - x.sd))})"></i>
+          ${x.avgs.map((v) => `<i class="rdot" style="left:${X(v)};background:${f.color}" title="${pct(v)}"></i>`).join('')}
+          <i class="rmean" style="left:${X(x.mean)}"></i></div></td>
+        <td class="mono">${pct(x.worstTask)}</td>
+        <td class="mono">${x.wins ? `${+x.wins.toFixed(1)}/${x.seeds}` : '<span class="muted">0</span>'}</td>
+        <td><span class="ret ${cls}">${word}</span></td></tr>`;
+    }).join('');
+    const bl = blocked.map((x) => `<tr class="blocked-row" data-open="${x.id}"><td class="rank">🔒</td><td><b>${name(x.id)}</b></td><td colspan="5" class="muted">${x.blocked}</td></tr>`).join('');
+    $('#robust').innerHTML = `${verdict}${pick ? `<div class="verdict">${pick}</div>` : ''}
+      <div class="board-wrap"><table class="board robust">
+        <thead><tr><th>#</th><th>Method</th><th>Mean ± sd</th><th>Per-seed average accuracy <span class="axis-lbl">${pct(lo)} → 100%</span></th><th title="Lowest single-task accuracy seen on any seed">Worst task</th><th title="Seeds where this method had the best average (ties split)">Wins</th><th>Stability</th></tr></thead>
+        <tbody>${rows}${bl}</tbody></table></div>`;
+  }
+  $('#robust').addEventListener('click', (ev) => {
+    const tr = ev.target.closest('[data-open]');
+    if (tr) { setTab('lab'); selectMethod(tr.dataset.open); }
+  });
+  function markRobustStale() {
+    const el = $('#robust');
+    if (robustStale && el.querySelector('table') && !el.querySelector('.stale-note'))
+      el.insertAdjacentHTML('afterbegin', '<div class="stale-note">Settings changed since this check ran. Re-run it to update.</div>');
+  }
 
   function renderPathChart(ctx) {
     const raw = T.experts, layout = T.layout;
@@ -853,6 +909,7 @@
     S.tab = tab; persist();
     $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     $$('.tab-page').forEach((p) => p.classList.toggle('active', p.id === `tab-${tab}`));
+    if (tab === 'arena') markRobustStale();
     if (tab === 'arena' && (arenaStale || !$('#board').innerHTML) && T && T.experts) runArena();
     if (tab === 'atlas') renderAtlas();
     if (tab === 'export') renderExport();

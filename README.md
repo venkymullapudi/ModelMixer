@@ -29,7 +29,7 @@ python3 scripts/bundle.py
 | Tab | What it does |
 | --- | --- |
 | **Mix Lab** | Pick a scenario and experts, choose a mixing method, tune its knobs live. See the merged model's decision boundary, a per-task scorecard against each expert and the base, what the method needs, how it works, its strengths and *missing pieces*, a weight-provenance map and task-vector geometry. |
-| **Arena** | Every method on the same experts: leaderboard (accuracy, retention, inference cost, memory, requirements), a gallery of decision maps, the A→B interpolation path (loss barriers, with and without neuron alignment) and a λ sweep for Task Arithmetic / TIES / DARE. |
+| **Arena** | Every method on the same experts: leaderboard (accuracy, retention, inference cost, memory, requirements), a **multi-seed robustness check** (5 seeds, mean ± sd, wins and stability, and a verdict on whether the winner is real), a gallery of decision maps, the A→B interpolation path (loss barriers, with and without neuron alignment) and a λ sweep for Task Arithmetic / TIES / DARE. |
 | **Atlas** | A capability matrix (needs base? data? training? single-model inference? tolerates different inits? handles interference?), a "which mix should I reach for" guide, method families and a glossary. |
 | **Export** | Generates the matching mergekit (`mergekit-yaml` / `mergekit-moe`) config from your lab recipe, plus pointers to open-source implementations for methods mergekit doesn't cover. |
 
@@ -64,6 +64,18 @@ meaningful, much like fine-tunes of a large pretrained model. Independent expert
 Every number on screen is computed live: accuracies on held-out test points, TIES sign conflicts, Fisher
 information, RegMean Gram matrices, router accuracy and alignment permutations.
 
+## Tests
+
+```bash
+node tests/run.js
+```
+
+The suite checks the Hungarian solver against brute force, that weight matching exactly undoes a neuron
+shuffle, that training is deterministic, that every method clears an accuracy floor, and that alignment
+helps the Strangers scenario. CI (GitHub Actions) runs it on every push and also fails if
+`dist/modelmixer.html` is out of date. No Node? Run `python3 scripts/bundle.py --tests` and open
+`tests/_browser.html`.
+
 ## Project layout
 
 ```
@@ -73,9 +85,12 @@ js/nn.js            MLP, RBF encoder, Adam/SGD, Fisher, Gram matrices
 js/data.js          tasks, regions, scenarios
 js/methods.js       method catalog: how it works, pros, missing pieces, requirements, OSS links
 js/merge.js         merge engine + Git Re-Basin + router + distillation
+js/lab.js           headless core: train experts, build contexts, score methods, seed summaries
 js/viz.js           decision-boundary canvases, provenance maps, SVG charts
 js/app.js           state, training loop, Lab / Arena / Atlas / Export views
-scripts/bundle.py   inlines everything into dist/modelmixer.html
+scripts/bundle.py   inlines everything into dist/modelmixer.html (--tests: browser test page)
+tests/              engine test-suite (Node runner + browser-compatible suite)
+IMPROVEMENTS.md     prioritised backlog
 ```
 
 ## Open-source references
