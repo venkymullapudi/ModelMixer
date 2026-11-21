@@ -512,3 +512,14 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
   .adv-body { grid-template-columns: minmax(0, 1fr); }
   .adv-qs { border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* advisor evidence */
+.evidence { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-top: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255, 255, 255, 0.03); border: 1px dashed var(--line2); font-size: 12px; min-height: 34px; }
+.evidence .ev-label { color: var(--muted); }
+.evidence .ev-val { font-family: var(--mono); font-weight: 700; font-size: 13px; }
+.evidence .ev-val small { color: var(--muted); font-weight: 500; }
+.evidence .ev-val.good { color: #34d399; } .evidence .ev-val.mid { color: #fbbf24; } .evidence .ev-val.bad { color: #f87171; }
+.evidence .ev-sub { color: var(--dim); font-size: 11.5px; width: 100%; }
+.evidence .ev-wait { color: var(--muted); display: inline-flex; gap: 8px; align-items: center; }
+.evidence .ev-wait .spinner { width: 12px; height: 12px; }
+.ev-verdict { font-size: 12.5px; line-height: 1.5; padding: 2px 2px 0; }

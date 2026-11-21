@@ -13,25 +13,26 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Advisor evidence:** under each recommendation, show the toy result from the closest scenario (multi-seed mean ± sd), so every pick comes with measured evidence as well as rules.
-2. **Hosted demo (needs owner OK):** a GitHub Pages workflow that publishes `dist/modelmixer.html`, so recipe links can be shared as https URLs. The repo owner has to enable Pages in the repo settings.
-3. **Knob sensitivity sweep:** for the active method, sweep its main knob (density, drop rate, λ, t) and
+1. **Hosted demo (needs owner OK):** a GitHub Pages workflow that publishes `dist/modelmixer.html`, so recipe links can be shared as https URLs. The repo owner has to enable Pages in the repo settings.
+2. **Knob sensitivity sweep:** for the active method, sweep its main knob (density, drop rate, λ, t) and
    plot accuracy against it, with a ±1 sd band from a 3-seed run. Mark the current setting and the most
    forgiving setting.
-4. **Per-layer weights (mergekit gradients):** a layer-wise weight list per expert, as in mergekit
+3. **Per-layer weights (mergekit gradients):** a layer-wise weight list per expert, as in mergekit
    `value: [0, 0.5, 1]`, exported verbatim to YAML.
-5. **Image-like task:** procedurally generated 8×8 "digits", each expert on a different digit pair, so
+4. **Image-like task:** procedurally generated 8×8 "digits", each expert on a different digit pair, so
    merges run on a ~64-dim input model rather than only 2-D toys.
-6. **Newer methods:** DELLA (magnitude-adaptive drop), multi-model SLERP / Karcher mean, SCE,
+5. **Newer methods:** DELLA (magnitude-adaptive drop), multi-model SLERP / Karcher mean, SCE,
    Localize-and-Stitch, AdaMerging (entropy-tuned coefficients on unlabeled data).
-7. **Robustness extras:** a paired-difference view (method X minus method Y per seed), a configurable seed
+6. **Robustness extras:** a paired-difference view (method X minus method Y per seed), a configurable seed
    count and a CSV download.
+7. **Advisor blending:** let the measured toy evidence nudge the ranking (e.g. promote a pick that clearly beats the rule-based #1), and show the measured-vs-rules disagreement in the Arena too.
 8. **Compare extras:** a diff map that highlights where A and B disagree on the plane, and an A-vs-B paired multi-seed check (is B's edge real?).
 9. **Accessibility pass:** keyboard focus rings and arrow-key navigation in the method picker, ARIA
    labels on canvases, and a colour-blind-safe palette option.
 
 ## Done
 
+- 2026-11-21: **Advisor evidence:** each of the top-3 advisor picks is measured on the closest toy scenario across 3 seeds (default knobs, aligned if needed), showing mean ± sd and worst task. A verdict says whether the measurements agree with the rules, are too close to call, or disagree. Results are cached per scenario, and the lab's trained experts are reused when they match. Training loops now pause based on elapsed time (≤ ~0.1 s UI stalls). `toyConfig`/`seedRuns` in `js/lab.js`, 1 test.
 - 2026-11-21: **Shareable recipe links:** the address bar keeps `#r=…` in sync with the current recipe (experts, training settings, method, knobs, alignment, pinned comparison). 🔗 Share copies it, with clipboard fallbacks. Opening or pasting a link restores the recipe, retraining only when the experts or training settings differ. Decoding is strict: unknown methods, skills or regions are rejected, and knobs are clamped. `js/share.js`, 2 tests. Also fixed an uncaught error when switching to a scenario with more experts.
 - 2026-11-21: **Recipe advisor** (topbar ✨ and Atlas): 7 questions about your real models (shared base, same skill or different, count, input overlap, data, training budget, serving). Live top-3 recipes with reasons and caveats, other options that fit, ruled-out methods with why, and situation notes. Opens a pick in the Lab on the closest scenario (with alignment if needed) or in Export. Pure rules in `js/advisor.js`, with 4 tests.
 - 2026-11-21: **Lab compare mode:** pin a recipe as A, tweak the method or knobs, and see both maps side by side with per-task "vs A" deltas, a B-vs-A box (accuracy, retention, % of predictions that differ, inference cost, requirements, seed-noise caution) and Swap. The pin survives scenario changes and shows a lock if it can't run.

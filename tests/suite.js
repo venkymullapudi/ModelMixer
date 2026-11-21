@@ -199,6 +199,18 @@
       assert(best >= (scores.linear || 0) - 0.005, `best TV ${pct(best)} vs linear ${pct(scores.linear || 0)}`);
     });
 
+    test('seedRuns + summarizeSeeds agree with direct scoring', () => {
+      const ids = ['linear', 'ties'];
+      const runs = MM.seedRuns([T, T], ids, false, (id, K) => params(id, K));
+      const sum = MM.summarizeSeeds(runs, ids);
+      sum.forEach((x) => {
+        const direct = MM.scoreMethod(T, ctx, x.id, params(x.id, T.K)).avg;
+        assert(Math.abs(x.mean - direct) < 1e-12 && x.sd === 0, `${x.id}: ${x.mean} vs ${direct}, sd ${x.sd}`);
+      });
+      const cfg = MM.toyConfig('three', 5);
+      assert(cfg.experts.length === 3 && cfg.seed === 5 && cfg.hidden === 32, JSON.stringify(cfg));
+    });
+
     test('Linear with weights [1, 0] reproduces Expert A', () => {
       const p = params('linear', T.K);
       p.weights = [1, 0];

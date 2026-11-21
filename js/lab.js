@@ -149,5 +149,24 @@
     return { perTask, disagree: dis / tot, dAvg: b.avg - a.avg, dRetention: b.retention - a.retention };
   }
 
-  Object.assign(MM, { recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  /** Training config for a built-in scenario at the toy defaults (independent of the user's lab tweaks). */
+  function toyConfig(scenarioId, seed) {
+    const sc = MM.SCENARIOS.find((x) => x.id === scenarioId);
+    return { experts: sc.experts.map((e) => ({ ...e })), init: sc.init, hidden: 32, ftSteps: 250, seed };
+  }
+
+  /** Score `ids` on every bundle (one per seed). Returns runs in the shape summarizeSeeds() expects. */
+  function seedRuns(bundles, ids, align, paramsFor) {
+    return bundles.map((T) => {
+      const ctx = bundleCtx(T, align);
+      const run = {};
+      for (const id of ids) {
+        const r = scoreMethod(T, ctx, id, paramsFor(id, T.K));
+        run[id] = r.blocked ? { blocked: r.blocked } : { avg: r.avg, retention: r.retention, accs: r.accs };
+      }
+      return run;
+    });
+  }
+
+  Object.assign(MM, { toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

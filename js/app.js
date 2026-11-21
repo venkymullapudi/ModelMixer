@@ -733,9 +733,9 @@
           prog(`Seed ${s + 1}/${ROBUST_SEEDS}: training experts…`);
           await frame();
           const it = MM.trainBundle({ ...cfg, seed: seeds[s] });
-          let r, k = 0;
+          let r, tick = performance.now();
           while (!(r = it.next()).done) {
-            if (++k % 150 === 0) { await frame(); if (token !== robustToken) return; }
+            if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (token !== robustToken) return; }
           }
           bundle = r.value;
         }
@@ -1053,7 +1053,68 @@
     renderAdvisor();
     if (typeof advDlg.showModal === 'function') { if (!advDlg.open) advDlg.showModal(); } else advDlg.setAttribute('open', '');
   }
-  function closeAdvisor() { if (advDlg.open) { if (typeof advDlg.close === 'function') advDlg.close(); else advDlg.removeAttribute('open'); } }
+  function closeAdvisor() { evToken++; if (advDlg.open) { if (typeof advDlg.close === 'function') advDlg.close(); else advDlg.removeAttribute('open'); } }
+  // ---- measured evidence: each top pick, run on the closest toy scenario over EV_SEEDS seeds ----
+  const EV_SEEDS = [7, 108, 209];
+  const evBundles = {}; // scenarioId -> trained bundles (one per seed)
+  const evCache = {}; // `${scenario}|${align}|${id}` -> seed summary
+  let evToken = 0;
+  const evKey = (r, id) => `${r.scenario}|${r.align ? 1 : 0}|${id}`;
+  function evidenceHTML(id, r, sc) {
+    const e = evCache[evKey(r, id)];
+    if (!e) return `<span class="ev-wait"><span class="spinner"></span> Measuring on the ${sc.name} toy…</span>`;
+    if (e.blocked) return `<span class="muted">Can’t run on the ${sc.name} toy: ${e.blocked}</span>`;
+    const tone = e.mean > 0.95 ? 'good' : e.mean > 0.85 ? 'mid' : 'bad';
+    return `<span class="ev-label">Measured on the ${sc.name} toy${r.align ? ' (aligned)' : ''}</span>
+      <span class="ev-val ${tone}">${pct(e.mean)} <small>± ${(e.sd * 100).toFixed(1)}</small></span>
+      <span class="ev-sub">worst task ${pct(e.worstTask)} · ${e.seeds} seeds · default knobs</span>`;
+  }
+  function evidenceVerdict(r, sc) {
+    const top = r.recs.slice(0, 3).map((x) => ({ id: x.id, e: evCache[evKey(r, x.id)] }));
+    if (top.some((x) => !x.e)) return '<span class="muted">Checking these picks on a toy that resembles your setup…</span>';
+    const ok = top.filter((x) => !x.e.blocked);
+    if (ok.length < 2) return '';
+    const best = ok.reduce((a, b) => (b.e.mean > a.e.mean ? b : a));
+    const first = ok[0];
+    const name = (id) => MM.METHOD_BY_ID[id].name;
+    if (best.id === first.id) return `<b>Measurements agree:</b> ${name(first.id)} also scores best of these on the ${sc.name} toy.`;
+    const gap = best.e.mean - first.e.mean;
+    if (gap <= best.e.sd + first.e.sd) return `<b>Too close to call:</b> on the ${sc.name} toy, ${name(best.id)} edges ${name(first.id)} by ${(gap * 100).toFixed(1)} pts, within seed noise.`;
+    return `<b>Measurements disagree:</b> on the ${sc.name} toy, ${name(best.id)} beats the rule-based #1 (${name(first.id)}) by ${(gap * 100).toFixed(1)} pts. Worth trying both.`;
+  }
+  async function measureEvidence(r) {
+    const token = ++evToken;
+    const ids = r.recs.slice(0, 3).map((x) => x.id).filter((id) => !evCache[evKey(r, id)]);
+    if (!ids.length) return;
+    const sc = MM.SCENARIOS.find((x) => x.id === r.scenario);
+    await frame();
+    if (!evBundles[r.scenario]) {
+      const bundles = [];
+      for (const seed of EV_SEEDS) {
+        const cfg = MM.toyConfig(r.scenario, seed);
+        // Reuse the lab's trained experts when they are exactly this toy config (saves ~3 s).
+        if (T && T.experts && !training && trainKey(S) === trainKey(cfg)) { bundles.push(T); continue; }
+        const it = MM.trainBundle(cfg);
+        let st, tick = performance.now();
+        while (!(st = it.next()).done) {
+          if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (token !== evToken) return; }
+        }
+        bundles.push(st.value);
+      }
+      evBundles[r.scenario] = bundles;
+    }
+    for (const id of ids) {
+      await frame();
+      if (token !== evToken) return;
+      const runs = MM.seedRuns(evBundles[r.scenario], [id], r.align, (mid, K) => MM.defaultParams(MM.METHOD_BY_ID[mid], K));
+      evCache[evKey(r, id)] = MM.summarizeSeeds(runs, [id])[0];
+      const el = $(`#advRecs [data-ev="${id}"]`);
+      if (el) el.innerHTML = evidenceHTML(id, r, sc);
+    }
+    const v = $('#evVerdict');
+    if (v && token === evToken) v.innerHTML = evidenceVerdict(r, sc);
+  }
+
   function renderAdvisor() {
     const a = Object.assign({}, MM.ADVISOR_DEFAULTS, S.advisor);
     $('#advQs').innerHTML = MM.ADVISOR_QUESTIONS.map((q) => `<div class="adv-q"><h4>${q.q}</h4>${q.hint ? `<small>${q.hint}</small>` : ''}
@@ -1069,6 +1130,7 @@
       return `<div class="rec ${i === 0 ? 'first' : ''}" style="--fc:${f.color}">
         <div class="rec-top"><span class="rec-rank">#${i + 1}</span><b>${m.name}</b><span class="fam-tag" style="--fc:${f.color}">${f.name}</span><span class="badge">${cost(m)}</span></div>
         <ul>${pros.map((t) => `<li class="pro">${t}</li>`).join('')}${cons.map((t) => `<li class="con">${t}</li>`).join('')}${!pros.length && !cons.length ? `<li class="pro">${m.tagline}</li>` : ''}</ul>
+        <div class="evidence" data-ev="${x.id}">${evidenceHTML(x.id, r, sc)}</div>
         <div class="rec-actions">
           <button class="btn sm ${i === 0 ? 'primary' : ''}" data-adv-try="${x.id}">Try it in the Lab · ${sc.name}${r.align ? ' + alignment' : ''}</button>
           <button class="btn ghost sm" data-adv-export="${x.id}">${m.mergekit ? 'Export mergekit config' : 'Open-source pointers'}</button>
@@ -1076,7 +1138,9 @@
     }).join('');
     const alts = r.recs.slice(3).map((x) => `<div class="alt"><b>${MM.METHOD_BY_ID[x.id].name}</b><span>${uniq(x.caveats)[0] || uniq(x.reasons)[0] || MM.METHOD_BY_ID[x.id].tagline}</span></div>`).join('');
     const outs = r.excluded.map((x) => `<div class="alt"><b>${MM.METHOD_BY_ID[x.id].name}</b><span>${x.why}</span></div>`).join('');
+    measureEvidence(r);
     $('#advRecs').innerHTML = `${r.notes.map((n) => `<div class="adv-note">${n}</div>`).join('')}
+      ${cards ? `<div class="ev-verdict" id="evVerdict">${evidenceVerdict(r, sc)}</div>` : ''}
       ${cards || '<p class="muted">Nothing fits every constraint. Relax one of them (data, training or serving) to see options.</p>'}
       ${alts ? `<details class="adv-more"><summary>Other options that fit (${r.recs.length - 3})</summary>${alts}</details>` : ''}
       ${outs ? `<details class="adv-more"><summary>Ruled out (${r.excluded.length})</summary>${outs}</details>` : ''}`;
