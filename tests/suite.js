@@ -183,6 +183,18 @@
       assert(csv[2] === '7,moe,,,,,"needs data, ""really"""', csv[2]);
     });
 
+    test('blendRanking: promotes a pick that beats the rules\' #1 on every seed, otherwise keeps rule order', () => {
+      const r = (xs) => xs.map((avg) => ({ avg }));
+      const win = MM.blendRanking(['a', 'b', 'c'], { a: r([0.80, 0.82, 0.81]), b: r([0.86, 0.88, 0.85]), c: r([0.79, 0.90, 0.70]) });
+      assert(win.order.join() === 'b,a,c' && win.promoted.id === 'b' && win.promoted.over === 'a', JSON.stringify(win.order));
+      const noisy = MM.blendRanking(['a', 'b', 'c'], { a: r([0.80, 0.82, 0.81]), b: r([0.86, 0.78, 0.85]), c: r([0.7, 0.7, 0.7]) });
+      assert(noisy.order.join() === 'a,b,c' && !noisy.promoted, `noisy: ${noisy.order}`);
+      const two = MM.blendRanking(['a', 'b', 'c'], { a: r([0.5, 0.5, 0.5]), b: r([0.6, 0.6, 0.6]), c: r([0.9, 0.9, 0.9]) });
+      assert(two.order[0] === 'c', 'the bigger consistent winner is promoted');
+      const blocked = MM.blendRanking(['a', 'b'], { a: r([0.8, 0.8, 0.8]), b: [{ blocked: 'x' }, { blocked: 'x' }, { blocked: 'x' }] });
+      assert(blocked.order.join() === 'a,b', 'a blocked pick is never promoted');
+    });
+
     // ---------- training ----------
     const cfgTwo = scenario('two');
     const T = MM.trainBundleSync(cfgTwo);

@@ -77,9 +77,14 @@ with sync_playwright() as p:
 
     # 4. Recipe advisor with measured evidence
     page.click("#openAdvisor")
-    page.wait_for_function("() => !/Checking/.test(document.querySelector('#evVerdict').textContent)", timeout=60000)
+    # show the measured re-ranking: no shared base, any serving → rules pick Ensemble, measurement promotes another
+    page.click('[data-adv="base"] [data-v="no"]')
+    page.click('[data-adv="deploy"] [data-v="any"]')
+    page.wait_for_function("() => /Re-ranked|agree|close|disagree/.test(document.querySelector('#evVerdict').textContent)", timeout=90000)
     page.wait_for_timeout(300)
     page.locator("#advisor").screenshot(path=str(OUT / "advisor.png"))
+    page.click('[data-adv="base"] [data-v="yes"]')
+    page.click('[data-adv="deploy"] [data-v="single"]')
     page.click("#closeAdvisor")
     print("advisor")
 

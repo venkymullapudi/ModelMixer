@@ -1401,6 +1401,7 @@
   const EV_SEEDS = [7, 108, 209];
   const evBundles = {}; // scenarioId -> trained bundles (one per seed)
   const evCache = {}; // `${scenario}|${align}|${id}` -> seed summary
+  const evSeeds = {}; // same key -> per-seed results, for the paired re-ranking
   let evToken = 0;
   const evKey = (r, id) => `${r.scenario}|${r.align ? 1 : 0}|${id}`;
   function evidenceHTML(id, r, sc) {
@@ -1412,7 +1413,12 @@
       <span class="ev-val ${tone}">${pct(e.mean)} <small>± ${(e.sd * 100).toFixed(1)}</small></span>
       <span class="ev-sub">worst task ${pct(e.worstTask)} · ${e.seeds} seeds · default knobs</span>`;
   }
-  function evidenceVerdict(r, sc) {
+  function evidenceVerdict(r, sc, blend) {
+    const nm = (id) => MM.METHOD_BY_ID[id].name;
+    if (blend && blend.promoted) {
+      const { id, over, d } = blend.promoted;
+      return `<b>Re-ranked by measurement:</b> on the ${sc.name} toy, ${nm(id)} beat the rules’ #1 (${nm(over)}) on ${d.wins}/${d.n} seeds by ${(d.mean * 100).toFixed(1)} pts on average, so it moves to #1. The rules still describe your real models, so try both.`;
+    }
     const top = r.recs.slice(0, 3).map((x) => ({ id: x.id, e: evCache[evKey(r, x.id)] }));
     if (top.some((x) => !x.e)) return '<span class="muted">Checking these picks on a toy that resembles your setup…</span>';
     const ok = top.filter((x) => !x.e.blocked);
@@ -1451,11 +1457,18 @@
       if (token !== evToken) return;
       const runs = MM.seedRuns(evBundles[r.scenario], [id], r.align, (mid, K) => MM.defaultParams(MM.METHOD_BY_ID[mid], K));
       evCache[evKey(r, id)] = MM.summarizeSeeds(runs, [id])[0];
+      evSeeds[evKey(r, id)] = runs.map((run) => run[id]);
       const el = $(`#advRecs [data-ev="${id}"]`);
       if (el) el.innerHTML = evidenceHTML(id, r, sc);
     }
-    const v = $('#evVerdict');
-    if (v && token === evToken) v.innerHTML = evidenceVerdict(r, sc);
+    // all three measured: re-render so the cards can be re-ranked by the paired evidence
+    if (token === evToken && advDlg.open) renderAdvisor();
+  }
+  /** Paired blend of rules and measurement, once all top picks are measured; null until then. */
+  function advisorBlend(r) {
+    const ids = r.recs.slice(0, 3).map((x) => x.id);
+    if (ids.length < 2 || ids.some((id) => !evSeeds[evKey(r, id)])) return null;
+    return MM.blendRanking(ids, Object.fromEntries(ids.map((id) => [id, evSeeds[evKey(r, id)]])));
   }
 
   function renderAdvisor() {
@@ -1466,12 +1479,16 @@
     const sc = MM.SCENARIOS.find((x) => x.id === r.scenario);
     const uniq = (xs) => Array.from(new Set(xs));
     const cost = (m) => (m.inferenceK === true ? 'K× compute' : m.inferenceK === 'memory' ? 'K× memory' : '1× model');
-    const cards = r.recs.slice(0, 3).map((x, i) => {
+    const blend = advisorBlend(r);
+    const top3 = r.recs.slice(0, 3);
+    const ordered = blend ? blend.order.map((id) => top3.find((x) => x.id === id)) : top3;
+    const cards = ordered.map((x, i) => {
       const m = MM.METHOD_BY_ID[x.id], f = MM.FAMILIES[m.family];
+      const moved = blend && blend.promoted ? (x.id === blend.promoted.id ? 'up' : x.id === blend.promoted.over ? 'down' : '') : '';
       const pros = uniq([...x.reasons.filter((t) => !/^Shared base/.test(t)), m.pros[0]]).slice(0, 3);
       const cons = uniq([...x.caveats, m.cons[0]]).slice(0, 2);
       return `<div class="rec ${i === 0 ? 'first' : ''}" style="--fc:${f.color}">
-        <div class="rec-top"><span class="rec-rank">#${i + 1}</span><b>${m.name}</b><span class="fam-tag" style="--fc:${f.color}">${f.name}</span><span class="badge">${cost(m)}</span></div>
+        <div class="rec-top"><span class="rec-rank">#${i + 1}</span><b>${m.name}</b><span class="fam-tag" style="--fc:${f.color}">${f.name}</span>${moved === 'up' ? '<span class="badge moved up" title="Promoted: beat the rules’ #1 on the toy under the paired test">↑ measured</span>' : moved === 'down' ? '<span class="badge moved" title="The rules ranked this first">rules’ #1</span>' : ''}<span class="badge">${cost(m)}</span></div>
         <ul>${pros.map((t) => `<li class="pro">${t}</li>`).join('')}${cons.map((t) => `<li class="con">${t}</li>`).join('')}${!pros.length && !cons.length ? `<li class="pro">${m.tagline}</li>` : ''}</ul>
         <div class="evidence" data-ev="${x.id}">${evidenceHTML(x.id, r, sc)}</div>
         <div class="rec-actions">
@@ -1483,7 +1500,7 @@
     const outs = r.excluded.map((x) => `<div class="alt"><b>${MM.METHOD_BY_ID[x.id].name}</b><span>${x.why}</span></div>`).join('');
     measureEvidence(r);
     $('#advRecs').innerHTML = `${r.notes.map((n) => `<div class="adv-note">${n}</div>`).join('')}
-      ${cards ? `<div class="ev-verdict" id="evVerdict">${evidenceVerdict(r, sc)}</div>` : ''}
+      ${cards ? `<div class="ev-verdict" id="evVerdict">${evidenceVerdict(r, sc, blend)}</div>` : ''}
       ${cards || '<p class="muted">Nothing fits every constraint. Relax one of them (data, training or serving) to see options.</p>'}
       ${alts ? `<details class="adv-more"><summary>Other options that fit (${r.recs.length - 3})</summary>${alts}</details>` : ''}
       ${outs ? `<details class="adv-more"><summary>Ruled out (${r.excluded.length})</summary>${outs}</details>` : ''}`;

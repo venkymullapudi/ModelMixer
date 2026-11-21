@@ -576,3 +576,8 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
 .cmp-box .edge { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .cmp-box .edge .verdict { margin: 0; font-size: 12.5px; }
 .cmp-box .edge-msg:empty { display: none; }
+
+/* advisor re-ranking */
+.rec-top .badge.moved { margin-left: 0; color: var(--muted); }
+.rec-top .badge.moved.up { color: #34d399; border-color: rgba(52, 211, 153, 0.45); background: rgba(52, 211, 153, 0.08); }
+.rec-top .badge.moved + .badge { margin-left: auto; }

@@ -114,5 +114,26 @@
     return { answers: a, recs, excluded, notes, scenario, align: a.base === 'no' };
   }
 
-  Object.assign(MM, { ADVISOR_QUESTIONS, ADVISOR_DEFAULTS, adviseRecipe });
+  /**
+   * Blend rules with measurement. ids = top picks in rule order; perSeed[id] = per-seed results
+   * ([{avg, …} | {blocked}], same seeds for every id). A lower pick that beats the rules' #1 under the
+   * paired test (significant, or winning every seed) is promoted to #1; otherwise the rule order stands.
+   */
+  function blendRanking(ids, perSeed) {
+    const n = Math.min(...ids.map((id) => (perSeed[id] || []).length));
+    const runs = Array.from({ length: n }, (_, s) => Object.fromEntries(ids.map((id) => [id, perSeed[id][s]])));
+    const first = ids[0];
+    let best = null;
+    for (const id of ids.slice(1)) {
+      const d = MM.pairedDiff(runs, id, first);
+      if (d.verdict === 'a' && (!best || d.mean > best.d.mean)) best = { id, d };
+    }
+    return {
+      order: best ? [best.id, ...ids.filter((x) => x !== best.id)] : ids.slice(),
+      promoted: best ? { id: best.id, over: first, d: best.d } : null,
+      runs,
+    };
+  }
+
+  Object.assign(MM, { ADVISOR_QUESTIONS, ADVISOR_DEFAULTS, adviseRecipe, blendRanking });
 })();
