@@ -30,6 +30,7 @@ python3 scripts/bundle.py
 | --- | --- |
 | **Mix Lab** | Pick a scenario and experts, choose a mixing method, tune its knobs live. **Pin to compare** freezes a recipe as A so you can tweak B and see both decision maps side by side with per-task deltas. See the merged model's decision boundary, a per-task scorecard against each expert and the base, what the method needs, how it works, its strengths and *missing pieces*, a weight-provenance map and task-vector geometry. |
 | **Arena** | Every method on the same experts: leaderboard (accuracy, retention, inference cost, memory, requirements), a **multi-seed robustness check** (5 seeds, mean ± sd, wins and stability, and a verdict on whether the winner is real), a gallery of decision maps, the A→B interpolation path (loss barriers, with and without neuron alignment) and a λ sweep for Task Arithmetic / TIES / DARE. |
+| **Share** | 🔗 in the top bar copies a link (`…/modelmixer.html#r=…`) that reopens the exact recipe: experts, training settings, method, knobs, alignment and any pinned comparison. The address bar stays in sync too. |
 | **Recipe advisor** | ✨ in the top bar: answer 7 questions about your real models (shared base? data? training budget? how you serve?) and get ranked recipes with reasons, caveats and ruled-out methods. Open a pick in the Lab on the closest scenario, or jump to Export. |
 | **Atlas** | A capability matrix (needs base? data? training? single-model inference? tolerates different inits? handles interference?), a "which mix should I reach for" guide, method families and a glossary. |
 | **Export** | Generates the matching mergekit (`mergekit-yaml` / `mergekit-moe`) config from your lab recipe, plus pointers to open-source implementations for methods mergekit doesn't cover. |
@@ -88,6 +89,7 @@ js/methods.js       method catalog: how it works, pros, missing pieces, requirem
 js/merge.js         merge engine + Git Re-Basin + router + distillation
 js/lab.js           headless core: train experts, build contexts, score methods, seed summaries
 js/advisor.js       recipe advisor rules (situation → ranked methods)
+js/share.js         recipe ⇄ URL-safe link encoding with strict validation
 js/viz.js           decision-boundary canvases, provenance maps, SVG charts
 js/app.js           state, training loop, Lab / Arena / Atlas / Export views
 scripts/bundle.py   inlines everything into dist/modelmixer.html (--tests: browser test page)

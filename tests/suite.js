@@ -78,6 +78,46 @@
       assert(c.blocked === 'x', 'blocked passthrough');
     });
 
+    // ---------- shareable recipe links ----------
+    test('Recipe links round-trip experts, settings, knobs and the pin', () => {
+      const r = {
+        experts: [{ task: 'moons', region: 'left' }, { task: 'circles', region: 'right', flip: true }, { task: 'xor', region: 'top' }],
+        init: 'independent', hidden: 64, ftSteps: 375, seed: 4242, align: true,
+        method: 'dare', params: { drop: 0.73, lambda: 1.35, mode: 'linear', seed: 3, weights: [1, 0.5, 0.25] },
+        pin: { method: 'stitch', params: { layers: [2, 0, 1] }, align: false },
+      };
+      const code = MM.encodeRecipe(r);
+      assert(/^[A-Za-z0-9_-]+$/.test(code), 'not URL-safe');
+      const d = MM.decodeRecipe(code);
+      assert(d.ok, d.error);
+      const x = d.recipe;
+      assert(JSON.stringify(x.experts) === JSON.stringify(r.experts), JSON.stringify(x.experts));
+      assert(x.init === 'independent' && x.hidden === 64 && x.ftSteps === 375 && x.seed === 4242 && x.align === true, 'settings');
+      assert(x.method === 'dare' && x.params.drop === 0.73 && x.params.lambda === 1.35 && x.params.mode === 'linear' && x.params.seed === 3, JSON.stringify(x.params));
+      assert(x.params.weights.join() === '1,0.5,0.25', 'weights');
+      assert(x.pin && x.pin.method === 'stitch' && x.pin.params.layers.join() === '2,0,1', 'pin');
+      assert(MM.recipeFromHash(`https://x.io/modelmixer.html#r=${code}`) === code && MM.recipeFromHash('#other') === null, 'hash parse');
+      return `${code.length} chars`;
+    });
+    test('Recipe links reject or repair bad input', () => {
+      assert(!MM.decodeRecipe('not-a-recipe!!').ok, 'garbage accepted');
+      assert(!MM.decodeRecipe('').ok, 'empty accepted');
+      const enc = (o) => btoa(JSON.stringify(o)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const base = { v: 1, e: [['moons', 'left', 0], ['circles', 'right', 0]], i: 's', h: 32, f: 250, s: 7, a: 0, m: 'ties', p: {} };
+      assert(!MM.decodeRecipe(enc({ ...base, m: 'evil' })).ok, 'unknown method accepted');
+      assert(!MM.decodeRecipe(enc({ ...base, e: [['moons', 'mars', 0], ['circles', 'right', 0]] })).ok, 'unknown region accepted');
+      assert(!MM.decodeRecipe(enc({ ...base, e: [['moons', 'left', 0]] })).ok, 'single expert accepted');
+      assert(!MM.decodeRecipe(enc({ ...base, v: 9 })).ok, 'future version accepted');
+      const d = MM.decodeRecipe(enc({ ...base, h: 999, f: 99999, s: -5, p: { density: 7, lambda: 'x', bogus: 1 }, pn: { m: 'nope' } }));
+      assert(d.ok, d.error);
+      const x = d.recipe;
+      assert(x.hidden === 32 && x.ftSteps === 800 && x.seed === 1, `settings ${x.hidden}/${x.ftSteps}/${x.seed}`);
+      assert(x.params.density === 1 && x.params.lambda === 1 && !('bogus' in x.params), JSON.stringify(x.params));
+      assert(x.pin === null, 'unknown pin method should be dropped');
+      const st = MM.decodeRecipe(enc({ ...base, m: 'stitch', p: { layers: [2, 9, -1] } }));
+      assert(st.recipe.params.layers.join() === '1,1,0', `layers clamped to K=2: ${st.recipe.params.layers}`);
+    });
+
     // ---------- recipe advisor ----------
     const advise = (o) => MM.adviseRecipe(o);
     const top = (r, n) => r.recs.slice(0, n || 3).map((x) => x.id);

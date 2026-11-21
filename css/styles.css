@@ -472,7 +472,8 @@ table.board.robust td.mono { font-family: var(--mono); white-space: nowrap; }
 /* ---------- recipe advisor ---------- */
 .advisor-btn { margin-left: auto; display: inline-flex; gap: 6px; align-items: center; border-color: rgba(167, 139, 250, 0.45); background: linear-gradient(135deg, rgba(109, 139, 255, 0.16), rgba(255, 107, 181, 0.12)); }
 .advisor-btn:hover { border-color: #a78bfa; }
-.advisor-btn + .status { margin-left: 12px; }
+.share-btn { margin-left: 8px; display: inline-flex; gap: 6px; align-items: center; }
+.share-btn + .status { margin-left: 12px; }
 dialog.advisor { width: min(1080px, calc(100vw - 32px)); max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line2); border-radius: 18px; background: var(--panel-solid); color: var(--text); box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.7); overflow: hidden; }
 dialog.advisor[open] { display: flex; flex-direction: column; }
 dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blur(4px); }
@@ -507,7 +508,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
 .adv-more .alt { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; color: var(--muted); }
 .adv-more .alt b { color: #cdd3e3; min-width: 120px; }
 @media (max-width: 820px) {
-  .advisor-btn span { display: none; }
+  .advisor-btn span, .share-btn span { display: none; }
   .adv-body { grid-template-columns: minmax(0, 1fr); }
   .adv-qs { border-right: 0; border-bottom: 1px solid var(--line); }
 }

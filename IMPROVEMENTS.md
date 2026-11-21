@@ -13,9 +13,8 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Shareable recipe links:** encode scenario, experts, method and knobs in the URL hash, with a
-   "Copy link" button.
-2. **Advisor evidence:** under each recommendation, show the toy result from the closest scenario (multi-seed mean ± sd), so every pick comes with measured evidence as well as rules.
+1. **Advisor evidence:** under each recommendation, show the toy result from the closest scenario (multi-seed mean ± sd), so every pick comes with measured evidence as well as rules.
+2. **Hosted demo (needs owner OK):** a GitHub Pages workflow that publishes `dist/modelmixer.html`, so recipe links can be shared as https URLs. The repo owner has to enable Pages in the repo settings.
 3. **Knob sensitivity sweep:** for the active method, sweep its main knob (density, drop rate, λ, t) and
    plot accuracy against it, with a ±1 sd band from a 3-seed run. Mark the current setting and the most
    forgiving setting.
@@ -33,6 +32,7 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Done
 
+- 2026-11-21: **Shareable recipe links:** the address bar keeps `#r=…` in sync with the current recipe (experts, training settings, method, knobs, alignment, pinned comparison). 🔗 Share copies it, with clipboard fallbacks. Opening or pasting a link restores the recipe, retraining only when the experts or training settings differ. Decoding is strict: unknown methods, skills or regions are rejected, and knobs are clamped. `js/share.js`, 2 tests. Also fixed an uncaught error when switching to a scenario with more experts.
 - 2026-11-21: **Recipe advisor** (topbar ✨ and Atlas): 7 questions about your real models (shared base, same skill or different, count, input overlap, data, training budget, serving). Live top-3 recipes with reasons and caveats, other options that fit, ruled-out methods with why, and situation notes. Opens a pick in the Lab on the closest scenario (with alignment if needed) or in Export. Pure rules in `js/advisor.js`, with 4 tests.
 - 2026-11-21: **Lab compare mode:** pin a recipe as A, tweak the method or knobs, and see both maps side by side with per-task "vs A" deltas, a B-vs-A box (accuracy, retention, % of predictions that differ, inference cost, requirements, seed-noise caution) and Swap. The pin survives scenario changes and shows a lock if it can't run.
 - 2026-11-21: **Multi-seed robustness check** in the Arena (5 seeds, mean ± sd, per-seed dots, wins,

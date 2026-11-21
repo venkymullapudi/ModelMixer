@@ -6,7 +6,7 @@ const vm = require('vm');
 
 globalThis.window = globalThis;
 const root = path.join(__dirname, '..');
-for (const f of ['nn', 'data', 'methods', 'merge', 'lab', 'advisor']) {
+for (const f of ['nn', 'data', 'methods', 'merge', 'lab', 'advisor', 'share']) {
   const file = path.join(root, 'js', `${f}.js`);
   vm.runInThisContext(fs.readFileSync(file, 'utf8'), { filename: file });
 }

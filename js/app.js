@@ -42,6 +42,32 @@
       const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor } = S;
       localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor }));
     } catch (e) { /* ignore */ }
+    syncHash();
+  }
+
+  // ---------------- shareable recipe links (#r=…) ----------------
+  let hashTimer;
+  const linkable = () => /^(https?|file):$/.test(location.protocol);
+  function currentRecipe() {
+    return { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed: S.seed, align: S.align, method: S.method, params: S.params[S.method], pin: S.pin };
+  }
+  function recipeLink() {
+    return `${linkable() ? location.href.split('#')[0] : 'modelmixer.html'}#r=${MM.encodeRecipe(currentRecipe())}`;
+  }
+  // Keep the address bar pointing at the current recipe, so the URL itself is always shareable.
+  function syncHash() {
+    clearTimeout(hashTimer);
+    hashTimer = setTimeout(() => {
+      try { if (linkable()) history.replaceState(null, '', `#r=${MM.encodeRecipe(currentRecipe())}`); } catch (e) { /* sandboxed */ }
+    }, 300);
+  }
+  const trainKey = (r) => JSON.stringify([r.experts, r.init, r.hidden, r.ftSteps, r.seed]);
+  function applyRecipe(r) {
+    S.experts = r.experts; S.init = r.init; S.hidden = r.hidden; S.ftSteps = r.ftSteps; S.seed = r.seed;
+    S.align = r.align; S.method = r.method; S.params[r.method] = r.params; S.pin = r.pin;
+    if (r.pin) S.params[r.pin.method] = S.params[r.pin.method] || MM.defaultParams(MM.METHOD_BY_ID[r.pin.method]);
+    const sc = MM.SCENARIOS.find((x) => sameScenario(x));
+    S.scenario = sc ? sc.id : 'custom';
   }
 
   let T = null; // trained bundle
@@ -129,8 +155,8 @@
     const sc = MM.SCENARIOS.find((s) => s.id === S.scenario);
     const taskOpts = (v) => Object.entries(MM.TASKS).map(([k, t]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${t.name}</option>`).join('');
     const regOpts = (v) => Object.entries(MM.REGIONS).map(([k, r]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${r.name}</option>`).join('');
-    const ready = T && T.experts && !training;
-    const accBadge = (i) => (ready ? `<span class="acc" title="Accuracy on its own task">${pct(T.expertAccs[i][i])}</span>` : '');
+    const ready = T && T.experts && !training && T.K === K; // T can lag behind S.experts until retraining starts
+    const accBadge = (i) => (ready && T.expertAccs[i] ? `<span class="acc" title="Accuracy on its own task">${pct(T.expertAccs[i][i])}</span>` : '');
     $('#ingredients').innerHTML = `
       <div class="panel-title"><span>Ingredients</span><span class="hint">the experts you mix</span></div>
       <div class="scenarios">
@@ -978,8 +1004,36 @@
     if (!b) return;
     S.exp.dtype = b.dataset.v; persist(); renderExport();
   });
-  async function copy(text) {
-    try { await navigator.clipboard.writeText(text); toast('Copied to clipboard'); } catch (e) { toast('Copy failed — select the text manually'); }
+  function legacyCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    ta.remove();
+    return ok;
+  }
+  async function copy(text, msg, manualFallback) {
+    try { await navigator.clipboard.writeText(text); toast(msg || 'Copied to clipboard'); return; } catch (e) { /* try the legacy path */ }
+    if (legacyCopy(text)) { toast(msg || 'Copied to clipboard'); return; }
+    if (manualFallback) { try { window.prompt('Copy this link:', text); return; } catch (e) { /* prompts blocked */ } }
+    toast('Copy failed — select the text manually');
+  }
+  $('#shareLink').addEventListener('click', () => copy(recipeLink(), 'Recipe link copied: it opens this exact mix', true));
+  window.addEventListener('hashchange', () => openRecipe(MM.recipeFromHash(location.hash)));
+  // Open an encoded recipe in the running app (pasted link / hash change). Returns true if applied.
+  function openRecipe(code) {
+    if (!code || code === MM.encodeRecipe(currentRecipe())) return false;
+    const d = MM.decodeRecipe(code);
+    if (!d.ok) { toast(`Couldn’t open that link: ${d.error}`); return false; }
+    const retrain = trainKey(d.recipe) !== trainKey(S);
+    applyRecipe(d.recipe);
+    arenaStale = robustStale = true;
+    setTab('lab');
+    renderPicker();
+    if (retrain) scheduleRetrain(); else { persist(); renderIngredients(); refresh(); }
+    toast('Opened a shared recipe');
+    return true;
   }
   $('#copyYaml').addEventListener('click', () => copy($('#yaml').textContent));
   $('#copyCmd').addEventListener('click', () => copy($('#cmd').textContent));
@@ -1085,12 +1139,20 @@
   });
 
   // ---------------- boot ----------------
+  let sharedMsg = null;
+  const code0 = MM.recipeFromHash(location.hash);
+  if (code0) {
+    const d = MM.decodeRecipe(code0);
+    if (d.ok) { applyRecipe(d.recipe); S.tab = 'lab'; persist(); sharedMsg = 'Opened a shared recipe'; }
+    else sharedMsg = `Couldn’t open the shared link: ${d.error}`;
+  }
   renderIngredients();
   renderPicker();
   renderControls();
   renderStageHead(MM.METHOD_BY_ID[S.method], null);
   setTab(S.tab === 'lab' || S.tab === 'atlas' || S.tab === 'export' || S.tab === 'arena' ? S.tab : 'lab');
   train();
+  if (sharedMsg) toast(sharedMsg);
 
-  window.ModelMixer = { state: S, get trained() { return T; }, compute, getCtx };
+  window.ModelMixer = { state: S, get trained() { return T; }, compute, getCtx, recipeLink, openRecipe };
 })();
