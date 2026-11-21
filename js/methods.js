@@ -128,6 +128,20 @@
       ],
     },
     {
+      id: 'sce', name: 'SCE', short: 'SCE', family: 'tv',
+      tagline: 'Select where experts differ, weight them by energy, erase minority signs.',
+      how: ['Select: keep only the entries whose task-vector values vary most across experts (top-k by variance).', 'Calculate: weight each expert by its share of the squared update over the selected entries.', 'Erase: elect a sign per entry and drop the minority, then take the energy-weighted mean.'],
+      formula: 'ηᵢ = Σ τᵢ² / Σⱼ Σ τⱼ²  (selected),   τ = Σ_{agree} ηᵢτᵢ / Σ_{agree} ηᵢ',
+      pros: ['Focuses on the parameters where experts genuinely disagree', 'Automatic per-tensor expert weights', 'Sign erase handles conflicts like TIES'],
+      cons: ['Drops shared updates (low variance), which can carry common skill', 'Two knobs (top-k, λ)', 'Needs the base model'],
+      req: { base: true, data: false, training: false }, multiInit: false, interference: 'yes',
+      mergekit: 'sce', oss: [OSS.mergekit], paper: 'Wan et al., 2024 — FuseChat (SCE merging)',
+      params: [
+        { key: 'topk', type: 'range', label: 'Select top-k (fraction by variance)', min: 0.05, max: 1, step: 0.01, default: 0.7 },
+        { key: 'lambda', type: 'range', label: 'Scaling λ', min: 0, max: 2, step: 0.05, default: 1 },
+      ],
+    },
+    {
       id: 'breadcrumbs', name: 'Model Breadcrumbs', short: 'Breadcrumbs', family: 'tv',
       tagline: 'Drop the tiny updates AND the huge outliers; keep the middle.',
       how: ['Sort each task vector’s entries by magnitude.', 'Remove the top γ% outliers and everything below the density cut.', 'Add the surviving "breadcrumbs" to the base.'],
@@ -163,6 +177,17 @@
       req: { base: false, data: true, training: false }, multiInit: false, interference: 'yes',
       mergekit: null, oss: [OSS.regmean, OSS.fusion], paper: 'Jin et al., 2023 — Dataless Knowledge Fusion (RegMean)',
       params: [{ key: 'alpha', type: 'range', label: 'Off-diagonal scale α', min: 0, max: 1, step: 0.01, default: 0.9 }],
+    },
+    {
+      id: 'adamerging', name: 'AdaMerging', short: 'AdaMerging', family: 'data',
+      tagline: 'Learn the merge coefficients from unlabeled inputs by making the model confident.',
+      how: ['Start from task arithmetic with every coefficient λ = 0.3.', 'Run unlabeled inputs through the merged model and measure prediction entropy.', 'Adjust one λ per expert (task-wise) or per expert per layer (layer-wise) to lower the entropy. No labels and no weight training.'],
+      formula: 'min_λ  E_x[ H(p_θ(·|x)) ],   θ = θ_base + Σₖ λₖ,ₗ · τₖ',
+      pros: ['Finds per-layer coefficients you would never hand-tune', 'Needs only unlabeled inputs', 'Only K×L numbers are learned, so it is fast'],
+      cons: ['Needs the base model and a sample of inputs', 'Entropy can reward confidently wrong predictions', 'Not in mergekit: export the learned λs as gradients'],
+      req: { base: true, data: true, training: false }, multiInit: false, interference: 'yes',
+      mergekit: null, oss: [OSS.fusion], paper: 'Yang et al., 2024 — AdaMerging (ICLR)',
+      params: [{ key: 'mode', type: 'select', label: 'Coefficients', options: [['layer', 'Layer-wise (K×L)'], ['task', 'Task-wise (K)']], default: 'layer' }],
     },
     {
       id: 'stitch', name: 'Layer Stitch', short: 'Stitch', family: 'surgery',
@@ -233,6 +258,8 @@
     task_arithmetic: 'λ is usually tuned on held-out data; values between 0.3 and 1 are common starting points.',
     della: 'Like DARE, DELLA tolerates aggressive sparsity on large language models. ε sets how strongly magnitude shifts the keep probability; tune density first.',
     karcher: 'Typically used to blend several fine-tunes of one model, where SLERP would need to be chained pairwise.',
+    sce: 'Used to fuse chat models in FuseChat. Lowering top-k concentrates the merge on the entries where experts disagree; keep λ near 1 to start.',
+    adamerging: 'Run a few hundred unlabeled inputs per task through the merge. The paper reports clear gains over task arithmetic on vision models, where layer-wise coefficients helped most.',
     regmean: 'Collect layer-input Gram matrices from a few hundred examples per task. α a little below 1 is the usual stabiliser.',
   };
   for (const id in REAL_WORLD) METHOD_BY_ID[id].realWorld = REAL_WORLD[id];
@@ -242,7 +269,7 @@
   const GRADIENT = {
     slerp: { key: 't', label: 't', min: 0, max: 1, step: 0.01 },
     linear: { key: 'balance', label: 'A ↔ B balance', min: 0, max: 1, step: 0.05, k2: true },
-    task_arithmetic: LAMBDA_G, ties: LAMBDA_G, dare: LAMBDA_G, della: LAMBDA_G, breadcrumbs: LAMBDA_G,
+    task_arithmetic: LAMBDA_G, ties: LAMBDA_G, dare: LAMBDA_G, della: LAMBDA_G, sce: LAMBDA_G, breadcrumbs: LAMBDA_G,
   };
   for (const id in GRADIENT) METHOD_BY_ID[id].gradient = GRADIENT[id];
   const LAYER_NAMES = ['Hidden 1', 'Hidden 2', 'Output'];

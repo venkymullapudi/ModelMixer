@@ -1425,6 +1425,20 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       ],
     },
     {
+      id: 'sce', name: 'SCE', short: 'SCE', family: 'tv',
+      tagline: 'Select where experts differ, weight them by energy, erase minority signs.',
+      how: ['Select: keep only the entries whose task-vector values vary most across experts (top-k by variance).', 'Calculate: weight each expert by its share of the squared update over the selected entries.', 'Erase: elect a sign per entry and drop the minority, then take the energy-weighted mean.'],
+      formula: 'ηᵢ = Σ τᵢ² / Σⱼ Σ τⱼ²  (selected),   τ = Σ_{agree} ηᵢτᵢ / Σ_{agree} ηᵢ',
+      pros: ['Focuses on the parameters where experts genuinely disagree', 'Automatic per-tensor expert weights', 'Sign erase handles conflicts like TIES'],
+      cons: ['Drops shared updates (low variance), which can carry common skill', 'Two knobs (top-k, λ)', 'Needs the base model'],
+      req: { base: true, data: false, training: false }, multiInit: false, interference: 'yes',
+      mergekit: 'sce', oss: [OSS.mergekit], paper: 'Wan et al., 2024 — FuseChat (SCE merging)',
+      params: [
+        { key: 'topk', type: 'range', label: 'Select top-k (fraction by variance)', min: 0.05, max: 1, step: 0.01, default: 0.7 },
+        { key: 'lambda', type: 'range', label: 'Scaling λ', min: 0, max: 2, step: 0.05, default: 1 },
+      ],
+    },
+    {
       id: 'breadcrumbs', name: 'Model Breadcrumbs', short: 'Breadcrumbs', family: 'tv',
       tagline: 'Drop the tiny updates AND the huge outliers; keep the middle.',
       how: ['Sort each task vector’s entries by magnitude.', 'Remove the top γ% outliers and everything below the density cut.', 'Add the surviving "breadcrumbs" to the base.'],
@@ -1460,6 +1474,17 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       req: { base: false, data: true, training: false }, multiInit: false, interference: 'yes',
       mergekit: null, oss: [OSS.regmean, OSS.fusion], paper: 'Jin et al., 2023 — Dataless Knowledge Fusion (RegMean)',
       params: [{ key: 'alpha', type: 'range', label: 'Off-diagonal scale α', min: 0, max: 1, step: 0.01, default: 0.9 }],
+    },
+    {
+      id: 'adamerging', name: 'AdaMerging', short: 'AdaMerging', family: 'data',
+      tagline: 'Learn the merge coefficients from unlabeled inputs by making the model confident.',
+      how: ['Start from task arithmetic with every coefficient λ = 0.3.', 'Run unlabeled inputs through the merged model and measure prediction entropy.', 'Adjust one λ per expert (task-wise) or per expert per layer (layer-wise) to lower the entropy. No labels and no weight training.'],
+      formula: 'min_λ  E_x[ H(p_θ(·|x)) ],   θ = θ_base + Σₖ λₖ,ₗ · τₖ',
+      pros: ['Finds per-layer coefficients you would never hand-tune', 'Needs only unlabeled inputs', 'Only K×L numbers are learned, so it is fast'],
+      cons: ['Needs the base model and a sample of inputs', 'Entropy can reward confidently wrong predictions', 'Not in mergekit: export the learned λs as gradients'],
+      req: { base: true, data: true, training: false }, multiInit: false, interference: 'yes',
+      mergekit: null, oss: [OSS.fusion], paper: 'Yang et al., 2024 — AdaMerging (ICLR)',
+      params: [{ key: 'mode', type: 'select', label: 'Coefficients', options: [['layer', 'Layer-wise (K×L)'], ['task', 'Task-wise (K)']], default: 'layer' }],
     },
     {
       id: 'stitch', name: 'Layer Stitch', short: 'Stitch', family: 'surgery',
@@ -1530,6 +1555,8 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     task_arithmetic: 'λ is usually tuned on held-out data; values between 0.3 and 1 are common starting points.',
     della: 'Like DARE, DELLA tolerates aggressive sparsity on large language models. ε sets how strongly magnitude shifts the keep probability; tune density first.',
     karcher: 'Typically used to blend several fine-tunes of one model, where SLERP would need to be chained pairwise.',
+    sce: 'Used to fuse chat models in FuseChat. Lowering top-k concentrates the merge on the entries where experts disagree; keep λ near 1 to start.',
+    adamerging: 'Run a few hundred unlabeled inputs per task through the merge. The paper reports clear gains over task arithmetic on vision models, where layer-wise coefficients helped most.',
     regmean: 'Collect layer-input Gram matrices from a few hundred examples per task. α a little below 1 is the usual stabiliser.',
   };
   for (const id in REAL_WORLD) METHOD_BY_ID[id].realWorld = REAL_WORLD[id];
@@ -1539,7 +1566,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
   const GRADIENT = {
     slerp: { key: 't', label: 't', min: 0, max: 1, step: 0.01 },
     linear: { key: 'balance', label: 'A ↔ B balance', min: 0, max: 1, step: 0.05, k2: true },
-    task_arithmetic: LAMBDA_G, ties: LAMBDA_G, dare: LAMBDA_G, della: LAMBDA_G, breadcrumbs: LAMBDA_G,
+    task_arithmetic: LAMBDA_G, ties: LAMBDA_G, dare: LAMBDA_G, della: LAMBDA_G, sce: LAMBDA_G, breadcrumbs: LAMBDA_G,
   };
   for (const id in GRADIENT) METHOD_BY_ID[id].gradient = GRADIENT[id];
   const LAYER_NAMES = ['Hidden 1', 'Hidden 2', 'Output'];
@@ -1928,6 +1955,122 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       ];
       if (p.mode === 'ties') info.push({ label: 'Sign conflicts resolved', value: overlaps ? pct(conflicts / overlaps) : '—' });
       return weightResult(ctx, P, { info });
+    },
+
+    // SCE (FuseChat): Select high-variance entries, Calculate energy-based model weights, Erase minority signs.
+    sce(ctx, p) {
+      const taus = taskVectors(ctx), K = ctx.K, top = +p.topk, lam = +p.lambda;
+      const P = new Float32Array(ctx.base);
+      let kept = 0, total = 0, erased = 0, nz = 0;
+      const etaShow = new Array(K).fill(0);
+      let wTensors = 0;
+      for (const T of ctx.layout.tensors) {
+        const o = T.off, n = T.size;
+        const vr = new Float32Array(n);
+        for (let k = 0; k < n; k++) {
+          let m = 0;
+          for (let i = 0; i < K; i++) m += taus[i][o + k];
+          m /= K;
+          let v = 0;
+          for (let i = 0; i < K; i++) v += (taus[i][o + k] - m) ** 2;
+          vr[k] = v / K;
+        }
+        const thr = topThreshold(vr, 0, n, top);
+        const sel = (k) => vr[k] > 0 && vr[k] >= thr;
+        const en = taus.map((t) => { let s = 0; for (let k = 0; k < n; k++) if (sel(k)) s += t[o + k] * t[o + k]; return s; });
+        const es = en.reduce((a, b) => a + b, 0);
+        const eta = en.map((e) => (es > 0 ? e / es : 1 / K));
+        if (T.kind === 'w') { eta.forEach((e, i) => (etaShow[i] += e)); wTensors++; }
+        for (let k = 0; k < n; k++) {
+          total++;
+          if (!sel(k)) continue;
+          kept++;
+          let sum = 0;
+          for (let i = 0; i < K; i++) sum += eta[i] * taus[i][o + k];
+          const sg = Math.sign(sum);
+          let acc = 0, ws = 0;
+          for (let i = 0; i < K; i++) {
+            const x = taus[i][o + k];
+            if (x === 0) continue;
+            nz++;
+            if (Math.sign(x) === sg) { acc += eta[i] * x; ws += eta[i]; } else erased++;
+          }
+          P[o + k] += lam * (ws > 0 ? acc / ws : 0);
+        }
+      }
+      return weightResult(ctx, P, {
+        info: [
+          { label: 'Entries selected (high variance)', value: pct(kept / total) },
+          { label: 'Minority signs erased', value: nz ? pct(erased / nz) : '—' },
+          ...etaShow.map((e, i) => ({ label: `Energy weight ${'ABC'[i]}`, value: (e / Math.max(1, wTensors)).toFixed(2) })),
+        ],
+      });
+    },
+
+    // AdaMerging: learn task-wise or layer-wise coefficients λ by minimising prediction entropy on
+    // unlabeled inputs (test-time adaptation; no labels). θ = θ_base + Σ_k λ_k(,l) · τ_k
+    adamerging(ctx, p) {
+      const mode = p.mode === 'task' ? 'task' : 'layer';
+      const key = `ada:${mode}`;
+      const taus = taskVectors(ctx), K = ctx.K, layout = ctx.layout, base = ctx.base;
+      const nL = mode === 'layer' ? layout.nLayers : 1;
+      const layerOf = new Int8Array(base.length);
+      if (nL > 1) for (const T of layout.tensors) layerOf.fill(T.layer, T.off, T.off + T.size);
+      const build = (lm, P) => {
+        for (let j = 0; j < base.length; j++) {
+          let v = base[j];
+          const l = nL > 1 ? layerOf[j] : 0;
+          for (let k = 0; k < K; k++) v += lm[k * nL + l] * taus[k][j];
+          P[j] = v;
+        }
+        return P;
+      };
+      if (!ctx.cache[key]) {
+        // unlabeled pool: an even sample of every task's inputs (labels never used)
+        const all = MM.concat(ctx.tasks.map((t) => t.train));
+        const d = all.d || 2, m = Math.min(240, all.n), stride = all.n / m;
+        const X = new Float32Array(m * d);
+        for (let i = 0; i < m; i++) { const s = Math.floor(i * stride); X.set(all.X.subarray(s * d, s * d + d), i * d); }
+        const P = new Float32Array(base.length);
+        const entropy = (lm) => {
+          const out = MM.forward(layout, build(lm, P), X, m, false).out;
+          let e = 0;
+          for (let i = 0; i < m; i++) { const q = 1 / (1 + Math.exp(-out[i])); e -= q * Math.log(q + 1e-9) + (1 - q) * Math.log(1 - q + 1e-9); }
+          return e / m;
+        };
+        const lam = new Float64Array(K * nL).fill(0.3); // the paper's initial coefficient
+        const mA = new Float64Array(lam.length), vA = new Float64Array(lam.length);
+        const lr = 0.05, h = 1e-2, STEPS = 40;
+        const e0 = entropy(lam);
+        const trace = [e0];
+        for (let s = 1; s <= STEPS; s++) {
+          const g = new Float64Array(lam.length);
+          for (let i = 0; i < lam.length; i++) {
+            const keep = lam[i];
+            lam[i] = keep + h; const ep = entropy(lam);
+            lam[i] = keep - h; const em = entropy(lam);
+            lam[i] = keep;
+            g[i] = (ep - em) / (2 * h);
+          }
+          for (let i = 0; i < lam.length; i++) {
+            mA[i] = 0.9 * mA[i] + 0.1 * g[i];
+            vA[i] = 0.999 * vA[i] + 0.001 * g[i] * g[i];
+            const mh = mA[i] / (1 - 0.9 ** s), vh = vA[i] / (1 - 0.999 ** s);
+            lam[i] = Math.min(1.5, Math.max(0, lam[i] - (lr * mh) / (Math.sqrt(vh) + 1e-8)));
+          }
+          if (s % 5 === 0) trace.push(entropy(lam));
+        }
+        ctx.cache[key] = { lam: Array.from(lam), e0, e1: entropy(lam), trace, n: m, nL };
+      }
+      const c = ctx.cache[key];
+      const P = build(c.lam, new Float32Array(base.length));
+      const fmt = (v) => (+v).toFixed(2);
+      const info = [{ label: 'Prediction entropy (unlabeled)', value: `${c.e0.toFixed(3)} → ${c.e1.toFixed(3)}` }];
+      for (let k = 0; k < K; k++) {
+        const row = c.lam.slice(k * c.nL, (k + 1) * c.nL);
+        info.push({ label: `λ ${'ABC'[k]}${c.nL > 1 ? ' per layer' : ''}`, value: row.map(fmt).join(' / ') });
+      }
+      return weightResult(ctx, P, { info, ada: { lam: c.lam, nL: c.nL, K } });
     },
 
     // DELLA: magnitude-ranked drop probabilities (MagPrune), rescale, then TIES-style sign election.
@@ -2496,7 +2639,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
   const ADVISOR_DEFAULTS = { base: 'yes', goal: 'skills', count: '2', conflict: 'no', data: 'no', train: 'no', deploy: 'single' };
 
   // Rough prior for "a good default in practice" before situation-specific adjustments.
-  const PRIOR = { ties: 7, dare: 7, della: 7, karcher: 5, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
+  const PRIOR = { ties: 7, dare: 7, della: 7, karcher: 5, sce: 6, adamerging: 7, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
   const WEIGHT_SPACE = ['linear', 'slerp', 'karcher', 'model_stock', 'fisher', 'regmean', 'stitch'];
 
   function adviseRecipe(answers) {
@@ -2529,6 +2672,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     if (a.data === 'yes') {
       bump('regmean', 2, 'Closed-form, using each layer’s input statistics; strong on interfering skills');
       bump('fisher', 1, 'Weighs each parameter by how much each task relies on it');
+      bump('adamerging', 1, 'Learns per-layer coefficients from unlabeled inputs alone');
     }
     if (a.train === 'yes') bump('distill', 1, 'Training budget lets one student absorb every expert');
 
@@ -2558,7 +2702,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       bump('linear', 3, 'Model-soup averaging of same-skill runs is a well-tested default');
       bump('slerp', 2, 'Smooth, norm-preserving blend of two runs');
       bump('karcher', 3, 'Geometric mean of several runs: SLERP without chaining');
-      ['ties', 'dare', 'della', 'breadcrumbs'].forEach((id) => bump(id, -2, 'Sign election and dropping pay off with different skills, not repeated runs'));
+      ['ties', 'dare', 'della', 'sce', 'breadcrumbs'].forEach((id) => bump(id, -2, 'Sign election and dropping pay off with different skills, not repeated runs'));
       bump('moe', -3, 'Nothing for a router to choose between: the experts know the same thing');
       bump('distill', -1, null);
     } else if (a.conflict === 'no' && a.deploy !== 'single') {
@@ -2570,6 +2714,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       bump('ties', 2, 'Resolves sign conflicts where skills overlap');
       bump('dare', 1, 'Random sparsification reduces overlap between task vectors');
       bump('della', 1, 'Magnitude-aware dropping keeps the important updates while reducing overlap');
+      bump('sce', 1, 'Concentrates on the entries where experts disagree and erases minority signs');
       bump('breadcrumbs', 1, 'Dropping outliers and tiny updates reduces interference');
       bump('task_arithmetic', -1, 'Plain sums let overlapping updates cancel');
       bump('linear', -1, 'Averaging dilutes overlapping skills');
@@ -3544,7 +3689,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     const m = MM.METHOD_BY_ID[S.method];
     renderStageHead(m, null);
     if (!ctx) return;
-    const heavy = m.id === 'distill' || (m.id === 'moe' && !ctx.cache.router) || (m.id === 'fisher' && !ctx.cache.fisher) || (m.id === 'regmean' && !ctx.cache.grams);
+    const heavy = m.id === 'distill' || (m.id === 'moe' && !ctx.cache.router) || (m.id === 'fisher' && !ctx.cache.fisher) || (m.id === 'regmean' && !ctx.cache.grams) || (m.id === 'adamerging' && !ctx.cache[`ada:${S.params.adamerging.mode === 'task' ? 'task' : 'layer'}`]);
     const go = () => {
       const t0 = performance.now();
       const r = compute(m.id, ctx);
@@ -3562,7 +3707,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       if (!training) status(`${m.name} · mixed in ${ms.toFixed(0)} ms`);
     };
     if (heavy) {
-      $('#busyText').textContent = m.id === 'distill' ? 'Distilling student…' : m.id === 'moe' ? 'Training router…' : 'Measuring importance…';
+      $('#busyText').textContent = m.id === 'distill' ? 'Distilling student…' : m.id === 'moe' ? 'Training router…' : m.id === 'adamerging' ? 'Learning coefficients…' : 'Measuring importance…';
       $('#busy').hidden = false;
       setTimeout(go, 30);
     } else go();
@@ -4242,6 +4387,20 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
         return { yaml: `merge_method: slerp\nbase_model: ${models[0]}\nmodels:\n  - model: ${models[0]}\n  - model: ${models[1]}\nparameters:\n  t: ${lw ? gl((v) => v) : (+p.t).toFixed(2)}\n${dt}\n`, note: [K > 2 ? 'SLERP takes exactly two models — the third is left out.' : '', gnote].filter(Boolean).join(' ') };
       case 'karcher':
         return { yaml: `merge_method: karcher\nmodels:\n${list((i) => `      weight: ${w(i)}`)}\nparameters:\n  max_iter: 20\n  tol: 1.0e-9\n${dt}\n` };
+      case 'sce':
+        return { yaml: `merge_method: sce\nbase_model: ${base}\nmodels:\n${list(() => `      weight: 1.0`)}\nparameters:\n  select_topk: ${(+p.topk).toFixed(2)}\n${lw ? `  lambda: ${gl((v) => v)}\n` : +p.lambda !== 1 ? `  lambda: ${(+p.lambda).toFixed(2)}\n` : ''}${dt}\n`, note: gnote };
+      case 'adamerging': {
+        // AdaMerging isn't in mergekit, but its output IS a task-arithmetic merge with learned per-layer weights.
+        const ctx = getCtx();
+        const r = ctx && ctx.base ? compute('adamerging', ctx) : null;
+        if (!r || r.blocked || !r.ada) return null;
+        const { lam, nL } = r.ada;
+        const wl = (i) => (nL > 1 ? `[${lam.slice(i * nL, (i + 1) * nL).map((v) => v.toFixed(2)).join(', ')}]` : lam[i].toFixed(2));
+        return {
+          yaml: `# AdaMerging coefficients learned in the lab, exported as a task-arithmetic merge\nmerge_method: task_arithmetic\nbase_model: ${base}\nmodels:\n${list((i) => `      weight: ${wl(i)}   # learned λ${nL > 1 ? ' per layer' : ''}`)}\n${dt}\n`,
+          note: `AdaMerging isn’t in mergekit; FusionBench implements it for real models. These λs were learned on the lab’s toy experts, so re-learn them on your models (unlabeled inputs are enough).${nL > 1 ? ' Per-layer lists are spread across the model’s depth.' : ''}`,
+        };
+      }
       case 'della':
         return { yaml: `merge_method: della\nbase_model: ${base}\nmodels:\n${list(() => `      density: ${(+p.density).toFixed(2)}\n      epsilon: ${(+p.epsilon).toFixed(2)}\n      weight: 1.0`)}\nparameters:\n  lambda: ${lw ? gl((v) => v) : (+p.lambda).toFixed(2)}\n  normalize: true\n${dt}\n`, note: gnote };
       case 'model_stock':
@@ -4277,6 +4436,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     fisher: { title: 'Fisher merging isn’t in mergekit', body: 'It needs per-parameter Fisher information computed from data. FusionBench implements Fisher merging for Hugging Face models.' },
     regmean: { title: 'RegMean isn’t in mergekit', body: 'It needs layer-input Gram matrices from each task’s data. Use the reference implementation (dataless-model-merging) or FusionBench.' },
     ensemble: { title: 'Ensembles aren’t merges', body: 'Load each model and average their next-token probabilities at inference time:', code: `import torch\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\nnames = ${JSON.stringify(S.exp.models.slice(0, 2))}\ntok = AutoTokenizer.from_pretrained(names[0])\nmodels = [AutoModelForCausalLM.from_pretrained(n, torch_dtype=torch.bfloat16) for n in names]\n\ndef next_token_probs(prompt):\n    ids = tok(prompt, return_tensors="pt").input_ids\n    probs = [m(ids).logits[:, -1].softmax(-1) for m in models]\n    return torch.stack(probs).mean(0)   # equal-weight ensemble` },
+    adamerging: { title: 'AdaMerging needs a shared base', body: 'It learns how much of each task vector to add back to the base, so it can’t run without one. FusionBench implements AdaMerging for real models.' },
     distill: { title: 'Distillation is training, not merging', body: 'Train a student on the teacher mixture’s outputs. DistillKit (arcee-ai) and TRL’s GKD trainer both support logit-based distillation from Hugging Face teachers.' },
   };
 

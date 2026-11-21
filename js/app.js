@@ -508,7 +508,7 @@
     const m = MM.METHOD_BY_ID[S.method];
     renderStageHead(m, null);
     if (!ctx) return;
-    const heavy = m.id === 'distill' || (m.id === 'moe' && !ctx.cache.router) || (m.id === 'fisher' && !ctx.cache.fisher) || (m.id === 'regmean' && !ctx.cache.grams);
+    const heavy = m.id === 'distill' || (m.id === 'moe' && !ctx.cache.router) || (m.id === 'fisher' && !ctx.cache.fisher) || (m.id === 'regmean' && !ctx.cache.grams) || (m.id === 'adamerging' && !ctx.cache[`ada:${S.params.adamerging.mode === 'task' ? 'task' : 'layer'}`]);
     const go = () => {
       const t0 = performance.now();
       const r = compute(m.id, ctx);
@@ -526,7 +526,7 @@
       if (!training) status(`${m.name} · mixed in ${ms.toFixed(0)} ms`);
     };
     if (heavy) {
-      $('#busyText').textContent = m.id === 'distill' ? 'Distilling student…' : m.id === 'moe' ? 'Training router…' : 'Measuring importance…';
+      $('#busyText').textContent = m.id === 'distill' ? 'Distilling student…' : m.id === 'moe' ? 'Training router…' : m.id === 'adamerging' ? 'Learning coefficients…' : 'Measuring importance…';
       $('#busy').hidden = false;
       setTimeout(go, 30);
     } else go();
@@ -1206,6 +1206,20 @@
         return { yaml: `merge_method: slerp\nbase_model: ${models[0]}\nmodels:\n  - model: ${models[0]}\n  - model: ${models[1]}\nparameters:\n  t: ${lw ? gl((v) => v) : (+p.t).toFixed(2)}\n${dt}\n`, note: [K > 2 ? 'SLERP takes exactly two models — the third is left out.' : '', gnote].filter(Boolean).join(' ') };
       case 'karcher':
         return { yaml: `merge_method: karcher\nmodels:\n${list((i) => `      weight: ${w(i)}`)}\nparameters:\n  max_iter: 20\n  tol: 1.0e-9\n${dt}\n` };
+      case 'sce':
+        return { yaml: `merge_method: sce\nbase_model: ${base}\nmodels:\n${list(() => `      weight: 1.0`)}\nparameters:\n  select_topk: ${(+p.topk).toFixed(2)}\n${lw ? `  lambda: ${gl((v) => v)}\n` : +p.lambda !== 1 ? `  lambda: ${(+p.lambda).toFixed(2)}\n` : ''}${dt}\n`, note: gnote };
+      case 'adamerging': {
+        // AdaMerging isn't in mergekit, but its output IS a task-arithmetic merge with learned per-layer weights.
+        const ctx = getCtx();
+        const r = ctx && ctx.base ? compute('adamerging', ctx) : null;
+        if (!r || r.blocked || !r.ada) return null;
+        const { lam, nL } = r.ada;
+        const wl = (i) => (nL > 1 ? `[${lam.slice(i * nL, (i + 1) * nL).map((v) => v.toFixed(2)).join(', ')}]` : lam[i].toFixed(2));
+        return {
+          yaml: `# AdaMerging coefficients learned in the lab, exported as a task-arithmetic merge\nmerge_method: task_arithmetic\nbase_model: ${base}\nmodels:\n${list((i) => `      weight: ${wl(i)}   # learned λ${nL > 1 ? ' per layer' : ''}`)}\n${dt}\n`,
+          note: `AdaMerging isn’t in mergekit; FusionBench implements it for real models. These λs were learned on the lab’s toy experts, so re-learn them on your models (unlabeled inputs are enough).${nL > 1 ? ' Per-layer lists are spread across the model’s depth.' : ''}`,
+        };
+      }
       case 'della':
         return { yaml: `merge_method: della\nbase_model: ${base}\nmodels:\n${list(() => `      density: ${(+p.density).toFixed(2)}\n      epsilon: ${(+p.epsilon).toFixed(2)}\n      weight: 1.0`)}\nparameters:\n  lambda: ${lw ? gl((v) => v) : (+p.lambda).toFixed(2)}\n  normalize: true\n${dt}\n`, note: gnote };
       case 'model_stock':
@@ -1241,6 +1255,7 @@
     fisher: { title: 'Fisher merging isn’t in mergekit', body: 'It needs per-parameter Fisher information computed from data. FusionBench implements Fisher merging for Hugging Face models.' },
     regmean: { title: 'RegMean isn’t in mergekit', body: 'It needs layer-input Gram matrices from each task’s data. Use the reference implementation (dataless-model-merging) or FusionBench.' },
     ensemble: { title: 'Ensembles aren’t merges', body: 'Load each model and average their next-token probabilities at inference time:', code: `import torch\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\nnames = ${JSON.stringify(S.exp.models.slice(0, 2))}\ntok = AutoTokenizer.from_pretrained(names[0])\nmodels = [AutoModelForCausalLM.from_pretrained(n, torch_dtype=torch.bfloat16) for n in names]\n\ndef next_token_probs(prompt):\n    ids = tok(prompt, return_tensors="pt").input_ids\n    probs = [m(ids).logits[:, -1].softmax(-1) for m in models]\n    return torch.stack(probs).mean(0)   # equal-weight ensemble` },
+    adamerging: { title: 'AdaMerging needs a shared base', body: 'It learns how much of each task vector to add back to the base, so it can’t run without one. FusionBench implements AdaMerging for real models.' },
     distill: { title: 'Distillation is training, not merging', body: 'Train a student on the teacher mixture’s outputs. DistillKit (arcee-ai) and TRL’s GKD trainer both support logit-based distillation from Hugging Face teachers.' },
   };
 

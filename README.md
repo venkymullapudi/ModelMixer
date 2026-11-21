@@ -1,7 +1,7 @@
 # ModelMixer
 
 **An interactive lab for model merging.** Train a few small expert networks in your browser, mix them
-with 15 different techniques, and *see* what each mix keeps, loses and needs — then export the same
+with 17 different techniques, and *see* what each mix keeps, loses and needs — then export the same
 recipe as a [mergekit](https://github.com/arcee-ai/mergekit) config for real Hugging Face models.
 
 **▶ Live demo: <https://venkymullapudi.github.io/ModelMixer/>**
@@ -55,8 +55,8 @@ python3 scripts/bundle.py
 | Family | Methods |
 | --- | --- |
 | Weight averaging | Linear / Model Soup, SLERP, Karcher mean (multi-model SLERP), Model Stock |
-| Task vectors | Task Arithmetic, TIES-Merging, DARE (TIES / Linear), DELLA, Model Breadcrumbs |
-| Data-informed | Fisher merging, RegMean |
+| Task vectors | Task Arithmetic, TIES-Merging, DARE (TIES / Linear), DELLA, SCE, Model Breadcrumbs |
+| Data-informed | Fisher merging, RegMean, AdaMerging (entropy-tuned λ on unlabeled inputs) |
 | Layer surgery | Layer Stitch (Frankenmerge / passthrough) |
 | Output mixing | Ensemble, Mixture of Experts (learned router, top-1 or soft) |
 | Distillation | Student distilled from an MoE or ensemble teacher |
@@ -123,8 +123,8 @@ IMPROVEMENTS.md     prioritised backlog
 
 ## Open-source references
 
-- [mergekit](https://github.com/arcee-ai/mergekit): linear, SLERP, Karcher, task arithmetic, TIES, DARE, DELLA, breadcrumbs, model stock, passthrough, MoE
-- [FusionBench](https://github.com/tanganke/fusion_bench): benchmark suite including Fisher and RegMean merging
+- [mergekit](https://github.com/arcee-ai/mergekit): linear, SLERP, Karcher, task arithmetic, TIES, DARE, DELLA, SCE, breadcrumbs, model stock, passthrough, MoE
+- [FusionBench](https://github.com/tanganke/fusion_bench): benchmark suite including Fisher, RegMean and AdaMerging
 - [git-re-basin](https://github.com/samuela/git-re-basin): permutation alignment
 - [dataless-model-merging](https://github.com/bloomberg/dataless-model-merging): RegMean
 - [DistillKit](https://github.com/arcee-ai/DistillKit), [TRL](https://github.com/huggingface/trl): distillation

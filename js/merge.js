@@ -364,6 +364,122 @@
       return weightResult(ctx, P, { info });
     },
 
+    // SCE (FuseChat): Select high-variance entries, Calculate energy-based model weights, Erase minority signs.
+    sce(ctx, p) {
+      const taus = taskVectors(ctx), K = ctx.K, top = +p.topk, lam = +p.lambda;
+      const P = new Float32Array(ctx.base);
+      let kept = 0, total = 0, erased = 0, nz = 0;
+      const etaShow = new Array(K).fill(0);
+      let wTensors = 0;
+      for (const T of ctx.layout.tensors) {
+        const o = T.off, n = T.size;
+        const vr = new Float32Array(n);
+        for (let k = 0; k < n; k++) {
+          let m = 0;
+          for (let i = 0; i < K; i++) m += taus[i][o + k];
+          m /= K;
+          let v = 0;
+          for (let i = 0; i < K; i++) v += (taus[i][o + k] - m) ** 2;
+          vr[k] = v / K;
+        }
+        const thr = topThreshold(vr, 0, n, top);
+        const sel = (k) => vr[k] > 0 && vr[k] >= thr;
+        const en = taus.map((t) => { let s = 0; for (let k = 0; k < n; k++) if (sel(k)) s += t[o + k] * t[o + k]; return s; });
+        const es = en.reduce((a, b) => a + b, 0);
+        const eta = en.map((e) => (es > 0 ? e / es : 1 / K));
+        if (T.kind === 'w') { eta.forEach((e, i) => (etaShow[i] += e)); wTensors++; }
+        for (let k = 0; k < n; k++) {
+          total++;
+          if (!sel(k)) continue;
+          kept++;
+          let sum = 0;
+          for (let i = 0; i < K; i++) sum += eta[i] * taus[i][o + k];
+          const sg = Math.sign(sum);
+          let acc = 0, ws = 0;
+          for (let i = 0; i < K; i++) {
+            const x = taus[i][o + k];
+            if (x === 0) continue;
+            nz++;
+            if (Math.sign(x) === sg) { acc += eta[i] * x; ws += eta[i]; } else erased++;
+          }
+          P[o + k] += lam * (ws > 0 ? acc / ws : 0);
+        }
+      }
+      return weightResult(ctx, P, {
+        info: [
+          { label: 'Entries selected (high variance)', value: pct(kept / total) },
+          { label: 'Minority signs erased', value: nz ? pct(erased / nz) : '—' },
+          ...etaShow.map((e, i) => ({ label: `Energy weight ${'ABC'[i]}`, value: (e / Math.max(1, wTensors)).toFixed(2) })),
+        ],
+      });
+    },
+
+    // AdaMerging: learn task-wise or layer-wise coefficients λ by minimising prediction entropy on
+    // unlabeled inputs (test-time adaptation; no labels). θ = θ_base + Σ_k λ_k(,l) · τ_k
+    adamerging(ctx, p) {
+      const mode = p.mode === 'task' ? 'task' : 'layer';
+      const key = `ada:${mode}`;
+      const taus = taskVectors(ctx), K = ctx.K, layout = ctx.layout, base = ctx.base;
+      const nL = mode === 'layer' ? layout.nLayers : 1;
+      const layerOf = new Int8Array(base.length);
+      if (nL > 1) for (const T of layout.tensors) layerOf.fill(T.layer, T.off, T.off + T.size);
+      const build = (lm, P) => {
+        for (let j = 0; j < base.length; j++) {
+          let v = base[j];
+          const l = nL > 1 ? layerOf[j] : 0;
+          for (let k = 0; k < K; k++) v += lm[k * nL + l] * taus[k][j];
+          P[j] = v;
+        }
+        return P;
+      };
+      if (!ctx.cache[key]) {
+        // unlabeled pool: an even sample of every task's inputs (labels never used)
+        const all = MM.concat(ctx.tasks.map((t) => t.train));
+        const d = all.d || 2, m = Math.min(240, all.n), stride = all.n / m;
+        const X = new Float32Array(m * d);
+        for (let i = 0; i < m; i++) { const s = Math.floor(i * stride); X.set(all.X.subarray(s * d, s * d + d), i * d); }
+        const P = new Float32Array(base.length);
+        const entropy = (lm) => {
+          const out = MM.forward(layout, build(lm, P), X, m, false).out;
+          let e = 0;
+          for (let i = 0; i < m; i++) { const q = 1 / (1 + Math.exp(-out[i])); e -= q * Math.log(q + 1e-9) + (1 - q) * Math.log(1 - q + 1e-9); }
+          return e / m;
+        };
+        const lam = new Float64Array(K * nL).fill(0.3); // the paper's initial coefficient
+        const mA = new Float64Array(lam.length), vA = new Float64Array(lam.length);
+        const lr = 0.05, h = 1e-2, STEPS = 40;
+        const e0 = entropy(lam);
+        const trace = [e0];
+        for (let s = 1; s <= STEPS; s++) {
+          const g = new Float64Array(lam.length);
+          for (let i = 0; i < lam.length; i++) {
+            const keep = lam[i];
+            lam[i] = keep + h; const ep = entropy(lam);
+            lam[i] = keep - h; const em = entropy(lam);
+            lam[i] = keep;
+            g[i] = (ep - em) / (2 * h);
+          }
+          for (let i = 0; i < lam.length; i++) {
+            mA[i] = 0.9 * mA[i] + 0.1 * g[i];
+            vA[i] = 0.999 * vA[i] + 0.001 * g[i] * g[i];
+            const mh = mA[i] / (1 - 0.9 ** s), vh = vA[i] / (1 - 0.999 ** s);
+            lam[i] = Math.min(1.5, Math.max(0, lam[i] - (lr * mh) / (Math.sqrt(vh) + 1e-8)));
+          }
+          if (s % 5 === 0) trace.push(entropy(lam));
+        }
+        ctx.cache[key] = { lam: Array.from(lam), e0, e1: entropy(lam), trace, n: m, nL };
+      }
+      const c = ctx.cache[key];
+      const P = build(c.lam, new Float32Array(base.length));
+      const fmt = (v) => (+v).toFixed(2);
+      const info = [{ label: 'Prediction entropy (unlabeled)', value: `${c.e0.toFixed(3)} → ${c.e1.toFixed(3)}` }];
+      for (let k = 0; k < K; k++) {
+        const row = c.lam.slice(k * c.nL, (k + 1) * c.nL);
+        info.push({ label: `λ ${'ABC'[k]}${c.nL > 1 ? ' per layer' : ''}`, value: row.map(fmt).join(' / ') });
+      }
+      return weightResult(ctx, P, { info, ada: { lam: c.lam, nL: c.nL, K } });
+    },
+
     // DELLA: magnitude-ranked drop probabilities (MagPrune), rescale, then TIES-style sign election.
     della(ctx, p) {
       const taus = taskVectors(ctx), K = ctx.K, dens = +p.density, eps = +p.epsilon, lam = +p.lambda;

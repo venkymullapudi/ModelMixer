@@ -326,6 +326,34 @@
       for (let i = 0; i < d.length; i++) assert(Math.abs(d[i] - t[i]) < 1e-6, `differs at ${i}`);
     });
 
+    test('AdaMerging lowers prediction entropy; task-wise result = Task Arithmetic with the learned λs', () => {
+      const rl = MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'layer' }));
+      const cl = ctx.cache['ada:layer'];
+      assert(cl.e1 < cl.e0 && cl.lam.length === 2 * T.layout.nLayers, `layer-wise entropy ${cl.e0} → ${cl.e1}`);
+      assert(cl.lam.every((v) => v >= 0 && v <= 1.5), 'λ out of bounds');
+      const rt = MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'task' }));
+      const ct = ctx.cache['ada:task'];
+      assert(ct.e1 < ct.e0 && ct.lam.length === 2, `task-wise entropy ${ct.e0} → ${ct.e1}`);
+      const ta = MM.runMethod('task_arithmetic', ctx, Object.assign(params('task_arithmetic', 2), { lambda: 1, weights: [ct.lam[0], ct.lam[1], 1] })).params;
+      for (let i = 0; i < ta.length; i++) assert(Math.abs(ta[i] - rt.params[i]) < 1e-5, `differs from task arithmetic at ${i}`);
+      return `entropy ${cl.e0.toFixed(3)} → ${cl.e1.toFixed(3)}; λ ${cl.lam.map((v) => v.toFixed(2)).join(' ')}; ${pct(MM.scoreMethod(T, ctx, 'adamerging', params('adamerging', 2)).avg)}`;
+    });
+
+    test('SCE selects the requested fraction of entries', () => {
+      const r = MM.runMethod('sce', ctx, Object.assign(params('sce', 2), { topk: 0.2 }));
+      const sel = parseFloat(r.info.find((x) => /selected/.test(x.label)).value) / 100;
+      assert(Math.abs(sel - 0.2) < 0.03, `selected ${sel}`);
+      // top-k = 1 selects every entry with non-zero variance: entries where the experts agree exactly
+      // (often both 0) carry no disagreement and are skipped, which is SCE's documented trade-off
+      const all = MM.runMethod('sce', ctx, Object.assign(params('sce', 2), { topk: 1 }));
+      const selAll = parseFloat(all.info.find((x) => /selected/.test(x.label)).value) / 100;
+      const [ta, tb] = T.experts.map((e) => e.map((v, i) => v - T.base[i]));
+      let varied = 0;
+      for (let i = 0; i < ta.length; i++) if (ta[i] !== tb[i]) varied++;
+      assert(Math.abs(selAll - varied / ta.length) < 0.002, `topk 1 selected ${selAll}, entries with variance ${varied / ta.length}`);
+      return `top-k 0.2 → ${pct(sel)}; top-k 1 → ${pct(selAll)} (rest: experts identical)`;
+    });
+
     test('Linear with weights [1, 0] reproduces Expert A', () => {
       const p = params('linear', T.K);
       p.weights = [1, 0];
