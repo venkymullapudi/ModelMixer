@@ -375,6 +375,21 @@
       assert(Math.abs(runs[0].B.avg - runs[0].A.avg - direct) < 1e-12, 'paired difference mismatch');
     });
 
+    test('layerGrid/pickGrid: grid corners match Layer Stitch; best and sensitivity are sane', () => {
+      const p = Object.assign(params('linear', 2), { layerwise: true, grad: [0, 0, 1] });
+      const vals = [0, 0.5, 1];
+      const M = MM.layerGrid(T, ctx, 'linear', p, 0, 2, vals); // rows: hidden 1, cols: output; hidden 2 held at 0 (A)
+      const stitch = (layers) => MM.scoreMethod(T, ctx, 'stitch', Object.assign(params('stitch', 2), { layers })).avg;
+      assert(Math.abs(M[0][2] - stitch([0, 0, 1])) < 1e-9, 'corner (A, ·, B) should equal Stitch A·A·B');
+      assert(Math.abs(M[2][0] - stitch([1, 0, 0])) < 1e-9, 'corner (B, ·, A) should equal Stitch B·A·A');
+      const g = MM.pickGrid(M);
+      assert(g.best.v === Math.max(...M.flat()) && g.safe.lower <= g.safe.v && g.near > 0 && g.near <= 1, JSON.stringify(g));
+      assert(g.safe.i === 1 && g.safe.j === 1, 'on a 3×3 grid the only interior cell is the safe one');
+      const toy = MM.pickGrid([[0.5, 0.9], [0.5, 0.9]]); // only the column (axis b) matters
+      assert(toy.sensB > 0.3 && toy.sensA === 0, `axis sensitivity ${toy.sensA} / ${toy.sensB}`);
+      return `best H1=${vals[g.best.i]} Out=${vals[g.best.j]} → ${pct(g.best.v)}`;
+    });
+
     test('Linear with weights [1, 0] reproduces Expert A', () => {
       const p = params('linear', T.K);
       p.weights = [1, 0];

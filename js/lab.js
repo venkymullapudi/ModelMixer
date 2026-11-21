@@ -272,5 +272,45 @@
     });
   }
 
-  Object.assign(MM, { recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  // ---------- per-layer sensitivity (two layers' gradient values, third held fixed) ----------
+  function layerGridParams(params, la, lb, va, vb) {
+    const p = JSON.parse(JSON.stringify(params));
+    p.layerwise = true;
+    p.grad[la] = va; p.grad[lb] = vb;
+    return p;
+  }
+  /** Average accuracy over a vals × vals grid: rows = layer la, cols = layer lb. Blocked cells are null. */
+  function layerGrid(T, ctx, id, params, la, lb, vals) {
+    return vals.map((va) => vals.map((vb) => {
+      const r = scoreMethod(T, ctx, id, layerGridParams(params, la, lb, va, vb));
+      return r.blocked ? null : r.avg;
+    }));
+  }
+  /** Best cell, safest cell (best worst-case over its 3×3 neighbourhood), forgiving fraction and per-axis sensitivity. */
+  function pickGrid(M, tol) {
+    tol = tol == null ? 0.02 : tol;
+    const R = M.length, C = M[0].length;
+    // "safe" = good in every direction, so only interior cells qualify (edge cells have fewer neighbours to fail)
+    const interior = R >= 3 && C >= 3;
+    let best = null, safe = null;
+    for (let i = 0; i < R; i++) for (let j = 0; j < C; j++) {
+      const v = M[i][j];
+      if (v == null) continue;
+      if (!best || v > best.v + 1e-12) best = { i, j, v };
+      if (interior && (i === 0 || j === 0 || i === R - 1 || j === C - 1)) continue;
+      let lower = Infinity;
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        const a = M[i + di] && M[i + di][j + dj];
+        if (a != null) lower = Math.min(lower, a);
+      }
+      if (!safe || lower > safe.lower + 1e-12) safe = { i, j, v, lower };
+    }
+    let near = 0, cnt = 0, sensA = 0, sensB = 0;
+    for (let i = 0; i < R; i++) for (let j = 0; j < C; j++) if (M[i][j] != null) { cnt++; if (M[i][j] >= best.v - tol) near++; }
+    for (let j = 0; j < C; j++) { const col = M.map((row) => row[j]).filter((x) => x != null); if (col.length) sensA += Math.max(...col) - Math.min(...col); }
+    for (let i = 0; i < R; i++) { const row = M[i].filter((x) => x != null); if (row.length) sensB += Math.max(...row) - Math.min(...row); }
+    return { best, safe, near: cnt ? near / cnt : 0, sensA: sensA / C, sensB: sensB / R };
+  }
+
+  Object.assign(MM, { layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

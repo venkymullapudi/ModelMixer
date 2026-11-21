@@ -20,6 +20,7 @@
     sweepKnob: {}, // method id -> knob key shown in the sensitivity chart
     sweepSeeds: false, // add a ±1 sd band from 2 extra seeds
     robustSeeds: 5, // seeds in the Arena's multi-seed check
+    gridPair: '0-2', // layers shown in the per-layer heat map (hidden 1 × output)
     pin: null, // { method, params, align } recipe pinned for side-by-side comparison
     exp: {
       base: 'mistralai/Mistral-7B-v0.1',
@@ -34,7 +35,7 @@
   try {
     const saved = JSON.parse(localStorage.getItem('modelmixer:v1') || 'null');
     if (saved) {
-      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor', 'sweepKnob', 'sweepSeeds', 'robustSeeds']) if (saved[k] !== undefined) S[k] = saved[k];
+      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor', 'sweepKnob', 'sweepSeeds', 'robustSeeds', 'gridPair']) if (saved[k] !== undefined) S[k] = saved[k];
       // v2 defaults (2026-11 review): drop knobs saved under the old defaults so everyone starts from the new ones
       if (saved.params && saved.paramsV === PARAMS_V) for (const id in saved.params) if (S.params[id]) Object.assign(S.params[id], saved.params[id]);
       if (saved.exp) Object.assign(S.exp, saved.exp);
@@ -44,8 +45,8 @@
   } catch (e) { /* storage unavailable */ }
   function persist() {
     try {
-      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds } = S;
-      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, paramsV: PARAMS_V, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds }));
+      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds, gridPair } = S;
+      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, paramsV: PARAMS_V, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds, gridPair }));
     } catch (e) { /* ignore */ }
     syncHash();
   }
@@ -621,6 +622,107 @@
       ${cmp ? compareBox(r, pin) : ''}`;
   }
 
+  // ---------------- PER-LAYER HEAT MAP (gradient values for two layers) ----------------
+  const GRID_N = 7;
+  const gridCache = new WeakMap(); // trained bundle -> Map(key -> matrix)
+  let gridToken = 0;
+  const PAIRS = [['0-1', 'Hidden 1 × Hidden 2'], ['0-2', 'Hidden 1 × Output'], ['1-2', 'Hidden 2 × Output']];
+  function renderLayerMap(m, r) {
+    const panel = $('#layerPanel');
+    const g = m.gradient, p = S.params[m.id];
+    if (!T || !T.experts || r.blocked || !g || !p.layerwise || (g.k2 && T.K !== 2)) { panel.hidden = true; return; }
+    panel.hidden = false;
+    const pair = PAIRS.some(([k]) => k === S.gridPair) ? S.gridPair : '0-2';
+    const [la, lb] = pair.split('-').map(Number);
+    const fixed = [0, 1, 2].find((l) => l !== la && l !== lb);
+    const vals = Array.from({ length: GRID_N }, (_, i) => +(g.min + ((g.max - g.min) * i) / (GRID_N - 1)).toFixed(4));
+    const key = JSON.stringify([S.align, m.id, MM.layerGridParams(p, la, lb, 0, 0), la, lb]);
+    let byT = gridCache.get(T);
+    if (!byT) { byT = new Map(); gridCache.set(T, byT); }
+    const M = byT.get(key);
+    const LN = MM.LAYER_NAMES;
+    panel.innerHTML = `<div class="sweep-head">
+        <div><h3>Per-layer sensitivity <span class="pill-mini">which layer matters?</span></h3>
+          <p class="muted">Average accuracy for every combination of ${esc(g.label)} in two layers, with ${LN[fixed]} held at ${fmtG(g, p.grad[fixed])}. A colour change along one axis only means that layer is the one to tune.</p></div>
+        <div class="sweep-ctl"><div class="seg" id="gridPair">${PAIRS.map(([k, l]) => `<button data-pair="${k}" class="${k === pair ? 'on' : ''}">${l}</button>`).join('')}</div></div></div>
+      <div class="heat-wrap" id="heatWrap">${M ? '' : '<div class="loading"><span class="spinner"></span> <span id="heatMsg">Mapping…</span></div>'}</div>
+      <div class="sweep-sum" id="heatSum"></div>`;
+    if (M) drawHeat(m, g, p, la, lb, vals, M);
+    else {
+      const token = ++gridToken, Tnow = T, ctx = MM.bundleCtx(T, S.align);
+      (async () => {
+        // one row per frame so the page stays responsive (49 merges in all)
+        const grid = [];
+        for (let i = 0; i < vals.length; i++) {
+          await frame();
+          if (token !== gridToken) return;
+          const el = $('#heatMsg');
+          if (el) el.textContent = `Mapping ${LN[la]} × ${LN[lb]}… ${Math.round((100 * i) / vals.length)}%`;
+          grid.push(vals.map((vb) => {
+            const rr = MM.scoreMethod(Tnow, ctx, m.id, MM.layerGridParams(p, la, lb, vals[i], vb));
+            return rr.blocked ? null : rr.avg;
+          }));
+        }
+        byT.set(key, grid);
+        if (token === gridToken && T === Tnow && S.method === m.id) drawHeat(m, g, p, la, lb, vals, grid);
+      })();
+    }
+  }
+  function fmtG(g, v) { return g.key === 'balance' ? `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` : (+v).toFixed(2); }
+  function drawHeat(m, g, p, la, lb, vals, M) {
+    const wrap = $('#heatWrap');
+    if (!wrap) return;
+    const pick = MM.pickGrid(M);
+    const flat = M.flat().filter((x) => x != null);
+    const lo = Math.min(...flat), hi = Math.max(...flat);
+    const col = (v) => {
+      if (v == null) return 'rgba(255,255,255,0.04)';
+      const t = hi - lo > 1e-9 ? (v - lo) / (hi - lo) : 1;
+      const stops = [[248, 113, 113], [251, 191, 36], [52, 211, 153]];
+      const k = t < 0.5 ? 0 : 1, u = t < 0.5 ? t / 0.5 : (t - 0.5) / 0.5;
+      const c = stops[k].map((a, i) => Math.round(a + (stops[k + 1][i] - a) * u));
+      return `rgba(${c.join(',')},${(0.25 + 0.6 * t).toFixed(2)})`;
+    };
+    const nearest = (v) => vals.reduce((bi, x, i) => (Math.abs(x - v) < Math.abs(vals[bi] - v) ? i : bi), 0);
+    const ni = nearest(p.grad[la]), nj = nearest(p.grad[lb]);
+    const LN = MM.LAYER_NAMES;
+    wrap.innerHTML = `<div class="heat" style="--n:${vals.length}">
+        <div class="hy">${esc(LN[la])}</div>
+        <div class="hgrid">
+          <span class="hc corner"></span>${vals.map((v) => `<span class="hc hx">${fmtG(g, v)}</span>`).join('')}
+          ${M.map((row, i) => `<span class="hc hyv">${fmtG(g, vals[i])}</span>${row.map((v, j) => {
+            const tags = [i === ni && j === nj ? 'now' : '', i === pick.best.i && j === pick.best.j ? 'best' : '', i === pick.safe.i && j === pick.safe.j ? 'safe' : ''].filter(Boolean);
+            return `<span class="hc cell ${tags.join(' ')}" style="background:${col(v)}" title="${esc(LN[la])} ${fmtG(g, vals[i])} · ${esc(LN[lb])} ${fmtG(g, vals[j])}: ${v == null ? 'blocked' : pct(v)}">${v == null ? '—' : (v * 100).toFixed(0)}</span>`;
+          }).join('')}`).join('')}
+        </div>
+        <div class="hxlab">${esc(LN[lb])} →</div>
+      </div>
+      <div class="chart-legend heat-legend"><span><i class="hk now"></i>now</span><span><i class="hk best"></i>best</span><span><i class="hk safe"></i>safest</span><span class="muted">cell = average accuracy %</span></div>`;
+    const sens = pick.sensA > pick.sensB * 1.5 ? `<b>${esc(LN[la])}</b> is the layer this recipe is sensitive to (≈${(pick.sensA * 100).toFixed(0)} pts swing vs ${(pick.sensB * 100).toFixed(0)} for ${esc(LN[lb])})`
+      : pick.sensB > pick.sensA * 1.5 ? `<b>${esc(LN[lb])}</b> is the layer this recipe is sensitive to (≈${(pick.sensB * 100).toFixed(0)} pts swing vs ${(pick.sensA * 100).toFixed(0)} for ${esc(LN[la])})`
+      : `Both layers matter about equally (≈${(pick.sensA * 100).toFixed(0)} vs ${(pick.sensB * 100).toFixed(0)} pts swing)`;
+    const at = (c) => `${esc(LN[la])} ${fmtG(g, vals[c.i])}, ${esc(LN[lb])} ${fmtG(g, vals[c.j])}`;
+    $('#heatSum').innerHTML = `<p>${sens}. Best: ${at(pick.best)} (<b>${pct(pick.best.v)}</b>); ${Math.round(pick.near * 100)}% of settings are within 2 pts of it.
+      ${pick.safe.i !== pick.best.i || pick.safe.j !== pick.best.j ? `The <span class="safe-word">safest</span> cell is ${at(pick.safe)}: its worst neighbour still scores ${pct(pick.safe.lower)}.` : ''} Single-seed map: confirm a favourite with the paired checks.</p>
+      <div class="row"><button class="btn sm" data-grid-use="${vals[pick.best.i]},${vals[pick.best.j]}">Use best</button>${pick.safe.i !== pick.best.i || pick.safe.j !== pick.best.j ? `<button class="btn ghost sm" data-grid-use="${vals[pick.safe.i]},${vals[pick.safe.j]}">Use safest</button>` : ''}</div>`;
+  }
+  $('#layerPanel').addEventListener('click', (ev) => {
+    const m = MM.METHOD_BY_ID[S.method];
+    const pb = ev.target.closest('[data-pair]');
+    if (pb) { S.gridPair = pb.dataset.pair; persist(); renderLayerMap(m, current); return; }
+    const use = ev.target.closest('[data-grid-use]');
+    if (use) {
+      const g = m.gradient, p = S.params[m.id];
+      const [la, lb] = (PAIRS.some(([k]) => k === S.gridPair) ? S.gridPair : '0-2').split('-').map(Number);
+      const snap = (v) => +Math.min(g.max, Math.max(g.min, Math.round(v / g.step) * g.step)).toFixed(4);
+      const [va, vb] = use.dataset.gridUse.split(',').map(Number);
+      p.grad[la] = snap(va); p.grad[lb] = snap(vb);
+      persist(); arenaStale = robustStale = true;
+      refresh();
+      toast(`${MM.LAYER_NAMES[la]} = ${fmtG(g, p.grad[la])}, ${MM.LAYER_NAMES[lb]} = ${fmtG(g, p.grad[lb])}`);
+    }
+  });
+
   // ---------------- KNOB SENSITIVITY ----------------
   const SWEEP_N = 17;
   const sweepCache = new WeakMap(); // trained bundle -> Map(key -> sweep result)
@@ -632,11 +734,13 @@
   }
   function renderSweep(m, r) {
     const panel = $('#sweepPanel');
-    if (!T || !T.experts || r.blocked) { panel.hidden = true; return; }
+    if (!T || !T.experts || r.blocked) { panel.hidden = true; $('#layerPanel').hidden = true; return; }
     panel.hidden = false;
     const { ks, knob } = currentKnob(m);
+    renderLayerMap(m, r);
     if (!knob) {
       const lwOn = m.gradient && S.params[m.id].layerwise && !(m.gradient.k2 && T.K !== 2);
+      if (lwOn) { panel.hidden = true; return; } // the per-layer heat map below covers it
       const why = lwOn
         ? `${esc(m.gradient.label)} is set per layer, so a single-value sweep doesn’t apply. Use the layer sliders and presets, or turn per-layer off to sweep it.`
         : `${m.name} has no continuous knob${m.params.some((d) => d.type === 'weights') && T.K > 2 ? ' to sweep with 3 experts' : ''}, so there is nothing to tune: what you see is what you get.`;
