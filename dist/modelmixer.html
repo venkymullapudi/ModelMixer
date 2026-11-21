@@ -549,6 +549,8 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
 .sens.good { color: #34d399; } .sens.mid { color: #fbbf24; } .sens.bad { color: #f87171; }
 .safe-word { color: #fbbf24; font-weight: 700; }
 
+.real-note { font-size: 12px; line-height: 1.5; color: #cdd3e3; background: rgba(109, 139, 255, 0.07); border: 1px solid rgba(109, 139, 255, 0.25); border-radius: 10px; padding: 8px 10px; margin: 10px 0 6px; }
+
 </style>
 </head>
 <body>
@@ -1256,7 +1258,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       req: { base: true, data: false, training: false }, multiInit: false, interference: 'yes',
       mergekit: 'ties', oss: [OSS.mergekit, OSS.fusion], paper: 'Yadav et al., 2023 — TIES-Merging',
       params: [
-        { key: 'density', type: 'range', label: 'Density k (fraction kept)', min: 0.02, max: 1, step: 0.01, default: 0.3 },
+        { key: 'density', type: 'range', label: 'Density k (fraction kept)', min: 0.02, max: 1, step: 0.01, default: 0.2 },
         { key: 'lambda', type: 'range', label: 'Scaling λ', min: 0, max: 2, step: 0.05, default: 1 },
       ],
     },
@@ -1287,8 +1289,8 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       req: { base: true, data: false, training: false }, multiInit: false, interference: 'partial',
       mergekit: 'breadcrumbs', oss: [OSS.mergekit], paper: 'Davari & Belilovsky, 2024 — Model Breadcrumbs',
       params: [
-        { key: 'density', type: 'range', label: 'Density (fraction kept)', min: 0.05, max: 1, step: 0.01, default: 0.6 },
-        { key: 'gamma', type: 'range', label: 'Outliers removed γ', min: 0, max: 0.3, step: 0.005, default: 0.02 },
+        { key: 'density', type: 'range', label: 'Density (fraction kept)', min: 0.05, max: 1, step: 0.01, default: 0.1 },
+        { key: 'gamma', type: 'range', label: 'Outliers removed γ', min: 0, max: 0.3, step: 0.005, default: 0.005 },
         { key: 'lambda', type: 'range', label: 'Scaling λ', min: 0, max: 2, step: 0.05, default: 1 },
       ],
     },
@@ -1301,7 +1303,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       cons: ['Needs data + gradients for every expert', 'Diagonal approximation ignores correlations', 'Memory heavy on big models'],
       req: { base: false, data: true, training: false }, multiInit: false, interference: 'partial',
       mergekit: null, oss: [OSS.fusion], paper: 'Matena & Raffel, 2022 — Merging Models with Fisher-Weighted Averaging',
-      params: [{ key: 'eps', type: 'range', label: 'Fisher floor ε', min: 0, max: 1, step: 0.01, default: 0.05 }],
+      params: [{ key: 'eps', type: 'range', label: 'Fisher floor ε', min: 0, max: 1, step: 0.01, default: 0 }],
     },
     {
       id: 'regmean', name: 'RegMean', short: 'RegMean', family: 'data',
@@ -1372,6 +1374,18 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
   };
 
   const METHOD_BY_ID = Object.fromEntries(METHODS.map((m) => [m.id, m]));
+
+  // Toy defaults are tuned on this lab's small MLPs (3 scenarios × 3 seeds). Real checkpoints often want
+  // different starting points; these notes say where, so practitioners don't copy toy numbers blindly.
+  const REAL_WORLD = {
+    ties: 'The TIES paper keeps the top 20% (density 0.2), which is also this lab’s default. Many published mergekit recipes start nearer density 0.5 with weight 1; tune λ on a validation set.',
+    dare: 'Large language models tolerate very high drop rates (0.9 and up) because their updates are highly redundant. Small models like these toys tolerate far less.',
+    breadcrumbs: 'Recipes for large models usually keep most entries (density near 0.9) and cut the top ~1% (gamma 0.01). These tiny experts have little redundancy, so the toy default is much sparser (0.1) with a gentler outlier cut (0.005).',
+    fisher: 'Estimate the diagonal Fisher on a few hundred examples per task. ε should only guard against division by zero: on the toy, even a 0.1% floor costs several points.',
+    task_arithmetic: 'λ is usually tuned on held-out data; values between 0.3 and 1 are common starting points.',
+    regmean: 'Collect layer-input Gram matrices from a few hundred examples per task. α a little below 1 is the usual stabiliser.',
+  };
+  for (const id in REAL_WORLD) METHOD_BY_ID[id].realWorld = REAL_WORLD[id];
 
   function defaultParams(m, K) {
     const p = {};
@@ -2020,7 +2034,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     });
   }
 
-  /** Short human label for a recipe, e.g. "TIES · k 0.30 · λ 1.00 · aligned". */
+  /** Short human label for a recipe, e.g. "TIES · k 0.20 · λ 1.00 · aligned". */
   const ABBR = { density: 'k', lambda: 'λ', drop: 'p', gamma: 'γ', t: 't', eps: 'ε', alpha: 'α', seed: 'seed' };
   function recipeLabel(id, params, align, K) {
     const m = MM.METHOD_BY_ID[id];
@@ -2656,11 +2670,13 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
   };
   MM.METHODS.forEach((m) => (S.params[m.id] = MM.defaultParams(m)));
 
+  const PARAMS_V = 2;
   try {
     const saved = JSON.parse(localStorage.getItem('modelmixer:v1') || 'null');
     if (saved) {
       for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor', 'sweepKnob', 'sweepSeeds']) if (saved[k] !== undefined) S[k] = saved[k];
-      if (saved.params) for (const id in saved.params) if (S.params[id]) Object.assign(S.params[id], saved.params[id]);
+      // v2 defaults (2026-11 review): drop knobs saved under the old defaults so everyone starts from the new ones
+      if (saved.params && saved.paramsV === PARAMS_V) for (const id in saved.params) if (S.params[id]) Object.assign(S.params[id], saved.params[id]);
       if (saved.exp) Object.assign(S.exp, saved.exp);
       if (!MM.METHOD_BY_ID[S.method]) S.method = 'ties';
       if (S.pin && !MM.METHOD_BY_ID[S.pin.method]) S.pin = null;
@@ -2669,7 +2685,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
   function persist() {
     try {
       const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds } = S;
-      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds }));
+      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, paramsV: PARAMS_V, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds }));
     } catch (e) { /* ignore */ }
     syncHash();
   }
@@ -3400,6 +3416,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
         <div class="sec-title">Run it for real</div>
         <div class="oss-row">${m.mergekit ? `<span class="pill mk">mergekit: <code>${m.mergekit}</code></span>` : '<span class="pill">not in mergekit</span>'}
         ${m.oss.map((o) => `<a class="pill link" href="${o.url}" target="_blank" rel="noopener">${o.name} ↗</a>`).join('')}</div>
+        ${m.realWorld ? `<p class="real-note"><b>On real models:</b> ${m.realWorld}</p>` : ''}
         <p class="tiny muted">${m.paper}</p>
       </div>`;
 

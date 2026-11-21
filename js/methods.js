@@ -79,7 +79,7 @@
       req: { base: true, data: false, training: false }, multiInit: false, interference: 'yes',
       mergekit: 'ties', oss: [OSS.mergekit, OSS.fusion], paper: 'Yadav et al., 2023 — TIES-Merging',
       params: [
-        { key: 'density', type: 'range', label: 'Density k (fraction kept)', min: 0.02, max: 1, step: 0.01, default: 0.3 },
+        { key: 'density', type: 'range', label: 'Density k (fraction kept)', min: 0.02, max: 1, step: 0.01, default: 0.2 },
         { key: 'lambda', type: 'range', label: 'Scaling λ', min: 0, max: 2, step: 0.05, default: 1 },
       ],
     },
@@ -110,8 +110,8 @@
       req: { base: true, data: false, training: false }, multiInit: false, interference: 'partial',
       mergekit: 'breadcrumbs', oss: [OSS.mergekit], paper: 'Davari & Belilovsky, 2024 — Model Breadcrumbs',
       params: [
-        { key: 'density', type: 'range', label: 'Density (fraction kept)', min: 0.05, max: 1, step: 0.01, default: 0.6 },
-        { key: 'gamma', type: 'range', label: 'Outliers removed γ', min: 0, max: 0.3, step: 0.005, default: 0.02 },
+        { key: 'density', type: 'range', label: 'Density (fraction kept)', min: 0.05, max: 1, step: 0.01, default: 0.1 },
+        { key: 'gamma', type: 'range', label: 'Outliers removed γ', min: 0, max: 0.3, step: 0.005, default: 0.005 },
         { key: 'lambda', type: 'range', label: 'Scaling λ', min: 0, max: 2, step: 0.05, default: 1 },
       ],
     },
@@ -124,7 +124,7 @@
       cons: ['Needs data + gradients for every expert', 'Diagonal approximation ignores correlations', 'Memory heavy on big models'],
       req: { base: false, data: true, training: false }, multiInit: false, interference: 'partial',
       mergekit: null, oss: [OSS.fusion], paper: 'Matena & Raffel, 2022 — Merging Models with Fisher-Weighted Averaging',
-      params: [{ key: 'eps', type: 'range', label: 'Fisher floor ε', min: 0, max: 1, step: 0.01, default: 0.05 }],
+      params: [{ key: 'eps', type: 'range', label: 'Fisher floor ε', min: 0, max: 1, step: 0.01, default: 0 }],
     },
     {
       id: 'regmean', name: 'RegMean', short: 'RegMean', family: 'data',
@@ -195,6 +195,18 @@
   };
 
   const METHOD_BY_ID = Object.fromEntries(METHODS.map((m) => [m.id, m]));
+
+  // Toy defaults are tuned on this lab's small MLPs (3 scenarios × 3 seeds). Real checkpoints often want
+  // different starting points; these notes say where, so practitioners don't copy toy numbers blindly.
+  const REAL_WORLD = {
+    ties: 'The TIES paper keeps the top 20% (density 0.2), which is also this lab’s default. Many published mergekit recipes start nearer density 0.5 with weight 1; tune λ on a validation set.',
+    dare: 'Large language models tolerate very high drop rates (0.9 and up) because their updates are highly redundant. Small models like these toys tolerate far less.',
+    breadcrumbs: 'Recipes for large models usually keep most entries (density near 0.9) and cut the top ~1% (gamma 0.01). These tiny experts have little redundancy, so the toy default is much sparser (0.1) with a gentler outlier cut (0.005).',
+    fisher: 'Estimate the diagonal Fisher on a few hundred examples per task. ε should only guard against division by zero: on the toy, even a 0.1% floor costs several points.',
+    task_arithmetic: 'λ is usually tuned on held-out data; values between 0.3 and 1 are common starting points.',
+    regmean: 'Collect layer-input Gram matrices from a few hundred examples per task. α a little below 1 is the usual stabiliser.',
+  };
+  for (const id in REAL_WORLD) METHOD_BY_ID[id].realWorld = REAL_WORLD[id];
 
   function defaultParams(m, K) {
     const p = {};

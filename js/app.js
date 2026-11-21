@@ -29,11 +29,13 @@
   };
   MM.METHODS.forEach((m) => (S.params[m.id] = MM.defaultParams(m)));
 
+  const PARAMS_V = 2;
   try {
     const saved = JSON.parse(localStorage.getItem('modelmixer:v1') || 'null');
     if (saved) {
       for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor', 'sweepKnob', 'sweepSeeds']) if (saved[k] !== undefined) S[k] = saved[k];
-      if (saved.params) for (const id in saved.params) if (S.params[id]) Object.assign(S.params[id], saved.params[id]);
+      // v2 defaults (2026-11 review): drop knobs saved under the old defaults so everyone starts from the new ones
+      if (saved.params && saved.paramsV === PARAMS_V) for (const id in saved.params) if (S.params[id]) Object.assign(S.params[id], saved.params[id]);
       if (saved.exp) Object.assign(S.exp, saved.exp);
       if (!MM.METHOD_BY_ID[S.method]) S.method = 'ties';
       if (S.pin && !MM.METHOD_BY_ID[S.pin.method]) S.pin = null;
@@ -42,7 +44,7 @@
   function persist() {
     try {
       const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds } = S;
-      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds }));
+      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, paramsV: PARAMS_V, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds }));
     } catch (e) { /* ignore */ }
     syncHash();
   }
@@ -773,6 +775,7 @@
         <div class="sec-title">Run it for real</div>
         <div class="oss-row">${m.mergekit ? `<span class="pill mk">mergekit: <code>${m.mergekit}</code></span>` : '<span class="pill">not in mergekit</span>'}
         ${m.oss.map((o) => `<a class="pill link" href="${o.url}" target="_blank" rel="noopener">${o.name} ↗</a>`).join('')}</div>
+        ${m.realWorld ? `<p class="real-note"><b>On real models:</b> ${m.realWorld}</p>` : ''}
         <p class="tiny muted">${m.paper}</p>
       </div>`;
 

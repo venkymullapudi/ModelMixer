@@ -112,7 +112,7 @@
     });
   }
 
-  /** Short human label for a recipe, e.g. "TIES · k 0.30 · λ 1.00 · aligned". */
+  /** Short human label for a recipe, e.g. "TIES · k 0.20 · λ 1.00 · aligned". */
   const ABBR = { density: 'k', lambda: 'λ', drop: 'p', gamma: 'γ', t: 't', eps: 'ε', alpha: 'α', seed: 'seed' };
   function recipeLabel(id, params, align, K) {
     const m = MM.METHOD_BY_ID[id];

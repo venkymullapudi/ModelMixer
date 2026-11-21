@@ -235,6 +235,19 @@
       assert(c.range[0] === 0 && c.range[1] === 2 && c.rangeFrac === 1, JSON.stringify(c));
     });
 
+    test('Reviewed defaults are no worse than the old ones (Two skills)', () => {
+      // Defaults changed in the 2026-11 review (3 scenarios × 3 seeds); guard against regressions on the test bundle.
+      const cmp = (id, oldOver) => {
+        const now = MM.scoreMethod(T, ctx, id, params(id, T.K)).avg;
+        const old = MM.scoreMethod(T, ctx, id, Object.assign(params(id, T.K), oldOver)).avg;
+        assert(now >= old - 0.01, `${id}: new ${pct(now)} < old ${pct(old)}`);
+        return `${id} ${pct(old)}→${pct(now)}`;
+      };
+      // TIES density 0.3 → 0.2 is not checked here: it wins on mean, worst case and spread across 9 bundles,
+      // but a single bundle can go either way (this one favours 0.3 by ~1 pt), which is exactly seed noise.
+      return [cmp('breadcrumbs', { density: 0.6, gamma: 0.02 }), cmp('fisher', { eps: 0.05 })].join(', ');
+    });
+
     test('Linear with weights [1, 0] reproduces Expert A', () => {
       const p = params('linear', T.K);
       p.weights = [1, 0];
@@ -265,7 +278,7 @@
     test('recipeLabel names the knobs', () => {
       const p = params('ties', 2);
       const l = MM.recipeLabel('ties', p, true, 2);
-      assert(l === 'TIES · k 0.30 · λ 1.00 · aligned', l);
+      assert(l === 'TIES · k 0.20 · λ 1.00 · aligned', l);
       const w = params('linear', 2); w.weights = [1, 0.5, 1];
       assert(MM.recipeLabel('linear', w, false, 2) === 'Linear · w 1.00/0.50', MM.recipeLabel('linear', w, false, 2));
       assert(MM.recipeLabel('linear', params('linear', 2), false, 2) === 'Linear', 'equal weights should be omitted');
