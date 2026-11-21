@@ -168,5 +168,50 @@
     });
   }
 
-  Object.assign(MM, { toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  // ---------- knob sensitivity ----------
+  /** Continuous knobs worth sweeping for a method (the DARE random seed is not a knob). */
+  function sweepKnobs(id, K) {
+    const m = MM.METHOD_BY_ID[id];
+    const out = m.params.filter((d) => d.type === 'range' && d.key !== 'seed')
+      .map((d) => ({ key: d.key, label: d.label, min: d.min, max: d.max, step: d.step }));
+    if (K === 2 && m.params.some((d) => d.type === 'weights')) out.push({ key: 'balance', label: 'Balance A ↔ B', min: 0, max: 1, step: 0.05 });
+    return out;
+  }
+  function knobValue(params, knob) {
+    if (knob.key !== 'balance') return +params[knob.key];
+    const [a, b] = params.weights;
+    return a + b > 0 ? b / (a + b) : 0.5;
+  }
+  function withKnob(params, knob, v) {
+    const p = JSON.parse(JSON.stringify(params));
+    if (knob.key === 'balance') p.weights = [1 - v, v, p.weights[2]];
+    else p[knob.key] = v;
+    return p;
+  }
+  function sweepValues(knob, n) {
+    return Array.from({ length: n }, (_, i) => +(knob.min + ((knob.max - knob.min) * i) / (n - 1)).toFixed(4));
+  }
+  /** Score a method at each knob value on one bundle. */
+  function sweepMethod(T, ctx, id, params, knob, xs) {
+    return xs.map((x) => {
+      const r = scoreMethod(T, ctx, id, withKnob(params, knob, x));
+      return r.blocked ? { x, blocked: r.blocked } : { x, avg: r.avg, accs: r.accs };
+    });
+  }
+  /** From mean (and optional sd) curves: best setting, safest setting and the forgiving range. */
+  function pickSettings(xs, mean, sd, tol) {
+    tol = tol == null ? 0.01 : tol;
+    let bi = 0;
+    mean.forEach((v, i) => { if (v > mean[bi] + 1e-12) bi = i; });
+    // safe = best lower bound: mean - sd with seeds, otherwise the worst of each point and its neighbours
+    const lower = mean.map((v, i) => (sd ? v - sd[i] : Math.min(v, mean[Math.max(0, i - 1)], mean[Math.min(mean.length - 1, i + 1)])));
+    let si = 0;
+    lower.forEach((v, i) => { if (v > lower[si] + 1e-12) si = i; });
+    let lo = bi, hi = bi;
+    while (lo > 0 && mean[lo - 1] >= mean[bi] - tol) lo--;
+    while (hi < mean.length - 1 && mean[hi + 1] >= mean[bi] - tol) hi++;
+    return { best: xs[bi], bestVal: mean[bi], safe: xs[si], safeVal: mean[si], safeLower: lower[si], range: [xs[lo], xs[hi]], rangeFrac: (xs[hi] - xs[lo]) / (xs[xs.length - 1] - xs[0] || 1) };
+  }
+
+  Object.assign(MM, { sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

@@ -17,6 +17,8 @@
     overlay: { points: true, regions: true, router: true },
     tab: 'lab',
     advisor: {}, // answers to the recipe advisor
+    sweepKnob: {}, // method id -> knob key shown in the sensitivity chart
+    sweepSeeds: false, // add a ±1 sd band from 2 extra seeds
     pin: null, // { method, params, align } recipe pinned for side-by-side comparison
     exp: {
       base: 'mistralai/Mistral-7B-v0.1',
@@ -30,7 +32,7 @@
   try {
     const saved = JSON.parse(localStorage.getItem('modelmixer:v1') || 'null');
     if (saved) {
-      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor']) if (saved[k] !== undefined) S[k] = saved[k];
+      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor', 'sweepKnob', 'sweepSeeds']) if (saved[k] !== undefined) S[k] = saved[k];
       if (saved.params) for (const id in saved.params) if (S.params[id]) Object.assign(S.params[id], saved.params[id]);
       if (saved.exp) Object.assign(S.exp, saved.exp);
       if (!MM.METHOD_BY_ID[S.method]) S.method = 'ties';
@@ -39,8 +41,8 @@
   } catch (e) { /* storage unavailable */ }
   function persist() {
     try {
-      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor } = S;
-      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor }));
+      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds } = S;
+      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds }));
     } catch (e) { /* ignore */ }
     syncHash();
   }
@@ -467,6 +469,7 @@
       drawPin(pin, r);
       renderStageHead(m, r);
       renderMetrics(r, pin);
+      renderSweep(m, r);
       renderInsight(m, r, ctx);
       const ms = performance.now() - t0;
       if (!training) status(`${m.name} · mixed in ${ms.toFixed(0)} ms`);
@@ -560,6 +563,143 @@
       ${(r.warnings || []).map((w) => `<div class="warn-box">⚠ ${w}</div>`).join('')}
       ${cmp ? compareBox(r, pin) : ''}`;
   }
+
+  // ---------------- KNOB SENSITIVITY ----------------
+  const SWEEP_N = 17;
+  const sweepCache = new WeakMap(); // trained bundle -> Map(key -> sweep result)
+  const sweepExtra = new Map(); // trainKey -> extra-seed bundles
+  let sweepToken = 0, sweepTimer = null;
+  const knobFmt = (knob, v) => (knob.key === 'balance' ? `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` : (+v).toFixed(knob.step < 0.01 ? 3 : 2));
+  function currentKnob(m) {
+    const ks = MM.sweepKnobs(m.id, T.K);
+    return { ks, knob: ks.find((k) => k.key === S.sweepKnob[m.id]) || ks[0] };
+  }
+  function renderSweep(m, r) {
+    const panel = $('#sweepPanel');
+    if (!T || !T.experts || r.blocked) { panel.hidden = true; return; }
+    panel.hidden = false;
+    const { ks, knob } = currentKnob(m);
+    if (!knob) {
+      panel.innerHTML = `<div class="sweep-head"><div><h3>Knob sensitivity</h3><p class="muted">${m.name} has no continuous knob${m.params.some((d) => d.type === 'weights') && T.K > 2 ? ' to sweep with 3 experts' : ''}, so there is nothing to tune: what you see is what you get.</p></div></div>`;
+      return;
+    }
+    const params = S.params[m.id];
+    const key = JSON.stringify([S.align, m.id, MM.withKnob(params, knob, knob.min), knob.key, S.sweepSeeds]);
+    let byT = sweepCache.get(T);
+    if (!byT) { byT = new Map(); sweepCache.set(T, byT); }
+    const res = byT.get(key);
+    panel.innerHTML = `<div class="sweep-head">
+        <div><h3>Knob sensitivity <span class="pill-mini">how forgiving is this recipe?</span></h3>
+          <p class="muted">Average accuracy as one knob moves, with the others held at your settings. A flat top means the recipe is forgiving; a sharp peak means you should tune it carefully on real models too.</p></div>
+        <div class="sweep-ctl">
+          ${ks.length > 1 ? `<div class="seg" id="sweepKnobs">${ks.map((k) => `<button data-k="${k.key}" class="${k.key === knob.key ? 'on' : ''}">${esc(k.label.replace(/\s*\(.*\)$/, ''))}</button>`).join('')}</div>` : `<span class="muted small">${esc(knob.label)}</span>`}
+          <button class="tg ${S.sweepSeeds ? 'on' : ''}" id="sweepSeeds" title="Retrain the experts on 2 more seeds and show a ±1 sd band">± 3 seeds</button>
+        </div></div>
+      <div class="chart" id="sweepChart">${res ? '' : '<div class="loading"><span class="spinner"></span> <span id="sweepMsg">Sweeping…</span></div>'}</div>
+      <div class="chart-legend" id="sweepLegend"></div>
+      <div class="sweep-sum" id="sweepSum"></div>`;
+    if (res) drawSweep(m, knob, res);
+    else scheduleSweep(m, knob, params, key, byT);
+  }
+  function scheduleSweep(m, knob, params, key, byT) {
+    clearTimeout(sweepTimer);
+    const token = ++sweepToken;
+    const Tnow = T;
+    sweepTimer = setTimeout(async () => {
+      const msg = (t) => { const el = $('#sweepMsg'); if (el && token === sweepToken) el.textContent = t; };
+      const bundles = [Tnow];
+      if (S.sweepSeeds) {
+        const tk = trainKey(S);
+        if (!sweepExtra.has(tk)) {
+          const extra = [];
+          for (const off of [101, 202]) {
+            msg(`Training experts on seed ${S.seed + off}…`);
+            const it = MM.trainBundle({ experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed: S.seed + off });
+            let st, tick = performance.now();
+            while (!(st = it.next()).done) {
+              if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (token !== sweepToken) return; }
+            }
+            extra.push(st.value);
+          }
+          sweepExtra.set(tk, extra);
+        }
+        bundles.push(...sweepExtra.get(tk));
+      }
+      const xs = MM.sweepValues(knob, SWEEP_N);
+      const curves = [];
+      for (let b = 0; b < bundles.length; b++) {
+        const ctx = MM.bundleCtx(bundles[b], S.align);
+        const pts = [];
+        for (const x of xs) {
+          msg(`Sweeping ${knob.label.replace(/\s*\(.*\)$/, '')}${bundles.length > 1 ? ` · seed ${b + 1}/${bundles.length}` : ''}…`);
+          pts.push(MM.sweepMethod(bundles[b], ctx, m.id, params, knob, [x])[0]);
+          await frame();
+          if (token !== sweepToken) return;
+        }
+        curves.push(pts);
+      }
+      const res = { xs, curves };
+      byT.set(key, res);
+      if (token === sweepToken && T === Tnow && S.method === m.id) drawSweep(m, knob, res);
+    }, 250);
+  }
+  function drawSweep(m, knob, res) {
+    const host = $('#sweepChart');
+    if (!host) return;
+    const { xs, curves } = res;
+    if (curves[0].some((p) => p.blocked)) { host.innerHTML = '<div class="empty">This method is blocked here.</div>'; return; }
+    const n = curves.length;
+    const mean = xs.map((_, i) => curves.reduce((a, c) => a + c[i].avg, 0) / n);
+    const sd = n > 1 ? xs.map((_, i) => Math.sqrt(curves.reduce((a, c) => a + (c[i].avg - mean[i]) ** 2, 0) / (n - 1))) : null;
+    const pick = MM.pickSettings(xs, mean, sd, 0.02); // 2 pts: about this toy's seed-to-seed noise
+    const now = MM.knobValue(S.params[m.id], knob);
+    const taskSeries = T.tasks.map((t, k) => ({
+      name: `${LETTERS[k]} · ${MM.TASKS[t.spec.task].name}`, color: MM.MODEL_COLORS[k], width: 1.4, opacity: 0.75,
+      points: xs.map((x, i) => [x, curves.reduce((a, c) => a + c[i].accs[k], 0) / n]),
+    }));
+    const avgSeries = { name: n > 1 ? `Average (mean of ${n} seeds)` : 'Average', color: '#ffffff', width: 2.6, points: xs.map((x, i) => [x, mean[i]]) };
+    const all = taskSeries.flatMap((s) => s.points.map((p) => p[1])).concat(sd ? mean.map((v, i) => v - sd[i]) : []);
+    const yMin = Math.max(0, Math.floor(Math.min(...all) * 10) / 10 - 0.05);
+    const vlines = [{ x: now, color: '#a78bfa', label: 'now', solid: true, width: 2, opacity: 0.9 }, { x: pick.best, color: '#34d399', label: 'best', row: 1 }];
+    if (pick.safe !== pick.best) vlines.push({ x: pick.safe, color: '#fbbf24', label: 'safe', row: 2 });
+    const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => +(knob.min + (knob.max - knob.min) * f).toFixed(3));
+    MM.lineChart(host, {
+      series: [avgSeries, ...taskSeries], xMin: knob.min, xMax: knob.max, yMin, yMax: 1, height: 220, xTicks: ticks,
+      xFmt: (v) => knobFmt(knob, v), yFmt: (v) => `${Math.round(v * 100)}%`, xLabel: knob.key === 'balance' ? 'expert weights A/B (%)' : knob.label,
+      bands: sd ? [{ lo: xs.map((x, i) => [x, mean[i] - sd[i]]), hi: xs.map((x, i) => [x, mean[i] + sd[i]]), color: '#ffffff', opacity: 0.12 }] : [],
+      vlines,
+    });
+    $('#sweepLegend').innerHTML = [avgSeries, ...taskSeries].map((s) => `<span><i style="background:${s.color}"></i>${s.name}</span>`).join('') + (sd ? '<span><i style="background:rgba(255,255,255,.25)"></i>±1 sd</span>' : '');
+    // value at the current setting (nearest sweep point)
+    let ni = 0;
+    xs.forEach((x, i) => { if (Math.abs(x - now) < Math.abs(xs[ni] - now)) ni = i; });
+    const gap = pick.bestVal - mean[ni];
+    const forgiving = pick.rangeFrac > 0.35 ? 'forgiving' : pick.rangeFrac > 0.12 ? 'moderately sensitive' : 'sensitive';
+    const kname = knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, '');
+    const span = pick.range[0] === pick.range[1]
+      ? 'No other setting comes within 2 pts of it'
+      : `Anything from <b>${knobFmt(knob, pick.range[0])}</b> to <b>${knobFmt(knob, pick.range[1])}</b> stays within 2 pts`;
+    $('#sweepSum').innerHTML = `<p>Best ${esc(kname)} is <b>${knobFmt(knob, pick.best)}</b> (${pct(pick.bestVal)}). ${span}, so this knob is <b class="sens ${pick.rangeFrac > 0.35 ? 'good' : pick.rangeFrac > 0.12 ? 'mid' : 'bad'}">${forgiving}</b>.
+      ${gap > 0.01 ? `Your setting (${knobFmt(knob, now)}) is ${(gap * 100).toFixed(1)} pts below the best.` : 'Your setting is at or near the best.'}
+      ${pick.safe !== pick.best ? `The <span class="safe-word">safest</span> choice is ${knobFmt(knob, pick.safe)}: ${sd ? 'it has the best mean − 1 sd across seeds' : 'it has the best worst-case among neighbouring settings'}.` : ''}
+      ${!sd && pick.rangeFrac <= 0.12 ? 'A sharp single-seed peak can be luck: turn on <b>± 3 seeds</b> to check it.' : ''}</p>
+      <div class="row"><button class="btn sm" data-sweep-use="${pick.best}">Use best (${knobFmt(knob, pick.best)})</button>${pick.safe !== pick.best ? `<button class="btn ghost sm" data-sweep-use="${pick.safe}">Use safest (${knobFmt(knob, pick.safe)})</button>` : ''}</div>`;
+  }
+  $('#sweepPanel').addEventListener('click', (ev) => {
+    const m = MM.METHOD_BY_ID[S.method];
+    const kb = ev.target.closest('#sweepKnobs [data-k]');
+    if (kb) { S.sweepKnob[m.id] = kb.dataset.k; persist(); renderSweep(m, current); return; }
+    if (ev.target.closest('#sweepSeeds')) { S.sweepSeeds = !S.sweepSeeds; persist(); renderSweep(m, current); return; }
+    const use = ev.target.closest('[data-sweep-use]');
+    if (use) {
+      const { knob } = currentKnob(m);
+      const v = +(Math.round(+use.dataset.sweepUse / knob.step) * knob.step).toFixed(4); // snap to the slider grid
+      S.params[m.id] = MM.withKnob(S.params[m.id], knob, Math.min(knob.max, Math.max(knob.min, v)));
+      persist(); arenaStale = robustStale = true;
+      refresh();
+      toast(`${knob.key === 'balance' ? 'Balance' : knob.label.replace(/\s*\(.*\)$/, '')} set to ${knobFmt(knob, MM.knobValue(S.params[m.id], knob))}`);
+    }
+  });
 
   function compareBox(r, pin) {
     const sgn = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;

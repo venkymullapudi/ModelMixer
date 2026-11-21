@@ -523,3 +523,16 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
 .evidence .ev-wait { color: var(--muted); display: inline-flex; gap: 8px; align-items: center; }
 .evidence .ev-wait .spinner { width: 12px; height: 12px; }
 .ev-verdict { font-size: 12.5px; line-height: 1.5; padding: 2px 2px 0; }
+
+/* ---------- knob sensitivity ---------- */
+.sweep { margin-top: 16px; }
+.sweep-head { display: flex; gap: 16px; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; margin-bottom: 8px; }
+.sweep-head h3 { margin: 0 0 4px; font-size: 15px; }
+.sweep-head p { margin: 0; font-size: 12.5px; line-height: 1.5; max-width: 560px; }
+.sweep-ctl { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.sweep .chart { min-height: 220px; }
+.sweep .loading { padding: 80px 0; text-align: center; }
+.sweep-sum p { font-size: 12.5px; line-height: 1.6; margin: 8px 0; }
+.sweep-sum .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.sens.good { color: #34d399; } .sens.mid { color: #fbbf24; } .sens.bad { color: #f87171; }
+.safe-word { color: #fbbf24; font-weight: 700; }

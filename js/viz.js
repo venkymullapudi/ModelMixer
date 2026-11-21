@@ -235,7 +235,18 @@
       t.textContent = o.xFmt ? o.xFmt(v) : v;
     });
     if (o.xLabel) { const t = el('text', { x: (m.l + W - m.r) / 2, y: H - 4, class: 'axis-label', 'text-anchor': 'middle' }, svg); t.textContent = o.xLabel; }
-    (o.vlines || []).forEach((v) => el('line', { x1: X(v.x), x2: X(v.x), y1: m.t, y2: H - m.b, stroke: v.color, 'stroke-dasharray': '3 4', 'stroke-width': 1, opacity: 0.6 }, svg));
+    (o.bands || []).forEach((b) => {
+      const top = b.hi.map((pt) => `${X(pt[0]).toFixed(1)},${Y(pt[1]).toFixed(1)}`);
+      const bot = b.lo.slice().reverse().map((pt) => `${X(pt[0]).toFixed(1)},${Y(pt[1]).toFixed(1)}`);
+      el('polygon', { points: top.concat(bot).join(' '), fill: b.color, opacity: b.opacity || 0.16, stroke: 'none' }, svg);
+    });
+    (o.vlines || []).forEach((v) => {
+      el('line', { x1: X(v.x), x2: X(v.x), y1: m.t, y2: H - m.b, stroke: v.color, 'stroke-dasharray': v.solid ? '' : '3 4', 'stroke-width': v.width || 1, opacity: v.opacity || 0.6 }, svg);
+      if (v.label) {
+        const t = el('text', { x: X(v.x) + (v.anchor === 'end' ? -4 : 4), y: m.t + 10 + (v.row || 0) * 12, class: 'tick', style: `fill:${v.color}`, 'text-anchor': v.anchor || 'start' }, svg);
+        t.textContent = v.label;
+      }
+    });
     o.series.forEach((s) => {
       const d = s.points.map((pt, i) => `${i ? 'L' : 'M'}${X(pt[0]).toFixed(1)},${Y(pt[1]).toFixed(1)}`).join('');
       el('path', { d, fill: 'none', stroke: s.color, 'stroke-width': s.width || 2, 'stroke-dasharray': s.dash || '', 'stroke-linejoin': 'round', opacity: s.opacity || 1 }, svg);

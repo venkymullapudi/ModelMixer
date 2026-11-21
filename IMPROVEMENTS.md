@@ -14,9 +14,7 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 ## Next up (highest value first)
 
 1. **Hosted demo (needs owner OK):** a GitHub Pages workflow that publishes `dist/modelmixer.html`, so recipe links can be shared as https URLs. The repo owner has to enable Pages in the repo settings.
-2. **Knob sensitivity sweep:** for the active method, sweep its main knob (density, drop rate, λ, t) and
-   plot accuracy against it, with a ±1 sd band from a 3-seed run. Mark the current setting and the most
-   forgiving setting.
+2. **Review defaults with multi-seed sweeps:** the sweep shows that some defaults sit off the forgiving region on the toy (e.g. Fisher floor ε = 0.05 is about 10 pts below ε = 0). Re-check every default with ± 3 seeds and adjust where the evidence is clear, noting the real-world default in the method card.
 3. **Per-layer weights (mergekit gradients):** a layer-wise weight list per expert, as in mergekit
    `value: [0, 0.5, 1]`, exported verbatim to YAML.
 4. **Image-like task:** procedurally generated 8×8 "digits", each expert on a different digit pair, so
@@ -32,6 +30,7 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Done
 
+- 2026-11-21: **Knob sensitivity sweep** (Lab panel): average and per-task accuracy as one knob moves (17 points, other knobs held), with "now", "best" and "safe" markers. The summary gives the range within 2 pts and labels the knob forgiving, moderately sensitive or sensitive. Use best / Use safest snap to the slider grid. An optional ± 3 seeds band (2 extra trainings, cached) exposes single-seed peaks that are luck. Covers every range knob plus an A↔B balance for weighted methods with 2 experts. Helpers in `js/lab.js`, 2 tests.
 - 2026-11-21: **Advisor evidence:** each of the top-3 advisor picks is measured on the closest toy scenario across 3 seeds (default knobs, aligned if needed), showing mean ± sd and worst task. A verdict says whether the measurements agree with the rules, are too close to call, or disagree. Results are cached per scenario, and the lab's trained experts are reused when they match. Training loops now pause based on elapsed time (≤ ~0.1 s UI stalls). `toyConfig`/`seedRuns` in `js/lab.js`, 1 test.
 - 2026-11-21: **Shareable recipe links:** the address bar keeps `#r=…` in sync with the current recipe (experts, training settings, method, knobs, alignment, pinned comparison). 🔗 Share copies it, with clipboard fallbacks. Opening or pasting a link restores the recipe, retraining only when the experts or training settings differ. Decoding is strict: unknown methods, skills or regions are rejected, and knobs are clamped. `js/share.js`, 2 tests. Also fixed an uncaught error when switching to a scenario with more experts.
 - 2026-11-21: **Recipe advisor** (topbar ✨ and Atlas): 7 questions about your real models (shared base, same skill or different, count, input overlap, data, training budget, serving). Live top-3 recipes with reasons and caveats, other options that fit, ruled-out methods with why, and situation notes. Opens a pick in the Lab on the closest scenario (with alignment if needed) or in Export. Pure rules in `js/advisor.js`, with 4 tests.

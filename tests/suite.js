@@ -211,6 +211,30 @@
       assert(cfg.experts.length === 3 && cfg.seed === 5 && cfg.hidden === 32, JSON.stringify(cfg));
     });
 
+    test('Knob sweep: knobs listed, balance endpoints reproduce the experts', () => {
+      assert(MM.sweepKnobs('ties', 2).map((k) => k.key).join() === 'density,lambda', 'ties knobs');
+      assert(MM.sweepKnobs('dare', 2).map((k) => k.key).join() === 'drop,lambda,balance', 'dare knobs (no seed, balance for K=2)');
+      assert(MM.sweepKnobs('model_stock', 2).length === 0 && MM.sweepKnobs('linear', 3).length === 0, 'no-knob methods');
+      const knob = MM.sweepKnobs('linear', 2)[0];
+      const pts = MM.sweepMethod(T, ctx, 'linear', params('linear', 2), knob, [0, 1]);
+      assert(Math.abs(pts[0].accs[0] - T.expertAccs[0][0]) < 1e-9 && Math.abs(pts[1].accs[1] - T.expertAccs[1][1]) < 1e-9, 'balance 0/1 should be expert A/B');
+      assert(Math.abs(MM.knobValue({ weights: [1, 3, 1] }, knob) - 0.75) < 1e-12, 'knobValue balance');
+      const xs = MM.sweepValues({ min: 0, max: 2, step: 0.05 }, 5);
+      assert(xs.join() === '0,0.5,1,1.5,2', xs.join());
+    });
+
+    test('pickSettings: best, safe and forgiving range', () => {
+      const xs = [0, 1, 2, 3, 4, 5];
+      const mean = [0.5, 0.80, 0.86, 0.85, 0.95, 0.6]; // spike at 4, plateau at 1–3
+      const a = MM.pickSettings(xs, mean);
+      assert(a.best === 4 && a.range[0] === 4 && a.range[1] === 4, JSON.stringify(a));
+      assert(a.safe >= 1 && a.safe <= 3, `safe should be on the plateau (1–3), not the spike; got ${a.safe}`);
+      const b = MM.pickSettings(xs, mean, [0, 0, 0.01, 0.01, 0.2, 0]);
+      assert(b.safe === 2 || b.safe === 3, `with sd the noisy spike loses: ${b.safe}`);
+      const c = MM.pickSettings([0, 1, 2], [0.9, 0.905, 0.9]);
+      assert(c.range[0] === 0 && c.range[1] === 2 && c.rangeFrac === 1, JSON.stringify(c));
+    });
+
     test('Linear with weights [1, 0] reproduces Expert A', () => {
       const p = params('linear', T.K);
       p.weights = [1, 0];
