@@ -12,7 +12,8 @@
   function* trainBundle(cfg) {
     const { experts: specs, init, hidden, ftSteps, seed } = cfg;
     const K = specs.length;
-    const layout = MM.makeLayout([2, hidden, hidden, 1], MM.makeEncoder(9, MM.EXTENT, 0.5));
+    const digits = MM.taskKind(specs[0].task) === 'digits';
+    const layout = digits ? MM.makeLayout([MM.DIGIT_D, hidden, hidden, 1]) : MM.makeLayout([2, hidden, hidden, 1], MM.makeEncoder(9, MM.EXTENT, 0.5));
     const tasks = specs.map((e, i) => MM.makeTaskData(e, i, seed));
     const shared = init === 'shared';
     const total = shared ? BASE_STEPS + K * ftSteps : K * (BASE_STEPS + ftSteps);
@@ -34,7 +35,7 @@
     if (shared) {
       base = MM.initParams(layout, seed);
       live.base = base;
-      const pre = MM.concat([MM.genericSet(seed, 900), MM.pretrainSet(tasks, 0.05, seed)]);
+      const pre = MM.concat([digits ? MM.genericDigitSet(seed, 900) : MM.genericSet(seed, 900), MM.pretrainSet(tasks, 0.05, seed)]);
       yield* drive(MM.trainGen(layout, base, pre.X, pre.Y, pre.n, BASE_STEPS, LR), 'base', base);
       for (let i = 0; i < K; i++) {
         const e = new Float32Array(base);

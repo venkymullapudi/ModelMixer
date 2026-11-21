@@ -50,7 +50,7 @@
   function encodeRecipe(r) {
     const o = {
       v: 1,
-      e: r.experts.map((x) => [x.task, x.region, x.flip ? 1 : 0]),
+      e: r.experts.map((x) => [x.task, x.region || 0, x.flip ? 1 : 0]),
       i: r.init === 'independent' ? 'i' : 's',
       h: r.hidden, f: r.ftSteps, s: r.seed, a: r.align ? 1 : 0,
       m: r.method, p: r.params,
@@ -66,11 +66,14 @@
     if (!Array.isArray(o.e) || o.e.length < 2 || o.e.length > 3) return { ok: false, error: 'A recipe needs 2 or 3 experts.' };
     const experts = [];
     for (const x of o.e) {
-      if (!Array.isArray(x) || !MM.TASKS[x[0]] || !MM.REGIONS[x[1]]) return { ok: false, error: 'The link names an unknown skill or region.' };
-      const e = { task: x[0], region: x[1] };
+      if (!Array.isArray(x) || !MM.TASKS[x[0]]) return { ok: false, error: 'The link names an unknown skill or region.' };
+      const digits = MM.taskKind(x[0]) === 'digits';
+      if (!digits && !MM.REGIONS[x[1]]) return { ok: false, error: 'The link names an unknown skill or region.' };
+      const e = digits ? { task: x[0] } : { task: x[0], region: x[1] };
       if (x[2]) e.flip = true;
       experts.push(e);
     }
+    if (new Set(experts.map((e) => MM.taskKind(e.task))).size > 1) return { ok: false, error: 'A recipe can’t mix digit and plane skills.' };
     const K = experts.length;
     if (!MM.METHOD_BY_ID[o.m]) return { ok: false, error: 'The link names an unknown mixing method.' };
     const recipe = {

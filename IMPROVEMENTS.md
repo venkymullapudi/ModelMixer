@@ -14,20 +14,20 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 ## Next up (highest value first)
 
 1. **Hosted demo (needs owner OK):** a GitHub Pages workflow that publishes `dist/modelmixer.html`, so recipe links can be shared as https URLs. The repo owner has to enable Pages in the repo settings.
-2. **Image-like task:** procedurally generated 8×8 "digits", each expert on a different digit pair, so
-   merges run on a ~64-dim input model rather than only 2-D toys.
-3. **Newer methods:** DELLA (magnitude-adaptive drop), multi-model SLERP / Karcher mean, SCE,
+2. **Newer methods:** DELLA (magnitude-adaptive drop), multi-model SLERP / Karcher mean, SCE,
    Localize-and-Stitch, AdaMerging (entropy-tuned coefficients on unlabeled data).
-4. **Robustness extras:** a paired-difference view (method X minus method Y per seed), a configurable seed
+3. **Robustness extras:** a paired-difference view (method X minus method Y per seed), a configurable seed
    count and a CSV download.
-5. **Advisor blending:** let the measured toy evidence nudge the ranking (e.g. promote a pick that clearly beats the rule-based #1), and show the measured-vs-rules disagreement in the Arena too.
-6. **Compare extras:** a diff map that highlights where A and B disagree on the plane, and an A-vs-B paired multi-seed check (is B's edge real?).
-7. **Per-layer sweep:** a heat map over two layers' gradient values (e.g. SLERP t for hidden 1 vs output), showing which layer the merge is most sensitive to.
+4. **Advisor blending:** let the measured toy evidence nudge the ranking (e.g. promote a pick that clearly beats the rule-based #1), and show the measured-vs-rules disagreement in the Arena too.
+5. **Compare extras:** a diff map that highlights where A and B disagree on the plane, and an A-vs-B paired multi-seed check (is B's edge real?).
+6. **Per-layer sweep:** a heat map over two layers' gradient values (e.g. SLERP t for hidden 1 vs output), showing which layer the merge is most sensitive to.
+7. **Digits extras:** a conflict scenario (0-vs-1 with 1-vs-7, where both claim the "1"s), a per-pixel saliency view of what each merge kept, and digit-aware advisor evidence.
 8. **Accessibility pass:** keyboard focus rings and arrow-key navigation in the method picker, ARIA
    labels on canvases, and a colour-blind-safe palette option.
 
 ## Done
 
+- 2026-11-21: **Digits scenario (image-like task):** procedurally generated 8×8 digits (5×7 glyphs with random shift, stroke dropout, blur and pixel noise). Expert A tells 0 from 1 and B tells 2 from 3; the menu offers 6 digit pairs including a 1-vs-7 pair for conflicts. Models take 64 raw pixels (about 3.2k params), the base is pre-trained on random pen strokes, and the router and distillation work on any input size. The map becomes a gallery of test digits (tint = predicted class, red ring = mistake, per-task accuracy) in the Lab, pin, thumbnails and Arena. Plane and digit skills can't be mixed in one recipe (UI and share links enforce this). Ranking differs from the plane toy: Distill 99.4, MoE 98.3, RegMean 96.5, Fisher 92.9, Linear 91.1, TIES 88.2, TA 86.8, DARE 74.7, Stitch 73.8. 3 tests.
 - 2026-11-21: **Per-layer values (mergekit gradients):** a "Per-layer …" toggle for SLERP (t), two-expert Linear (A↔B balance) and Task Arithmetic, TIES, DARE and Breadcrumbs (λ). It gives one slider per layer plus Flat / Ramp ↑ / Ramp ↓ / Middle-heavy presets. Exported verbatim as mergekit gradient lists (e.g. `t: [0.25, 0.50, 0.75]`); TIES switches to `normalize: false` with weight ≈ λ ÷ K. Recipe labels, share links and the sweep panel understand gradients. Toy finding: SLERP with t ramping up (0.25→0.75) reaches 93.1% vs 85.8% flat and 77.2% ramping down. 2 tests, including Linear [0, 0, 1] = Layer Stitch A·A·B.
 - 2026-11-21: **Defaults review** (Two skills, Three skills and Hard + easy × seeds 7/108/209; mean / sd / worst of average accuracy):
 

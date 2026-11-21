@@ -317,6 +317,35 @@
       assert(d === 'DARE · p 0.50 · λ 1.00 · DARE-TIES', d);
     });
 
+    // ---------- digits (image-like task) ----------
+    const Td = MM.trainBundleSync(scenario('digits'));
+    test('Digits: 64-pixel experts master their pairs; the base does not', () => {
+      assert(Td.layout.inDim === 64 && Td.layout.sizes[0] === 64 && Td.tasks[0].train.d === 64, 'input size');
+      Td.expertAccs.forEach((a, i) => assert(a[i] > 0.95, `expert ${i} only ${pct(a[i])}`));
+      const baseAvg = Td.baseAccs.reduce((a, b) => a + b, 0) / Td.K;
+      assert(baseAvg < 0.9, `base already ${pct(baseAvg)}`);
+      return `experts ${Td.expertAccs.map((a, i) => pct(a[i])).join(' / ')}, base ${pct(baseAvg)}`;
+    });
+    test('Digits: every method runs; router and data-informed merges stay strong', () => {
+      const c = MM.bundleCtx(Td, false);
+      const got = {};
+      MM.METHODS.forEach((m) => {
+        const r = MM.scoreMethod(Td, c, m.id, params(m.id, Td.K));
+        assert(!r.blocked && Number.isFinite(r.avg), `${m.id} failed`);
+        got[m.id] = r.avg;
+      });
+      assert(got.moe > 0.95 && got.distill > 0.95 && got.regmean > 0.9, `moe ${pct(got.moe)}, distill ${pct(got.distill)}, regmean ${pct(got.regmean)}`);
+      assert(MM.getRouter(c).acc > 0.95, 'router should tell 0/1 digits from 2/3 digits');
+      return `RegMean ${pct(got.regmean)}, TIES ${pct(got.ties)}, Linear ${pct(got.linear)}`;
+    });
+    test('Digits: links round-trip and mixed kinds are rejected', () => {
+      const base = { init: 'shared', hidden: 32, ftSteps: 250, seed: 7, align: false, method: 'ties', params: params('ties', 2), pin: null };
+      const d = MM.decodeRecipe(MM.encodeRecipe(Object.assign({ experts: [{ task: 'd01' }, { task: 'd45', flip: true }] }, base)));
+      assert(d.ok && JSON.stringify(d.recipe.experts) === '[{"task":"d01"},{"task":"d45","flip":true}]', JSON.stringify(d));
+      const mixed = MM.decodeRecipe(MM.encodeRecipe(Object.assign({ experts: [{ task: 'd01' }, { task: 'moons', region: 'left' }] }, base)));
+      assert(!mixed.ok, 'mixed digit/plane experts should be rejected');
+    });
+
     // ---------- strangers ----------
     const Ts = MM.trainBundleSync(scenario('strangers'));
     test('Strangers: task-vector methods are blocked without a base', () => {

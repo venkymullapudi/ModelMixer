@@ -150,14 +150,16 @@
     const cv = which === 'base' ? $('#thumb-base') : $(`#thumb-${which}`);
     if (!cv || !T) return;
     const layout = (T.live && T.live.layout) || T.layout;
-    MM.drawBoundary(cv, (X, n) => MM.predictProb(layout, P, X, n), { grid: 54, thumb: true, tasks, showPoints: false });
+    MM.drawMap(cv, (X, n) => MM.predictProb(layout, P, X, n), { grid: 54, thumb: true, tasks, showPoints: false });
   }
 
   // ---------------- INGREDIENTS ----------------
   function renderIngredients() {
     const K = S.experts.length;
     const sc = MM.SCENARIOS.find((s) => s.id === S.scenario);
-    const taskOpts = (v) => Object.entries(MM.TASKS).map(([k, t]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${t.name}</option>`).join('');
+    // experts in one mix must share an input space: plane tasks or 8×8 digit tasks, never both
+    const kind = MM.taskKind(S.experts[0].task);
+    const taskOpts = (v) => Object.entries(MM.TASKS).filter(([k]) => MM.taskKind(k) === kind).map(([k, t]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${t.name}</option>`).join('');
     const regOpts = (v) => Object.entries(MM.REGIONS).map(([k, r]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${r.name}</option>`).join('');
     const ready = T && T.experts && !training && T.K === K; // T can lag behind S.experts until retraining starts
     const accBadge = (i) => (ready && T.expertAccs[i] ? `<span class="acc" title="Accuracy on its own task">${pct(T.expertAccs[i][i])}</span>` : '');
@@ -177,7 +179,7 @@
                 ${K > 2 ? `<button class="icon-btn" data-remove="${i}" title="Remove expert">×</button>` : ''}</div>
               <div class="expert-row">
                 <select data-ex="${i}" data-field="task" aria-label="Task">${taskOpts(e.task)}</select>
-                <select data-ex="${i}" data-field="region" aria-label="Region">${regOpts(e.region)}</select>
+                ${kind === 'digits' ? '' : `<select data-ex="${i}" data-field="region" aria-label="Region">${regOpts(e.region)}</select>`}
               </div>
               <label class="mini-check"><input type="checkbox" data-ex="${i}" data-field="flip" ${e.flip ? 'checked' : ''}/> invert labels</label>
             </div>
@@ -263,9 +265,14 @@
       S.experts.splice(+b.dataset.remove, 1);
       scheduleRetrain();
     } else if (b.id === 'addExpert') {
-      const used = new Set(S.experts.map((e) => e.region));
-      const region = ['top', 'right', 'left', 'center'].find((r) => !used.has(r)) || 'top';
-      S.experts.push({ task: 'xor', region });
+      if (MM.taskKind(S.experts[0].task) === 'digits') {
+        const usedT = new Set(S.experts.map((e) => e.task));
+        S.experts.push({ task: ['d45', 'd67', 'd89', 'd23', 'd01'].find((t) => !usedT.has(t)) || 'd45' });
+      } else {
+        const used = new Set(S.experts.map((e) => e.region));
+        const region = ['top', 'right', 'left', 'center'].find((r) => !used.has(r)) || 'top';
+        S.experts.push({ task: 'xor', region });
+      }
       scheduleRetrain();
     } else if (b.closest('.seg')) {
       const key = b.closest('.seg').dataset.setting;
@@ -469,7 +476,7 @@
     }
     bl.hidden = true;
     const ctx = MM.bundleCtx(T, S.pin.align);
-    MM.drawBoundary(cv, pin.predict, {
+    MM.drawMap(cv, pin.predict, {
       tasks: ctx.tasks, showPoints: S.overlay.points, showRegions: S.overlay.regions,
       gates: pin.router && S.overlay.router ? pin.router.gates : null, K: ctx.K,
     });
@@ -536,7 +543,7 @@
       return;
     }
     blocked.hidden = true;
-    MM.drawBoundary(cv, r.predict, {
+    MM.drawMap(cv, r.predict, {
       tasks: ctx.tasks, showPoints: S.overlay.points, showRegions: S.overlay.regions,
       gates: r.router && S.overlay.router ? r.router.gates : null, K: ctx.K,
     });
@@ -565,8 +572,10 @@
     $('#stageHead').innerHTML = `
       <div class="sh-title"><span class="fam-tag" style="--fc:${f.color}">${f.name}</span><h2>${m.name}</h2></div>
       <div class="badges">${badges.join('')}${pinBtns}</div>`;
-    const tg = [['points', 'Points'], ['regions', 'Regions']];
-    if (m.id === 'moe') tg.push(['router', 'Router']);
+    const planeTasks = !T || !T.tasks || T.tasks[0].kind !== 'digits';
+    const tg = planeTasks ? [['points', 'Points'], ['regions', 'Regions']] : [];
+    if (m.id === 'moe' && planeTasks) tg.push(['router', 'Router']);
+    $('#lgBoundary').hidden = !planeTasks; // a digit gallery has no boundary line
     $('#overlayToggles').innerHTML = tg.map(([k, l]) => `<button class="tg ${S.overlay[k] ? 'on' : ''}" data-ov="${k}">${l}</button>`).join('');
   }
   $('#overlayToggles').addEventListener('click', (ev) => {
@@ -889,7 +898,7 @@
       </button>`).join('');
     results.forEach((x) => {
       if (x.r.blocked) return;
-      MM.drawBoundary($(`#tg-${x.m.id}`), x.r.predict, { grid: 64, thumb: true, tasks: ctx.tasks, showPoints: true });
+      MM.drawMap($(`#tg-${x.m.id}`), x.r.predict, { grid: 64, thumb: true, tasks: ctx.tasks, showPoints: true });
     });
   }
   $('#thumbGrid').addEventListener('click', (ev) => {

@@ -139,7 +139,7 @@
   function getRouter(ctx) {
     if (ctx.cache.router) return ctx.cache.router;
     const K = ctx.K;
-    const layout = MM.makeLayout([2, 16, K]);
+    const layout = MM.makeLayout([ctx.layout.inDim, 16, K]); // router reads raw inputs (2 coords or 64 pixels)
     const P = MM.initParams(layout, ctx.seed + 4242);
     const all = MM.concat(ctx.tasks.map((t) => t.train));
     const labels = new Int32Array(all.n);
@@ -437,7 +437,8 @@
         const rng = MM.mulberry32(ctx.seed + 77);
         // transfer set: every task input, half of them jittered (no labels used)
         const n = pool.n, X = new Float32Array(pool.X);
-        for (let i = 0; i < n; i += 2) { X[2 * i] += MM.gauss(rng) * 0.15; X[2 * i + 1] += MM.gauss(rng) * 0.15; }
+        const d = ctx.layout.inDim;
+        for (let i = 0; i < n; i += 2) for (let k = 0; k < d; k++) X[d * i + k] += MM.gauss(rng) * 0.15;
         const Y = teacher(X, n);
         const S = ctx.base ? new Float32Array(ctx.base) : MM.initParams(ctx.layout, ctx.seed + 99);
         const last = MM.trainSync(ctx.layout, S, X, Y, n, +p.steps, 0.02);

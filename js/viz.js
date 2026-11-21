@@ -52,6 +52,58 @@
 
   const toPx = (x, y, W, H) => { const E = MM.EXTENT; return [((x + E) / (2 * E)) * W, ((E - y) / (2 * E)) * H]; };
 
+  // Image tasks have no 2-D plane to colour, so show a gallery of test digits instead:
+  // tile tint = predicted class (same colours as the map), red ring = mistake.
+  function drawDigits(cv, predict, o) {
+    const { ctx, w: W, h: H } = setup(cv);
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = `rgb(${BG.join(',')})`; ctx.fillRect(0, 0, W, H);
+    const tasks = o.tasks, K = tasks.length, D = MM.DIGIT_D;
+    const thumb = !!o.thumb, pad = thumb ? 3 : 12, head = thumb ? 0 : 20, gap = thumb ? 1 : 3;
+    const cols = thumb ? 6 : 10;
+    const bandH = (H - pad) / K;
+    tasks.forEach((t, k) => {
+      const y0 = pad / 2 + k * bandH;
+      const cell = (W - 2 * pad) / cols;
+      const rows = Math.max(1, Math.floor((bandH - head - pad / 2) / cell));
+      const nShow = Math.min(t.test.n, rows * cols);
+      const pAll = predict(t.test.X, t.test.n);
+      if (!thumb) {
+        let correct = 0;
+        for (let i = 0; i < t.test.n; i++) if ((pAll[i] > 0.5 ? 1 : 0) === t.test.Y[i]) correct++;
+        const tk = MM.TASKS[t.spec.task];
+        ctx.font = '700 11.5px Inter, system-ui, sans-serif'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = MODEL_COLORS[k];
+        ctx.fillText(`${'ABC'[k]} · ${tk.name}${t.spec.flip ? ' (inv)' : ''}`, pad, y0 + 9);
+        ctx.fillStyle = 'rgba(205,211,227,0.75)'; ctx.font = '500 11px "JetBrains Mono", monospace'; ctx.textAlign = 'right';
+        ctx.fillText(`${(100 * correct / t.test.n).toFixed(1)}% of ${t.test.n} test digits`, W - pad, y0 + 9);
+        ctx.textAlign = 'left';
+      }
+      for (let i = 0; i < nShow; i++) {
+        const r = Math.floor(i / cols), c = i % cols;
+        const x = pad + c * cell, y = y0 + head + r * cell, sz = cell - gap;
+        const pv = pAll[i], cls = pv > 0.5 ? 1 : 0, conf = Math.min(1, Math.abs(pv - 0.5) * 2);
+        const col = CLASS[cls];
+        ctx.fillStyle = `rgba(${col.join(',')},${(0.14 + 0.4 * conf).toFixed(3)})`;
+        ctx.fillRect(x, y, sz, sz);
+        const px = (sz - (thumb ? 2 : 6)) / 8, ox = x + (sz - px * 8) / 2, oy = y + (sz - px * 8) / 2;
+        for (let q = 0; q < 64; q++) {
+          const v = t.test.X[i * D + q];
+          if (v < 0.08) continue;
+          ctx.fillStyle = `rgba(240,244,255,${Math.min(1, v).toFixed(3)})`;
+          ctx.fillRect(ox + (q % 8) * px, oy + ((q / 8) | 0) * px, px + 0.25, px + 0.25);
+        }
+        if (cls !== t.test.Y[i]) {
+          ctx.strokeStyle = '#ff3b6b'; ctx.lineWidth = thumb ? 1.2 : 2.2;
+          ctx.strokeRect(x + 1, y + 1, sz - 2, sz - 2);
+        }
+      }
+    });
+  }
+  const isDigits = (o) => !!(o && o.tasks && o.tasks.length && o.tasks[0].kind === 'digits');
+  /** Draw whatever "map" suits the tasks: the decision plane, or a digit gallery for image tasks. */
+  function drawMap(cv, predict, o) { return isDigits(o) ? drawDigits(cv, predict, o) : drawBoundary(cv, predict, o); }
+
   function drawBoundary(cv, predict, o) {
     o = o || {};
     const { ctx, w: W, h: H } = setup(cv);
@@ -280,5 +332,5 @@
     el('path', { d, fill: 'none', stroke: color, 'stroke-width': 1.5 }, svg);
   }
 
-  Object.assign(MM, { drawBoundary, drawProvenance, lineChart, sparkline, MODEL_COLORS, BASE_COLOR, CLASS });
+  Object.assign(MM, { drawMap, drawDigits, drawBoundary, drawProvenance, lineChart, sparkline, MODEL_COLORS, BASE_COLOR, CLASS });
 })();

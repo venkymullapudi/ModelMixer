@@ -61,7 +61,8 @@
       tensors.push({ name: `b${l + 1}`, kind: 'b', layer: l, off, rows: out, cols: 1, size: out });
       off += out;
     }
-    return { sizes, tensors, total: off, nLayers: sizes.length - 1, enc: enc || null };
+    // inDim = width of one raw input row (2 for plane points fed through the RBF encoder)
+    return { sizes, tensors, total: off, nLayers: sizes.length - 1, enc: enc || null, inDim: enc ? 2 : sizes[0] };
   }
 
   function initParams(layout, seed) {
@@ -242,7 +243,8 @@
     const F = new Float32Array(layout.total);
     const one = new Float32Array([1]);
     for (let s = 0; s < n; s++) {
-      const x = X.subarray(s * 2, s * 2 + 2);
+      const d = layout.inDim;
+      const x = X.subarray(s * d, s * d + d);
       const { out, acts } = forward(layout, P, x, 1, true);
       const p = sigmoid(out[0]);
       const g = backward(layout, P, acts, one, 1);
