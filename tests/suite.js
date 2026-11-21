@@ -161,6 +161,28 @@
       assert(c.recs.find((x) => x.id === 'moe').caveats.some((t) => /router/i.test(t)), 'MoE should warn about routing identical inputs');
     });
 
+    test('pairedDiff: consistent, noisy and identical comparisons', () => {
+      const mk = (a, b) => a.map((x, i) => ({ X: { avg: x }, Y: { avg: b[i] } }));
+      const c = MM.pairedDiff(mk([0.9, 0.91, 0.88, 0.92, 0.9], [0.85, 0.86, 0.84, 0.87, 0.86]), 'X', 'Y');
+      assert(c.verdict === 'a' && c.wins === 5 && Math.abs(c.mean - 0.046) < 1e-9, JSON.stringify(c));
+      const nz = MM.pairedDiff(mk([0.9, 0.8, 0.92, 0.81, 0.9], [0.85, 0.88, 0.86, 0.86, 0.87]), 'X', 'Y');
+      assert(nz.verdict === 'noise', `noisy pair: ${nz.verdict} (t ${nz.t.toFixed(2)})`);
+      const lean = MM.pairedDiff(mk([0.9, 0.95, 0.9, 0.86, 0.9], [0.9, 0.85, 0.89, 0.85, 0.8]), 'X', 'Y');
+      assert(lean.verdict === 'lean-a' && lean.losses === 0, `lean: ${lean.verdict} t ${lean.t.toFixed(2)}`);
+      const same = MM.pairedDiff(mk([0.9, 0.8, 0.7], [0.9, 0.8, 0.7]), 'X', 'Y');
+      assert(same.verdict === 'same' && same.ties === 3, JSON.stringify(same));
+      const blocked = MM.pairedDiff([{ X: { avg: 0.9 }, Y: { blocked: 'no' } }], 'X', 'Y');
+      assert(blocked.n === 0 && blocked.verdict === 'too-few', 'blocked runs are skipped');
+    });
+    test('seedRunsCSV: header, one row per seed × method, quoting', () => {
+      const runs = [{ ties: { avg: 0.9, retention: 0.95, accs: [0.8, 1] }, moe: { blocked: 'needs data, "really"' } }];
+      const csv = MM.seedRunsCSV(runs, ['ties', 'moe'], [7], ['Moons', 'Digits 0 vs 1']).trim().split('\n');
+      assert(csv.length === 3, csv.join(' | '));
+      assert(csv[0] === 'seed,method,average,retention,Moons,Digits 0 vs 1,blocked', csv[0]);
+      assert(csv[1] === '7,ties,0.9000,0.9500,0.8000,1.0000,', csv[1]);
+      assert(csv[2] === '7,moe,,,,,"needs data, ""really"""', csv[2]);
+    });
+
     // ---------- training ----------
     const cfgTwo = scenario('two');
     const T = MM.trainBundleSync(cfgTwo);

@@ -19,6 +19,7 @@
     advisor: {}, // answers to the recipe advisor
     sweepKnob: {}, // method id -> knob key shown in the sensitivity chart
     sweepSeeds: false, // add a ±1 sd band from 2 extra seeds
+    robustSeeds: 5, // seeds in the Arena's multi-seed check
     pin: null, // { method, params, align } recipe pinned for side-by-side comparison
     exp: {
       base: 'mistralai/Mistral-7B-v0.1',
@@ -33,7 +34,7 @@
   try {
     const saved = JSON.parse(localStorage.getItem('modelmixer:v1') || 'null');
     if (saved) {
-      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor', 'sweepKnob', 'sweepSeeds']) if (saved[k] !== undefined) S[k] = saved[k];
+      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor', 'sweepKnob', 'sweepSeeds', 'robustSeeds']) if (saved[k] !== undefined) S[k] = saved[k];
       // v2 defaults (2026-11 review): drop knobs saved under the old defaults so everyone starts from the new ones
       if (saved.params && saved.paramsV === PARAMS_V) for (const id in saved.params) if (S.params[id]) Object.assign(S.params[id], saved.params[id]);
       if (saved.exp) Object.assign(S.exp, saved.exp);
@@ -43,8 +44,8 @@
   } catch (e) { /* storage unavailable */ }
   function persist() {
     try {
-      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds } = S;
-      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, paramsV: PARAMS_V, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds }));
+      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds } = S;
+      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, paramsV: PARAMS_V, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds }));
     } catch (e) { /* ignore */ }
     syncHash();
   }
@@ -907,17 +908,30 @@
   });
 
   // ---------------- ROBUSTNESS (multi-seed) ----------------
-  const ROBUST_SEEDS = 5;
   let robustToken = 0;
+  let robustData = null; // { runs, ids, seeds, taskNames, scenario } from the last check
+  const h2h = { a: null, b: null };
+  function renderRobustCtl() {
+    const n = [3, 5, 10].includes(+S.robustSeeds) ? +S.robustSeeds : 5;
+    $$('#robustSeeds button').forEach((b) => b.classList.toggle('on', +b.dataset.n === n));
+    $('#runRobust').textContent = `Run ${n} seeds`;
+  }
+  $('#robustSeeds').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-n]');
+    if (!b) return;
+    S.robustSeeds = +b.dataset.n; persist(); renderRobustCtl();
+  });
+  renderRobustCtl();
   async function runRobust() {
     if (!T || !T.experts || training) { toast('Wait for training to finish'); return; }
     const token = ++robustToken;
     const btn = $('#runRobust');
     btn.disabled = true;
     const ids = MM.METHODS.map((m) => m.id);
-    const seeds = Array.from({ length: ROBUST_SEEDS }, (_, i) => S.seed + i * 101);
+    const N = [3, 5, 10].includes(+S.robustSeeds) ? +S.robustSeeds : 5;
+    const seeds = Array.from({ length: N }, (_, i) => S.seed + i * 101);
     const cfg = { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps };
-    const steps = ROBUST_SEEDS * (ids.length + 1);
+    const steps = N * (ids.length + 1);
     let doneSteps = 0;
     const prog = (label) => {
       $('#robust').innerHTML = `<div class="loading"><span class="spinner"></span> ${label}</div><div class="rprog"><div style="width:${(100 * doneSteps / steps).toFixed(0)}%"></div></div>`;
@@ -927,7 +941,7 @@
       for (let s = 0; s < seeds.length; s++) {
         let bundle = T;
         if (s > 0) {
-          prog(`Seed ${s + 1}/${ROBUST_SEEDS}: training experts…`);
+          prog(`Seed ${s + 1}/${N}: training experts…`);
           await frame();
           const it = MM.trainBundle({ ...cfg, seed: seeds[s] });
           let r, tick = performance.now();
@@ -940,7 +954,7 @@
         const ctx = MM.bundleCtx(bundle, S.align);
         const run = {};
         for (const id of ids) {
-          prog(`Seed ${s + 1}/${ROBUST_SEEDS}: mixing with ${MM.METHOD_BY_ID[id].short}…`);
+          prog(`Seed ${s + 1}/${N}: mixing with ${MM.METHOD_BY_ID[id].short}…`);
           await frame();
           if (token !== robustToken) return;
           const r = MM.scoreMethod(bundle, ctx, id, S.params[id]);
@@ -950,6 +964,8 @@
         runs.push(run);
       }
       robustStale = false;
+      robustData = { runs, ids, seeds, taskNames: T.tasks.map((t) => MM.TASKS[t.spec.task].name + (t.spec.flip ? ' (inv)' : '')), scenario: S.scenario };
+      h2h.a = h2h.b = null;
       renderRobust(MM.summarizeSeeds(runs, ids));
     } finally {
       if (token === robustToken) btn.disabled = false;
@@ -1000,8 +1016,68 @@
     $('#robust').innerHTML = `${verdict}${pick ? `<div class="verdict">${pick}</div>` : ''}
       <div class="board-wrap"><table class="board robust">
         <thead><tr><th>#</th><th>Method</th><th>Mean ± sd</th><th>Per-seed average accuracy <span class="axis-lbl">${pct(lo)} → 100%</span></th><th title="Lowest single-task accuracy seen on any seed">Worst task</th><th title="Seeds where this method had the best average (ties split)">Wins</th><th>Stability</th></tr></thead>
-        <tbody>${rows}${bl}</tbody></table></div>`;
+        <tbody>${rows}${bl}</tbody></table></div>
+      <div class="h2h" id="h2h"></div>`;
+    // default pair: the two best free merges (no data, no training, 1× model) — the decision most people face
+    const pair = cheap.length >= 2 ? cheap : ok;
+    if (!h2h.a || !ok.some((x) => x.id === h2h.a)) h2h.a = pair[0].id;
+    if (!h2h.b || !ok.some((x) => x.id === h2h.b) || h2h.b === h2h.a) h2h.b = (pair[1] || ok[1] || ok[0]).id;
+    renderH2H(ok);
   }
+
+  // Head-to-head: per-seed difference between two methods (paired across the same seeds).
+  function renderH2H(ok) {
+    const el = $('#h2h');
+    if (!el || !robustData) return;
+    ok = ok || MM.summarizeSeeds(robustData.runs, robustData.ids).filter((x) => !x.blocked).sort((a, b) => b.mean - a.mean);
+    const name = (id) => MM.METHOD_BY_ID[id].name;
+    const opts = (sel) => ok.map((x) => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${esc(name(x.id))}</option>`).join('');
+    const d = MM.pairedDiff(robustData.runs, h2h.a, h2h.b);
+    const M = Math.max(0.02, ...d.diffs.map((x) => Math.abs(x))) * 1.15;
+    const X = (v) => `${(50 + (v / M) * 50).toFixed(2)}%`;
+    const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
+    const A = `<b>${esc(name(h2h.a))}</b>`, B = `<b>${esc(name(h2h.b))}</b>`;
+    const tTxt = Number.isFinite(d.t) ? `paired t = ${d.t.toFixed(2)}, needs ±${d.crit.toFixed(2)}` : 'same gap on every seed';
+    // a result that only just clears the bar (and isn't won on every seed) is tentative, especially when browsing many pairs
+    const borderline = Number.isFinite(d.t) && Math.abs(d.t) < d.crit * 1.2 && d.wins !== d.n && d.losses !== d.n;
+    const real = borderline ? 'It only just clears the bar, so treat it as tentative (checking many pairs will turn up some by chance).' : 'Likely a real difference on this setup.';
+    const verdict = {
+      a: ['good', `${A} beats ${B} by ${pts(d.mean)} on average and wins ${d.wins}/${d.n} seeds (${tTxt}). ${real}`],
+      b: ['bad', `${B} beats ${A} by ${pts(-d.mean)} on average and wins ${d.losses}/${d.n} seeds (${tTxt}). ${real}`],
+      'lean-a': ['mid', `${A} leans ahead: ${pts(d.mean)} on average, wins ${d.wins}/${d.n} seeds and never loses, but the gap varies too much to call (${tTxt}). Run 10 seeds to settle it.`],
+      'lean-b': ['mid', `${B} leans ahead: ${pts(-d.mean)} on average, wins ${d.losses}/${d.n} seeds and never loses, but the gap varies too much to call (${tTxt}). Run 10 seeds to settle it.`],
+      noise: ['mid', `No reliable difference: ${A} averages ${pts(d.mean)}, but the winner flips between seeds (${d.wins} vs ${d.losses}, ${tTxt}). Choose on cost and requirements.`],
+      same: ['mid', `${A} and ${B} score the same on every seed.`],
+      'too-few': ['mid', 'Need at least 2 seeds where both methods run.'],
+    }[d.verdict];
+    el.innerHTML = `<div class="h2h-head"><b>Head-to-head</b>
+        <select id="h2hA" aria-label="Method A">${opts(h2h.a)}</select><span class="muted">minus</span>
+        <select id="h2hB" aria-label="Method B">${opts(h2h.b)}</select>
+        <button class="btn ghost sm" id="robustCsv" title="Every per-seed result: seed, method, average, retention, per-task accuracy">Download CSV</button></div>
+      <div class="h2h-strip" title="Each dot is one seed: average accuracy of A minus B">
+        <i class="zero"></i><span class="lbl l">${esc(MM.METHOD_BY_ID[h2h.b].short)} better</span><span class="lbl r">${esc(MM.METHOD_BY_ID[h2h.a].short)} better</span>
+        ${d.n > 1 ? `<i class="band" style="left:${X(Math.max(-M, d.mean - d.sd))};width:calc(${X(Math.min(M, d.mean + d.sd))} - ${X(Math.max(-M, d.mean - d.sd))})"></i>` : ''}
+        ${d.diffs.map((x, i) => `<i class="dot ${x > 5e-4 ? 'pos' : x < -5e-4 ? 'neg' : ''}" style="left:${X(x)}" title="seed ${robustData.seeds[i]}: ${pts(x)}"></i>`).join('')}
+        <i class="mean" style="left:${X(d.mean)}"></i>
+        <span class="tick t0" style="left:${X(-M / 1.15)}">${pts(-M / 1.15)}</span><span class="tick t1" style="left:50%">0</span><span class="tick t2" style="left:${X(M / 1.15)}">${pts(M / 1.15)}</span>
+      </div>
+      <div class="verdict ${verdict[0]}">${verdict[1]}</div>`;
+  }
+  $('#robust').addEventListener('change', (ev) => {
+    if (ev.target.id === 'h2hA') h2h.a = ev.target.value;
+    else if (ev.target.id === 'h2hB') h2h.b = ev.target.value;
+    else return;
+    renderH2H();
+  });
+  $('#robust').addEventListener('click', (ev) => {
+    if (!ev.target.closest('#robustCsv') || !robustData) return;
+    const csv = MM.seedRunsCSV(robustData.runs, robustData.ids, robustData.seeds, robustData.taskNames);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `modelmixer-${robustData.scenario || 'custom'}-${robustData.seeds.length}-seeds.csv`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
   $('#robust').addEventListener('click', (ev) => {
     const tr = ev.target.closest('[data-open]');
     if (tr) { setTab('lab'); selectMethod(tr.dataset.open); }

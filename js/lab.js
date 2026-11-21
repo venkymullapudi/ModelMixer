@@ -224,5 +224,42 @@
     return { best: xs[bi], bestVal: mean[bi], safe: xs[si], safeVal: mean[si], safeLower: lower[si], range: [xs[lo], xs[hi]], rangeFrac: (xs[hi] - xs[lo]) / (xs[xs.length - 1] - xs[0] || 1) };
   }
 
-  Object.assign(MM, { sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  // ---------- paired comparisons across seeds ----------
+  // two-sided 95% critical t values by degrees of freedom (n − 1)
+  const T95 = [Infinity, 12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23];
+  /** Per-seed difference a − b in average accuracy, with a paired-t / sign-consistency verdict. */
+  function pairedDiff(runs, a, b) {
+    const diffs = runs.map((r) => (r[a] && r[b] && !r[a].blocked && !r[b].blocked ? r[a].avg - r[b].avg : null)).filter((x) => x !== null);
+    const n = diffs.length;
+    const mean = n ? diffs.reduce((x, y) => x + y, 0) / n : 0;
+    const sd = n > 1 ? Math.sqrt(diffs.reduce((x, d) => x + (d - mean) ** 2, 0) / (n - 1)) : 0;
+    const se = n > 1 ? sd / Math.sqrt(n) : 0;
+    const t = se > 1e-12 ? mean / se : mean === 0 ? 0 : Math.sign(mean) * Infinity;
+    const eps = 5e-4; // differences under 0.05 pts count as ties
+    const wins = diffs.filter((d) => d > eps).length, losses = diffs.filter((d) => d < -eps).length;
+    const crit = T95[Math.min(n - 1, T95.length - 1)] || Infinity;
+    let verdict;
+    if (n < 2) verdict = 'too-few';
+    else if (Math.abs(mean) < eps && Math.abs(t) < crit) verdict = 'same';
+    else if (Math.abs(t) >= crit || ((wins === n || losses === n) && n >= 3)) verdict = mean > 0 ? 'a' : 'b';
+    else if (wins > 0 && losses === 0) verdict = 'lean-a'; // never loses, but the gap is too variable to call yet
+    else if (losses > 0 && wins === 0) verdict = 'lean-b';
+    else verdict = 'noise';
+    return { diffs, n, mean, sd, se, t, wins, losses, ties: n - wins - losses, crit, verdict };
+  }
+
+  /** CSV of every per-seed result: one row per (seed, method). */
+  function seedRunsCSV(runs, ids, seeds, taskNames) {
+    const q = (v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+    const f = (x) => (x == null ? '' : (+x).toFixed(4));
+    const head = ['seed', 'method', 'average', 'retention', ...taskNames, 'blocked'];
+    const rows = [head.map(q).join(',')];
+    runs.forEach((run, s) => ids.forEach((id) => {
+      const r = run[id] || {};
+      rows.push([seeds[s], id, f(r.avg), f(r.retention), ...taskNames.map((_, k) => f(r.accs ? r.accs[k] : null)), r.blocked || ''].map(q).join(','));
+    }));
+    return rows.join('\n') + '\n';
+  }
+
+  Object.assign(MM, { pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

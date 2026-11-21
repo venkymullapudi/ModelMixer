@@ -96,9 +96,12 @@
         <div class="robust-head">
           <div>
             <h3>Is the winner real? <span class="pill-mini">multi-seed check</span></h3>
-            <p class="muted">One run can crown a winner by luck. This retrains the experts on 5 seeds (fresh data samples and fresh initialisations), re-runs every method with your current knobs and shows the spread. Pick a recipe that wins <i>and</i> stays stable.</p>
+            <p class="muted">One run can crown a winner by luck. This retrains the experts on several seeds (fresh data samples and fresh initialisations), re-runs every method with your current knobs and shows the spread. Pick a recipe that wins <i>and</i> stays stable, then check any two head-to-head.</p>
           </div>
-          <button class="btn" id="runRobust">Run 5 seeds</button>
+          <div class="robust-ctl">
+            <div class="seg" id="robustSeeds" title="Number of seeds"><button data-n="3">3</button><button data-n="5">5</button><button data-n="10">10</button></div>
+            <button class="btn" id="runRobust">Run 5 seeds</button>
+          </div>
         </div>
         <div id="robust"><p class="muted small robust-empty">Not run yet. Takes about 10–20 seconds.</p></div>
       </div>
