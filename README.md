@@ -4,12 +4,27 @@
 with 13 different techniques, and *see* what each mix keeps, loses and needs — then export the same
 recipe as a [mergekit](https://github.com/arcee-ai/mergekit) config for real Hugging Face models.
 
+**▶ Live demo: <https://venkymullapudi.github.io/ModelMixer/>**
+
 No install, no server, no dependencies: everything (training, merging, evaluation, plots) runs in plain
 JavaScript in the browser.
 
+![Mix Lab: TIES-Merging on the Two skills scenario, with decision map, recipe knobs, scorecard and insight panel](docs/screenshots/lab.webp)
+
+## Screenshots
+
+| | |
+| --- | --- |
+| ![Pin to compare: TIES pinned as A next to DARE as B, with per-task deltas](docs/screenshots/compare.webp) | ![Recipe advisor: questions about your real models on the left, ranked recipes with measured toy evidence on the right](docs/screenshots/advisor.webp) |
+| **Pin to compare.** Freeze a recipe as A, tweak B, and see both decision maps with per-task deltas. | **Recipe advisor.** Describe your real models and get ranked recipes, each measured on the closest toy over 3 seeds. |
+| ![Knob sensitivity: TIES density swept with a ±1 sd band over 3 seeds, best and safe markers](docs/screenshots/sweep.webp) | ![Is the winner real? Multi-seed robustness table with per-seed dots and stability labels](docs/screenshots/robustness.webp) |
+| **Knob sensitivity.** How forgiving is each knob? Best and safest settings, with a seed band that exposes lucky peaks. | **Is the winner real?** Every method retrained on 5 seeds: mean ± sd, wins and stability. |
+| ![Arena leaderboard: every method on the same experts with accuracy, retention, cost and requirements](docs/screenshots/arena.webp) | ![Digits scenario: a gallery of 8×8 test digits tinted by predicted class, with mistakes ringed in red](docs/screenshots/digits.webp) |
+| **Arena.** Every method on the same experts: accuracy, retention, inference cost, memory and requirements. | **Digits.** Image-like 8×8 inputs; the map becomes a gallery of test digits, and the method ranking changes. |
+
 ## Run it
 
-Open `dist/modelmixer.html` (a single self-contained file) in any modern browser.
+Use the [live demo](https://venkymullapudi.github.io/ModelMixer/), or open `dist/modelmixer.html` (a single self-contained file) in any modern browser. Recipe links from 🔗 Share work on the live demo as normal https URLs.
 
 Or work from the sources:
 
@@ -79,6 +94,13 @@ helps the Strangers scenario. CI (GitHub Actions) runs it on every push and also
 `dist/modelmixer.html` is out of date. No Node? Run `python3 scripts/bundle.py --tests` and open
 `tests/_browser.html`.
 
+## Deploying and screenshots
+
+- **GitHub Pages:** `.github/workflows/pages.yml` rebuilds the single-file app on every push to `main` and publishes it as
+  the site's `index.html`. One-time setup: *Settings → Pages → Build and deployment → Source: GitHub Actions*.
+- **Screenshots:** `python3 scripts/screenshots.py` (needs `pip install playwright pillow` and Google Chrome)
+  re-captures `docs/screenshots/*.webp` from `dist/modelmixer.html`.
+
 ## Project layout
 
 ```
@@ -94,6 +116,7 @@ js/share.js         recipe ⇄ URL-safe link encoding with strict validation
 js/viz.js           decision-boundary canvases, provenance maps, SVG charts
 js/app.js           state, training loop, Lab / Arena / Atlas / Export views
 scripts/bundle.py   inlines everything into dist/modelmixer.html (--tests: browser test page)
+scripts/screenshots.py  regenerates docs/screenshots/ with Playwright
 tests/              engine test-suite (Node runner + browser-compatible suite)
 IMPROVEMENTS.md     prioritised backlog
 ```
