@@ -38,6 +38,11 @@
         p.layers = p.layers.map((l, i) => clamp(Math.round(num(+raw.layers[i], l)), 0, Math.max(0, K - 1)));
       }
     }
+    if (m.gradient) {
+      const g = m.gradient;
+      p.layerwise = !!raw.layerwise;
+      if (Array.isArray(raw.grad)) p.grad = p.grad.map((v, i) => +clamp(num(+raw.grad[i], v), g.min, g.max).toFixed(4));
+    }
     return p;
   }
 

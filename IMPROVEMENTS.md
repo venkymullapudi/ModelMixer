@@ -14,21 +14,20 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 ## Next up (highest value first)
 
 1. **Hosted demo (needs owner OK):** a GitHub Pages workflow that publishes `dist/modelmixer.html`, so recipe links can be shared as https URLs. The repo owner has to enable Pages in the repo settings.
-2. **Per-layer weights (mergekit gradients):** a layer-wise weight list per expert, as in mergekit
-   `value: [0, 0.5, 1]`, exported verbatim to YAML.
-3. **Image-like task:** procedurally generated 8×8 "digits", each expert on a different digit pair, so
+2. **Image-like task:** procedurally generated 8×8 "digits", each expert on a different digit pair, so
    merges run on a ~64-dim input model rather than only 2-D toys.
-4. **Newer methods:** DELLA (magnitude-adaptive drop), multi-model SLERP / Karcher mean, SCE,
+3. **Newer methods:** DELLA (magnitude-adaptive drop), multi-model SLERP / Karcher mean, SCE,
    Localize-and-Stitch, AdaMerging (entropy-tuned coefficients on unlabeled data).
-5. **Robustness extras:** a paired-difference view (method X minus method Y per seed), a configurable seed
+4. **Robustness extras:** a paired-difference view (method X minus method Y per seed), a configurable seed
    count and a CSV download.
-6. **Advisor blending:** let the measured toy evidence nudge the ranking (e.g. promote a pick that clearly beats the rule-based #1), and show the measured-vs-rules disagreement in the Arena too.
-7. **Compare extras:** a diff map that highlights where A and B disagree on the plane, and an A-vs-B paired multi-seed check (is B's edge real?).
-8. **Accessibility pass:** keyboard focus rings and arrow-key navigation in the method picker, ARIA
+5. **Advisor blending:** let the measured toy evidence nudge the ranking (e.g. promote a pick that clearly beats the rule-based #1), and show the measured-vs-rules disagreement in the Arena too.
+6. **Compare extras:** a diff map that highlights where A and B disagree on the plane, and an A-vs-B paired multi-seed check (is B's edge real?).
+7. **Accessibility pass:** keyboard focus rings and arrow-key navigation in the method picker, ARIA
    labels on canvases, and a colour-blind-safe palette option.
 
 ## Done
 
+- 2026-11-21: **Per-layer values (mergekit gradients):** a "Per-layer …" toggle for SLERP (t), two-expert Linear (A↔B balance) and Task Arithmetic, TIES, DARE and Breadcrumbs (λ). It gives one slider per layer plus Flat / Ramp ↑ / Ramp ↓ / Middle-heavy presets. Exported verbatim as mergekit gradient lists (e.g. `t: [0.25, 0.50, 0.75]`); TIES switches to `normalize: false` with weight ≈ λ ÷ K. Recipe labels, share links and the sweep panel understand gradients. Toy finding: SLERP with t ramping up (0.25→0.75) reaches 93.1% vs 85.8% flat and 77.2% ramping down. 2 tests, including Linear [0, 0, 1] = Layer Stitch A·A·B.
 - 2026-11-21: **Defaults review** (Two skills, Three skills and Hard + easy × seeds 7/108/209; mean / sd / worst of average accuracy):
 
   | Knob | Old → new | Mean | Worst | Notes |

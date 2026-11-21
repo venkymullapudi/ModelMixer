@@ -538,3 +538,13 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
 .safe-word { color: #fbbf24; font-weight: 700; }
 
 .real-note { font-size: 12px; line-height: 1.5; color: #cdd3e3; background: rgba(109, 139, 255, 0.07); border: 1px solid rgba(109, 139, 255, 0.25); border-radius: 10px; padding: 8px 10px; margin: 10px 0 6px; }
+
+/* ---------- per-layer values (gradients) ---------- */
+.ctl.off label { color: var(--dim); }
+.ctl.off label b { color: #a78bfa; font-weight: 600; }
+.ctl.grad { border-top: 1px dashed var(--line2); padding-top: 10px; margin-top: 4px; }
+.ctl.grad .switch-row { margin-bottom: 6px; }
+.grow { display: grid; grid-template-columns: 64px minmax(0, 1fr) 52px; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); margin: 4px 0; }
+.grow b { font-family: var(--mono); color: var(--text); text-align: right; font-size: 12px; }
+.gpresets { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+.gpresets .tiny { margin-right: 2px; }

@@ -208,8 +208,23 @@
   };
   for (const id in REAL_WORLD) METHOD_BY_ID[id].realWorld = REAL_WORLD[id];
 
+  // Per-layer values ("gradients" in mergekit): one value per layer (hidden 1, hidden 2, output) replaces the scalar knob.
+  const LAMBDA_G = { key: 'lambda', label: 'λ', min: 0, max: 2, step: 0.05 };
+  const GRADIENT = {
+    slerp: { key: 't', label: 't', min: 0, max: 1, step: 0.01 },
+    linear: { key: 'balance', label: 'A ↔ B balance', min: 0, max: 1, step: 0.05, k2: true },
+    task_arithmetic: LAMBDA_G, ties: LAMBDA_G, dare: LAMBDA_G, breadcrumbs: LAMBDA_G,
+  };
+  for (const id in GRADIENT) METHOD_BY_ID[id].gradient = GRADIENT[id];
+  const LAYER_NAMES = ['Hidden 1', 'Hidden 2', 'Output'];
+
   function defaultParams(m, K) {
     const p = {};
+    if (m.gradient) {
+      const g = m.gradient, d = m.params.find((x) => x.key === g.key);
+      p.layerwise = false;
+      p.grad = [0, 1, 2].map(() => (d ? d.default : (g.min + g.max) / 2));
+    }
     for (const d of m.params) {
       if (d.type === 'weights') p.weights = Array.from({ length: 3 }, () => 1);
       else if (d.type === 'layers') p.layers = [0, 0, 1];
@@ -218,5 +233,5 @@
     return p;
   }
 
-  Object.assign(MM, { FAMILIES, METHODS, METHOD_BY_ID, REBASIN, OSS, defaultParams });
+  Object.assign(MM, { FAMILIES, METHODS, METHOD_BY_ID, REBASIN, OSS, LAYER_NAMES, defaultParams });
 })();

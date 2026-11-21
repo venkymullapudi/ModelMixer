@@ -191,6 +191,14 @@
   // ---------- Methods ----------
   const IMPL = {
     linear(ctx, p) {
+      if (p._lw) {
+        const [A, B] = ctx.experts, P = zerosLike(A);
+        ctx.layout.tensors.forEach((T) => {
+          const v = +p.grad[T.layer];
+          for (let i = T.off; i < T.off + T.size; i++) P[i] = (1 - v) * A[i] + v * B[i];
+        });
+        return weightResult(ctx, P, { info: p.grad.map((v, l) => ({ label: `${MM.LAYER_NAMES[l]}: A/B`, value: `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` })) });
+      }
       const w = normalized(weightsFor(p, ctx.K));
       const P = zerosLike(ctx.experts[0]);
       ctx.experts.forEach((e, i) => { for (let j = 0; j < P.length; j++) P[j] += w[i] * e[j]; });
@@ -198,9 +206,10 @@
     },
 
     slerp(ctx, p) {
-      const t = +p.t, [A, B] = ctx.experts, P = zerosLike(A);
+      const [A, B] = ctx.experts, P = zerosLike(A);
       const angles = [];
       for (const T of ctx.layout.tensors) {
+        const t = p._lw ? +p.grad[T.layer] : +p.t;
         const na = norm(A, T.off, T.size), nb = norm(B, T.off, T.size);
         let c = na * nb > 1e-12 ? dot(A, B, T.off, T.size) / (na * nb) : 1;
         c = Math.max(-1, Math.min(1, c));
@@ -211,7 +220,9 @@
         for (let i = T.off; i < T.off + T.size; i++) P[i] = s0 * A[i] + s1 * B[i];
       }
       const warnings = ctx.K > 2 ? ['SLERP interpolates exactly two models — Expert C is ignored.'] : [];
-      return weightResult(ctx, P, { info: angles.filter((_, i) => i % 2 === 0), warnings });
+      const info = angles.filter((_, i) => i % 2 === 0);
+      if (p._lw) info.push({ label: 't per layer', value: p.grad.map((v) => (+v).toFixed(2)).join(' / ') });
+      return weightResult(ctx, P, { info, warnings });
     },
 
     model_stock(ctx) {
@@ -475,11 +486,30 @@
     return I;
   }
 
+  /** Is a per-layer gradient active for this method / context? */
+  function layerwiseOn(meta, ctx, params) {
+    const g = meta.gradient;
+    return !!(g && params && params.layerwise && Array.isArray(params.grad) && params.grad.length === 3 && !(g.k2 && ctx.K !== 2));
+  }
+
   function run(id, ctx, params) {
     const meta = MM.METHOD_BY_ID[id];
     if (meta.req.base && !ctx.base) return { blocked: 'Needs a shared base model. In this scenario every expert started from its own random init, so there are no task vectors to work with.' };
     if (meta.minModels && ctx.K < meta.minModels) return { blocked: `Needs at least ${meta.minModels} experts.` };
-    return IMPL[id](ctx, params);
+    const lw = layerwiseOn(meta, ctx, params);
+    if (lw && meta.gradient.key === 'lambda') {
+      // These merges are θ = θ_base + λ·τ_merged, so merge once at λ = 1 and rescale each layer's update.
+      const r = IMPL[id](ctx, Object.assign({}, params, { lambda: 1 }));
+      if (r.blocked || !r.params) return r;
+      const P = r.params, base = ctx.base;
+      ctx.layout.tensors.forEach((T) => {
+        const lam = +params.grad[T.layer];
+        for (let i = T.off; i < T.off + T.size; i++) P[i] = base[i] + lam * (P[i] - base[i]);
+      });
+      r.info = (r.info || []).filter((x) => !/λ/.test(x.label)).concat([{ label: 'λ per layer', value: params.grad.map((v) => (+v).toFixed(2)).join(' / ') }]);
+      return r;
+    }
+    return IMPL[id](ctx, lw ? Object.assign({}, params, { _lw: true }) : params);
   }
 
   function evaluate(predict, tasks) {
@@ -511,5 +541,5 @@
     return { pairs, norms, hasBase: !!ctx.base };
   }
 
-  Object.assign(MM, { runMethod: run, evaluate, alignExperts, weightMatch, geometry, hungarian, getRouter });
+  Object.assign(MM, { runMethod: run, layerwiseOn, evaluate, alignExperts, weightMatch, geometry, hungarian, getRouter });
 })();

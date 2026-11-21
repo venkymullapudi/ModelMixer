@@ -340,7 +340,12 @@
   // ---------------- CONTROLS ----------------
   function renderControls() {
     const m = MM.METHOD_BY_ID[S.method], p = S.params[m.id], K = S.experts.length;
+    const g = m.gradient && !(m.gradient.k2 && K !== 2) ? m.gradient : null;
+    const lw = !!(g && p.layerwise);
     const rows = m.params.map((d) => {
+      if (lw && (d.key === g.key || (g.key === 'balance' && d.type === 'weights'))) {
+        return `<div class="ctl off"><label>${d.label}<b>per layer ↓</b></label></div>`;
+      }
       if (d.type === 'range') {
         return `<div class="ctl"><label>${d.label}<b data-out="${d.key}">${fmt(p[d.key], d.step)}</b></label>
           <input type="range" data-param="${d.key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${p[d.key]}" /></div>`;
@@ -363,7 +368,15 @@
       }
       return '';
     });
-    $('#controls').innerHTML = `<div class="block-title">Recipe</div>${rows.join('') || '<p class="muted small">No knobs — this method decides everything from the weights themselves.</p>'}
+    const gfmt = (v) => (g && g.key === 'balance' ? `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` : (+v).toFixed(2));
+    const grad = g ? `<div class="ctl grad">
+        <label class="switch-row"><span><b>Per-layer ${esc(g.label)}</b><small>mergekit gradient: one value per layer</small></span>
+          <span class="switch"><input type="checkbox" id="gradToggle" ${lw ? 'checked' : ''}/><i></i></span></label>
+        ${lw ? `${MM.LAYER_NAMES.map((nm, l) => `<div class="grow"><span>${nm}</span>
+            <input type="range" data-grad="${l}" min="${g.min}" max="${g.max}" step="${g.step}" value="${p.grad[l]}" /><b data-gout="${l}">${gfmt(p.grad[l])}</b></div>`).join('')}
+          <div class="gpresets"><span class="tiny muted">Presets</span>${[['flat', 'Flat'], ['up', 'Ramp ↑'], ['down', 'Ramp ↓'], ['mid', 'Middle-heavy']].map(([k, l]) => `<button class="tg" data-gpreset="${k}">${l}</button>`).join('')}</div>` : ''}
+      </div>` : '';
+    $('#controls').innerHTML = `<div class="block-title">Recipe</div>${rows.join('') || (grad ? '' : '<p class="muted small">No knobs — this method decides everything from the weights themselves.</p>')}${grad}
       <button class="btn ghost sm reset" id="resetParams">Reset to defaults</button>`;
   }
   const fmt = (v, step) => (step >= 1 ? String(v) : (+v).toFixed(step < 0.01 ? 3 : 2));
@@ -378,14 +391,42 @@
     const t = ev.target, p = S.params[S.method];
     if (t.dataset.param) { p[t.dataset.param] = +t.value; $(`[data-out="${t.dataset.param}"]`).textContent = fmt(t.value, +t.step); }
     else if (t.dataset.weight !== undefined) { p.weights[+t.dataset.weight] = +t.value; $(`[data-wout="${t.dataset.weight}"]`).textContent = (+t.value).toFixed(2); }
+    else if (t.dataset.grad !== undefined) {
+      p.grad[+t.dataset.grad] = +t.value;
+      const g = MM.METHOD_BY_ID[S.method].gradient;
+      $(`[data-gout="${t.dataset.grad}"]`).textContent = g.key === 'balance' ? `${Math.round((1 - t.value) * 100)}/${Math.round(t.value * 100)}` : (+t.value).toFixed(2);
+    }
     else return;
     persist(); arenaStale = robustStale = true;
     queueRefresh();
+  });
+  $('#controls').addEventListener('change', (ev) => {
+    if (ev.target.id !== 'gradToggle') return;
+    const m = MM.METHOD_BY_ID[S.method], p = S.params[m.id], g = m.gradient;
+    p.layerwise = ev.target.checked;
+    // start from the current scalar so switching on changes nothing until you move a layer
+    if (p.layerwise) {
+      const cur = g.key === 'balance' ? MM.knobValue(p, { key: 'balance' }) : +p[g.key];
+      if (p.grad.every((v) => v === p.grad[0])) p.grad = [cur, cur, cur];
+    }
+    persist(); arenaStale = robustStale = true;
+    refresh();
   });
   $('#controls').addEventListener('click', (ev) => {
     const b = ev.target.closest('button');
     if (!b) return;
     const p = S.params[S.method];
+    if (b.dataset.gpreset) {
+      const g = MM.METHOD_BY_ID[S.method].gradient;
+      const mid = p.grad.reduce((a, v) => a + v, 0) / 3;
+      const d = Math.min((g.max - g.min) / 4, mid - g.min, g.max - mid) || (g.max - g.min) / 4;
+      const shapes = { flat: [mid, mid, mid], up: [mid - d, mid, mid + d], down: [mid + d, mid, mid - d], mid: [mid - d, mid + d, mid - d] };
+      const snap = (v) => +Math.min(g.max, Math.max(g.min, Math.round(v / g.step) * g.step)).toFixed(4);
+      p.grad = shapes[b.dataset.gpreset].map(snap);
+      persist(); arenaStale = robustStale = true;
+      refresh();
+      return;
+    }
     if (b.id === 'resetParams') { S.params[S.method] = MM.defaultParams(MM.METHOD_BY_ID[S.method]); }
     else if (b.closest('[data-param-seg]')) p[b.closest('[data-param-seg]').dataset.paramSeg] = b.dataset.v;
     else if (b.closest('[data-layer]')) p.layers[+b.closest('[data-layer]').dataset.layer] = +b.dataset.v;
@@ -573,7 +614,7 @@
   let sweepToken = 0, sweepTimer = null;
   const knobFmt = (knob, v) => (knob.key === 'balance' ? `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` : (+v).toFixed(knob.step < 0.01 ? 3 : 2));
   function currentKnob(m) {
-    const ks = MM.sweepKnobs(m.id, T.K);
+    const ks = MM.sweepKnobs(m.id, T.K, S.params[m.id]);
     return { ks, knob: ks.find((k) => k.key === S.sweepKnob[m.id]) || ks[0] };
   }
   function renderSweep(m, r) {
@@ -582,7 +623,11 @@
     panel.hidden = false;
     const { ks, knob } = currentKnob(m);
     if (!knob) {
-      panel.innerHTML = `<div class="sweep-head"><div><h3>Knob sensitivity</h3><p class="muted">${m.name} has no continuous knob${m.params.some((d) => d.type === 'weights') && T.K > 2 ? ' to sweep with 3 experts' : ''}, so there is nothing to tune: what you see is what you get.</p></div></div>`;
+      const lwOn = m.gradient && S.params[m.id].layerwise && !(m.gradient.k2 && T.K !== 2);
+      const why = lwOn
+        ? `${esc(m.gradient.label)} is set per layer, so a single-value sweep doesn’t apply. Use the layer sliders and presets, or turn per-layer off to sweep it.`
+        : `${m.name} has no continuous knob${m.params.some((d) => d.type === 'weights') && T.K > 2 ? ' to sweep with 3 experts' : ''}, so there is nothing to tune: what you see is what you get.`;
+      panel.innerHTML = `<div class="sweep-head"><div><h3>Knob sensitivity</h3><p class="muted">${why}</p></div></div>`;
       return;
     }
     const params = S.params[m.id];
@@ -1063,21 +1108,28 @@
     const models = E.models.slice(0, K), base = E.base, dt = `dtype: ${E.dtype}`;
     const w = (i) => (+(p.weights ? p.weights[i] : 1)).toFixed(2);
     const list = (extra) => models.map((m, i) => `  - model: ${m}${extra ? `\n    parameters:\n${extra(i)}` : ''}`).join('\n');
+    // per-layer values export as mergekit gradients: a list spread across the model's depth
+    const meta = MM.METHOD_BY_ID[id];
+    const lw = !!(meta.gradient && p.layerwise && !(meta.gradient.k2 && K !== 2));
+    const gl = (f) => `[${p.grad.map((v) => (+f(+v)).toFixed(2)).join(', ')}]`;
+    const lam = (i, scale) => (lw ? gl((v) => v * (scale ? scale(i) : 1)) : (+p.lambda * (scale ? scale(i) : 1)).toFixed(2));
+    const gnote = lw ? 'Per-layer values are exported as mergekit gradients: the list is spread across the model’s depth (first value at the first layer, last at the final layer).' : '';
     switch (id) {
       case 'linear':
-        return { yaml: `merge_method: linear\nmodels:\n${list((i) => `      weight: ${w(i)}`)}\nparameters:\n  normalize: true\n${dt}\n` };
+        return { yaml: `merge_method: linear\nmodels:\n${list((i) => `      weight: ${lw ? gl((v) => (i === 0 ? 1 - v : v)) : w(i)}`)}\nparameters:\n  normalize: true\n${dt}\n`, note: gnote };
       case 'slerp':
-        return { yaml: `merge_method: slerp\nbase_model: ${models[0]}\nmodels:\n  - model: ${models[0]}\n  - model: ${models[1]}\nparameters:\n  t: ${(+p.t).toFixed(2)}\n${dt}\n`, note: K > 2 ? 'SLERP takes exactly two models — the third is left out.' : '' };
+        return { yaml: `merge_method: slerp\nbase_model: ${models[0]}\nmodels:\n  - model: ${models[0]}\n  - model: ${models[1]}\nparameters:\n  t: ${lw ? gl((v) => v) : (+p.t).toFixed(2)}\n${dt}\n`, note: [K > 2 ? 'SLERP takes exactly two models — the third is left out.' : '', gnote].filter(Boolean).join(' ') };
       case 'model_stock':
         return { yaml: `merge_method: model_stock\nbase_model: ${base}\nmodels:\n${list()}\n${dt}\n` };
       case 'task_arithmetic':
-        return { yaml: `merge_method: task_arithmetic\nbase_model: ${base}\nmodels:\n${list((i) => `      weight: ${(+p.lambda * +w(i)).toFixed(2)}   # λ × w`)}\n${dt}\n` };
+        return { yaml: `merge_method: task_arithmetic\nbase_model: ${base}\nmodels:\n${list((i) => `      weight: ${lam(i, (j) => +w(j))}   # λ × w`)}\n${dt}\n`, note: gnote };
       case 'ties':
+        if (lw) return { yaml: `merge_method: ties\nbase_model: ${base}\nmodels:\n${list(() => `      density: ${(+p.density).toFixed(2)}\n      weight: ${gl((v) => v / K)}   # λ per layer ÷ ${K}`)}\nparameters:\n  normalize: false\n${dt}\n`, note: `With per-layer λ, normalize is off and each weight ≈ λ ÷ ${K}, which approximates the lab’s disjoint mean. ${gnote}` };
         return { yaml: `merge_method: ties\nbase_model: ${base}\nmodels:\n${list(() => `      density: ${(+p.density).toFixed(2)}\n      weight: 1.0`)}\nparameters:\n  normalize: true   # disjoint mean, as in the lab (λ = 1)\n${dt}\n`, note: +p.lambda !== 1 ? `Lab λ = ${(+p.lambda).toFixed(2)}. With normalize: true, weights cancel out; to scale, set normalize: false and weight ≈ λ / ${K}.` : '' };
       case 'dare':
-        return { yaml: `merge_method: ${p.mode === 'ties' ? 'dare_ties' : 'dare_linear'}\nbase_model: ${base}\nmodels:\n${list((i) => `      density: ${(1 - +p.drop).toFixed(2)}   # keep = 1 − drop\n      weight: ${(+p.lambda * +w(i)).toFixed(2)}`)}\nparameters:\n  int8_mask: true\n${dt}\n` };
+        return { yaml: `merge_method: ${p.mode === 'ties' ? 'dare_ties' : 'dare_linear'}\nbase_model: ${base}\nmodels:\n${list((i) => `      density: ${(1 - +p.drop).toFixed(2)}   # keep = 1 − drop\n      weight: ${lam(i, (j) => +w(j))}`)}\nparameters:\n  int8_mask: true\n${dt}\n`, note: gnote };
       case 'breadcrumbs':
-        return { yaml: `merge_method: breadcrumbs\nbase_model: ${base}\nmodels:\n${list(() => `      density: ${(+p.density).toFixed(2)}\n      gamma: ${(+p.gamma).toFixed(3)}\n      weight: ${(+p.lambda).toFixed(2)}`)}\n${dt}\n` };
+        return { yaml: `merge_method: breadcrumbs\nbase_model: ${base}\nmodels:\n${list((i) => `      density: ${(+p.density).toFixed(2)}\n      gamma: ${(+p.gamma).toFixed(3)}\n      weight: ${lam(i)}`)}\n${dt}\n`, note: gnote };
       case 'stitch': {
         const ranges = [[0, 11], [11, 22], [22, 32]];
         return {

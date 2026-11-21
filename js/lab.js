@@ -132,6 +132,14 @@
         parts.push(params.layers.map((i) => 'ABC'[i]).join('·'));
       }
     }
+    if (m.gradient && params.layerwise && !(m.gradient.k2 && K !== 2)) {
+      // per-layer values replace the scalar knob in the label
+      const g = m.gradient, abbr = g.key === 'balance' ? 'B share' : g.key === 'lambda' ? 'λ' : g.key;
+      const i = parts.findIndex((x) => x.startsWith(`${ABBR[g.key] || g.key} `));
+      const lbl = `${abbr} ${params.grad.map((v) => (+v).toFixed(2)).join('→')}`;
+      if (i >= 0) parts[i] = lbl; else parts.splice(1, 0, lbl);
+      if (g.key === 'balance') { const wi = parts.findIndex((x) => x.startsWith('w ')); if (wi >= 0) parts.splice(wi, 1); }
+    }
     if (align) parts.push('aligned');
     return parts.join(' · ');
   }
@@ -170,11 +178,13 @@
 
   // ---------- knob sensitivity ----------
   /** Continuous knobs worth sweeping for a method (the DARE random seed is not a knob). */
-  function sweepKnobs(id, K) {
+  function sweepKnobs(id, K, params) {
     const m = MM.METHOD_BY_ID[id];
-    const out = m.params.filter((d) => d.type === 'range' && d.key !== 'seed')
+    // with per-layer values on, the scalar they replace has no effect, so don't offer to sweep it
+    const g = m.gradient && params && params.layerwise && !(m.gradient.k2 && K !== 2) ? m.gradient.key : null;
+    const out = m.params.filter((d) => d.type === 'range' && d.key !== 'seed' && d.key !== g)
       .map((d) => ({ key: d.key, label: d.label, min: d.min, max: d.max, step: d.step }));
-    if (K === 2 && m.params.some((d) => d.type === 'weights')) out.push({ key: 'balance', label: 'Balance A ↔ B', min: 0, max: 1, step: 0.05 });
+    if (K === 2 && g !== 'balance' && m.params.some((d) => d.type === 'weights')) out.push({ key: 'balance', label: 'Balance A ↔ B', min: 0, max: 1, step: 0.05 });
     return out;
   }
   function knobValue(params, knob) {

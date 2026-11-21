@@ -248,6 +248,37 @@
       return [cmp('breadcrumbs', { density: 0.6, gamma: 0.02 }), cmp('fisher', { eps: 0.05 })].join(', ');
     });
 
+    test('Per-layer values: flat gradient equals the scalar knob', () => {
+      const same = (a, b, what) => { for (let i = 0; i < a.length; i++) assert(Math.abs(a[i] - b[i]) < 1e-6, `${what} differs at ${i}`); };
+      const sl = params('slerp', 2); sl.t = 0.3;
+      same(MM.runMethod('slerp', ctx, sl).params, MM.runMethod('slerp', ctx, Object.assign({}, sl, { layerwise: true, grad: [0.3, 0.3, 0.3] })).params, 'slerp');
+      for (const id of ['task_arithmetic', 'ties', 'dare', 'breadcrumbs']) {
+        const p0 = params(id, 2); p0.lambda = 0.7;
+        same(MM.runMethod(id, ctx, p0).params, MM.runMethod(id, ctx, Object.assign({}, p0, { layerwise: true, grad: [0.7, 0.7, 0.7] })).params, id);
+      }
+    });
+
+    test('Per-layer values act layer by layer', () => {
+      const L = T.layout;
+      const out = L.tensors.filter((t) => t.layer === 2);
+      // λ = 0 on the output layer leaves it at the base
+      const r = MM.runMethod('task_arithmetic', ctx, Object.assign(params('task_arithmetic', 2), { layerwise: true, grad: [1, 1, 0] }));
+      out.forEach((t) => { for (let i = t.off; i < t.off + t.size; i++) assert(Math.abs(r.params[i] - T.base[i]) < 1e-6, 'output layer should equal base'); });
+      // Linear balance [0, 0, 1] = Layer Stitch with sources A·A·B
+      const lin = MM.runMethod('linear', ctx, Object.assign(params('linear', 2), { layerwise: true, grad: [0, 0, 1] })).params;
+      const st = MM.runMethod('stitch', ctx, Object.assign(params('stitch', 2), { layers: [0, 0, 1] })).params;
+      for (let i = 0; i < lin.length; i++) assert(Math.abs(lin[i] - st[i]) < 1e-6, `linear gradient ≠ stitch at ${i}`);
+      // 3 experts: the balance gradient is ignored (needs exactly 2)
+      assert(!MM.layerwiseOn(MM.METHOD_BY_ID.linear, { K: 3 }, { layerwise: true, grad: [0, 0, 1] }), 'balance gradient needs K=2');
+      // label, sweep knobs and link round-trip
+      const pl = Object.assign(params('slerp', 2), { layerwise: true, grad: [0.2, 0.5, 0.8] });
+      assert(MM.recipeLabel('slerp', pl, false, 2) === 'SLERP · t 0.20→0.50→0.80', MM.recipeLabel('slerp', pl, false, 2));
+      assert(MM.sweepKnobs('slerp', 2, pl).length === 0 && MM.sweepKnobs('ties', 2, Object.assign(params('ties', 2), { layerwise: true })).map((k) => k.key).join() === 'density', 'sweep knobs with gradient');
+      const code = MM.encodeRecipe({ experts: [{ task: 'moons', region: 'left' }, { task: 'circles', region: 'right' }], init: 'shared', hidden: 32, ftSteps: 250, seed: 7, align: false, method: 'slerp', params: pl, pin: null });
+      const back = MM.decodeRecipe(code).recipe.params;
+      assert(back.layerwise === true && back.grad.join() === '0.2,0.5,0.8', JSON.stringify(back));
+    });
+
     test('Linear with weights [1, 0] reproduces Expert A', () => {
       const p = params('linear', T.K);
       p.weights = [1, 0];
