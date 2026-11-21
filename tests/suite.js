@@ -354,6 +354,15 @@
       return `top-k 0.2 → ${pct(sel)}; top-k 1 → ${pct(selAll)} (rest: experts identical)`;
     });
 
+    test('recipeRuns + pairedDiff: a recipe against itself is "same"; different recipes pair up per seed', () => {
+      const rec = { method: 'ties', params: params('ties', 2), align: false };
+      const same = MM.pairedDiff(MM.recipeRuns([T, T], rec, rec), 'B', 'A');
+      assert(same.verdict === 'same' && same.n === 2, JSON.stringify(same));
+      const runs = MM.recipeRuns([T], rec, { method: 'regmean', params: params('regmean', 2), align: false });
+      const direct = MM.scoreMethod(T, ctx, 'regmean', params('regmean', 2)).avg - MM.scoreMethod(T, ctx, 'ties', params('ties', 2)).avg;
+      assert(Math.abs(runs[0].B.avg - runs[0].A.avg - direct) < 1e-12, 'paired difference mismatch');
+    });
+
     test('Linear with weights [1, 0] reproduces Expert A', () => {
       const p = params('linear', T.K);
       p.weights = [1, 0];

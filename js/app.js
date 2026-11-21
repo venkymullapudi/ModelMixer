@@ -14,7 +14,7 @@
     experts: MM.SCENARIOS[0].experts.map((e) => ({ ...e })),
     init: 'shared', hidden: 32, ftSteps: 250, seed: 7, align: false,
     method: 'ties', params: {},
-    overlay: { points: true, regions: true, router: true },
+    overlay: { points: true, regions: true, router: true, diff: true },
     tab: 'lab',
     advisor: {}, // answers to the recipe advisor
     sweepKnob: {}, // method id -> knob key shown in the sensitivity chart
@@ -544,9 +544,12 @@
       return;
     }
     blocked.hidden = true;
+    const pin = S.pin && S.overlay.diff !== false ? pinnedResult() : null;
+    const diffWith = pin && !pin.blocked ? pin.predict : null;
+    $('#lgDiff').hidden = !diffWith;
     MM.drawMap(cv, r.predict, {
       tasks: ctx.tasks, showPoints: S.overlay.points, showRegions: S.overlay.regions,
-      gates: r.router && S.overlay.router ? r.router.gates : null, K: ctx.K,
+      gates: r.router && S.overlay.router ? r.router.gates : null, K: ctx.K, diffWith,
     });
   }
   $('#blocked').addEventListener('click', (ev) => {
@@ -576,6 +579,7 @@
     const planeTasks = !T || !T.tasks || T.tasks[0].kind !== 'digits';
     const tg = planeTasks ? [['points', 'Points'], ['regions', 'Regions']] : [];
     if (m.id === 'moe' && planeTasks) tg.push(['router', 'Router']);
+    if (S.pin) tg.push(['diff', 'A ≠ B']);
     $('#lgBoundary').hidden = !planeTasks; // a digit gallery has no boundary line
     $('#overlayToggles').innerHTML = tg.map(([k, l]) => `<button class="tg ${S.overlay[k] ? 'on' : ''}" data-ov="${k}">${l}</button>`).join('');
   }
@@ -620,7 +624,6 @@
   // ---------------- KNOB SENSITIVITY ----------------
   const SWEEP_N = 17;
   const sweepCache = new WeakMap(); // trained bundle -> Map(key -> sweep result)
-  const sweepExtra = new Map(); // trainKey -> extra-seed bundles
   let sweepToken = 0, sweepTimer = null;
   const knobFmt = (knob, v) => (knob.key === 'balance' ? `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` : (+v).toFixed(knob.step < 0.01 ? 3 : 2));
   function currentKnob(m) {
@@ -666,21 +669,11 @@
       const msg = (t) => { const el = $('#sweepMsg'); if (el && token === sweepToken) el.textContent = t; };
       const bundles = [Tnow];
       if (S.sweepSeeds) {
-        const tk = trainKey(S);
-        if (!sweepExtra.has(tk)) {
-          const extra = [];
-          for (const off of [101, 202]) {
-            msg(`Training experts on seed ${S.seed + off}…`);
-            const it = MM.trainBundle({ experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed: S.seed + off });
-            let st, tick = performance.now();
-            while (!(st = it.next()).done) {
-              if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (token !== sweepToken) return; }
-            }
-            extra.push(st.value);
-          }
-          sweepExtra.set(tk, extra);
+        for (let i = 1; i <= 2; i++) {
+          const b = await seedBundle(i, () => token !== sweepToken, msg);
+          if (!b) return;
+          bundles.push(b);
         }
-        bundles.push(...sweepExtra.get(tk));
       }
       const xs = MM.sweepValues(knob, SWEEP_N);
       const curves = [];
@@ -773,8 +766,40 @@
         <span>Predictions differ</span><span>${pct(cmp.disagree)} of test points</span>
         <span>Inference</span><span>${mult(pin.cost)} → ${mult(r.cost)}</span>
         <span>Needs</span><span>${needs(S.pin.method)} → ${needs(S.method)}</span>
-      </div>${noise}</div>`;
+      </div>${noise}
+      <div class="edge" id="edge">${edgeHTML()}</div></div>`;
   }
+
+  // "Is B's edge real?": both recipes on the same 5 seeds, paired.
+  const EDGE_SEEDS = 5;
+  const edgeCache = new Map();
+  let edgeToken = 0;
+  const edgeKey = () => JSON.stringify([trainKey(S), S.pin, nowRecipe()]);
+  function edgeHTML() {
+    const d = edgeCache.get(edgeKey());
+    if (!d) return `<button class="btn sm" id="edgeBtn">Is B’s edge real? Check on ${EDGE_SEEDS} seeds</button><span class="edge-msg muted small" id="edgeMsg"></span>`;
+    const [tone, html] = pairVerdict(d, '<b>B</b>', '<b>A</b>', 'The Arena can run 10 seeds to settle it.');
+    return `<div class="verdict ${tone}">${html}</div>`;
+  }
+  async function checkEdge() {
+    const token = ++edgeToken, key = edgeKey(), pin = S.pin, now = nowRecipe();
+    const msg = (t) => { const el = $('#edgeMsg'); if (el && token === edgeToken) el.textContent = t; };
+    const btn = $('#edgeBtn');
+    if (btn) btn.disabled = true;
+    const bundles = [];
+    for (let i = 0; i < EDGE_SEEDS; i++) {
+      const b = await seedBundle(i, () => token !== edgeToken, msg);
+      if (!b) return;
+      bundles.push(b);
+    }
+    msg('Scoring both recipes…');
+    await frame();
+    if (token !== edgeToken) return;
+    edgeCache.set(key, MM.pairedDiff(MM.recipeRuns(bundles, pin, now), 'B', 'A'));
+    const el = $('#edge');
+    if (el && edgeKey() === key) el.innerHTML = edgeHTML();
+  }
+  $('#metrics').addEventListener('click', (ev) => { if (ev.target.closest('#edgeBtn')) checkEdge(); });
 
   // ---------------- INSIGHT ----------------
   function renderInsight(m, r, ctx) {
@@ -908,6 +933,27 @@
   });
 
   // ---------------- ROBUSTNESS (multi-seed) ----------------
+  const seedCache = new Map(); // trainKey -> bundles for seeds S.seed + 101·i (i ≥ 1)
+  /** Bundle for seed index i (0 = the lab's trained experts). Trains and caches when needed; null if cancelled. */
+  async function seedBundle(i, cancelled, msg) {
+    if (i === 0) return T;
+    const tk = trainKey(S);
+    if (!seedCache.has(tk)) seedCache.set(tk, []);
+    const arr = seedCache.get(tk);
+    while (arr.length < i) {
+      const seed = S.seed + 101 * (arr.length + 1);
+      if (msg) msg(`Training experts on seed ${seed}…`);
+      await frame();
+      const it = MM.trainBundle({ experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed });
+      let st, tick = performance.now();
+      while (!(st = it.next()).done) {
+        if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (cancelled()) return null; }
+      }
+      if (trainKey(S) !== tk) return null; // settings changed while training
+      arr.push(st.value);
+    }
+    return arr[i - 1];
+  }
   let robustToken = 0;
   let robustData = null; // { runs, ids, seeds, taskNames, scenario } from the last check
   const h2h = { a: null, b: null };
@@ -930,7 +976,6 @@
     const ids = MM.METHODS.map((m) => m.id);
     const N = [3, 5, 10].includes(+S.robustSeeds) ? +S.robustSeeds : 5;
     const seeds = Array.from({ length: N }, (_, i) => S.seed + i * 101);
-    const cfg = { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps };
     const steps = N * (ids.length + 1);
     let doneSteps = 0;
     const prog = (label) => {
@@ -939,17 +984,9 @@
     const runs = [];
     try {
       for (let s = 0; s < seeds.length; s++) {
-        let bundle = T;
-        if (s > 0) {
-          prog(`Seed ${s + 1}/${N}: training experts…`);
-          await frame();
-          const it = MM.trainBundle({ ...cfg, seed: seeds[s] });
-          let r, tick = performance.now();
-          while (!(r = it.next()).done) {
-            if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (token !== robustToken) return; }
-          }
-          bundle = r.value;
-        }
+        prog(`Seed ${s + 1}/${N}: training experts…`);
+        const bundle = await seedBundle(s, () => token !== robustToken);
+        if (!bundle) return;
         doneSteps++;
         const ctx = MM.bundleCtx(bundle, S.align);
         const run = {};
@@ -1025,6 +1062,25 @@
     renderH2H(ok);
   }
 
+  /** Plain-language verdict for a pairedDiff(a, b) result. A and B are HTML names. Returns [tone, html]. */
+  function pairVerdict(d, A, B, more) {
+    const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
+    const tTxt = Number.isFinite(d.t) ? `paired t = ${d.t.toFixed(2)}, needs ±${d.crit.toFixed(2)}` : 'same gap on every seed';
+    // a result that only just clears the bar (and isn't won on every seed) is tentative, especially when browsing many pairs
+    const borderline = Number.isFinite(d.t) && Math.abs(d.t) < d.crit * 1.2 && d.wins !== d.n && d.losses !== d.n;
+    const real = borderline ? 'It only just clears the bar, so treat it as tentative (checking many pairs will turn up some by chance).' : 'Likely a real difference on this setup.';
+    const settle = more || 'Run 10 seeds to settle it.';
+    return {
+      a: ['good', `${A} beats ${B} by ${pts(d.mean)} on average and wins ${d.wins}/${d.n} seeds (${tTxt}). ${real}`],
+      b: ['bad', `${B} beats ${A} by ${pts(-d.mean)} on average and wins ${d.losses}/${d.n} seeds (${tTxt}). ${real}`],
+      'lean-a': ['mid', `${A} leans ahead: ${pts(d.mean)} on average, wins ${d.wins}/${d.n} seeds and never loses, but the gap varies too much to call (${tTxt}). ${settle}`],
+      'lean-b': ['mid', `${B} leans ahead: ${pts(-d.mean)} on average, wins ${d.losses}/${d.n} seeds and never loses, but the gap varies too much to call (${tTxt}). ${settle}`],
+      noise: ['mid', `No reliable difference: ${A} averages ${pts(d.mean)}, but the winner flips between seeds (${d.wins} vs ${d.losses}, ${tTxt}). Choose on cost and requirements.`],
+      same: ['mid', `${A} and ${B} score the same on every seed.`],
+      'too-few': ['mid', 'Need at least 2 seeds where both recipes run.'],
+    }[d.verdict];
+  }
+
   // Head-to-head: per-seed difference between two methods (paired across the same seeds).
   function renderH2H(ok) {
     const el = $('#h2h');
@@ -1037,19 +1093,7 @@
     const X = (v) => `${(50 + (v / M) * 50).toFixed(2)}%`;
     const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
     const A = `<b>${esc(name(h2h.a))}</b>`, B = `<b>${esc(name(h2h.b))}</b>`;
-    const tTxt = Number.isFinite(d.t) ? `paired t = ${d.t.toFixed(2)}, needs ±${d.crit.toFixed(2)}` : 'same gap on every seed';
-    // a result that only just clears the bar (and isn't won on every seed) is tentative, especially when browsing many pairs
-    const borderline = Number.isFinite(d.t) && Math.abs(d.t) < d.crit * 1.2 && d.wins !== d.n && d.losses !== d.n;
-    const real = borderline ? 'It only just clears the bar, so treat it as tentative (checking many pairs will turn up some by chance).' : 'Likely a real difference on this setup.';
-    const verdict = {
-      a: ['good', `${A} beats ${B} by ${pts(d.mean)} on average and wins ${d.wins}/${d.n} seeds (${tTxt}). ${real}`],
-      b: ['bad', `${B} beats ${A} by ${pts(-d.mean)} on average and wins ${d.losses}/${d.n} seeds (${tTxt}). ${real}`],
-      'lean-a': ['mid', `${A} leans ahead: ${pts(d.mean)} on average, wins ${d.wins}/${d.n} seeds and never loses, but the gap varies too much to call (${tTxt}). Run 10 seeds to settle it.`],
-      'lean-b': ['mid', `${B} leans ahead: ${pts(-d.mean)} on average, wins ${d.losses}/${d.n} seeds and never loses, but the gap varies too much to call (${tTxt}). Run 10 seeds to settle it.`],
-      noise: ['mid', `No reliable difference: ${A} averages ${pts(d.mean)}, but the winner flips between seeds (${d.wins} vs ${d.losses}, ${tTxt}). Choose on cost and requirements.`],
-      same: ['mid', `${A} and ${B} score the same on every seed.`],
-      'too-few': ['mid', 'Need at least 2 seeds where both methods run.'],
-    }[d.verdict];
+    const verdict = pairVerdict(d, A, B);
     el.innerHTML = `<div class="h2h-head"><b>Head-to-head</b>
         <select id="h2hA" aria-label="Method A">${opts(h2h.a)}</select><span class="muted">minus</span>
         <select id="h2hB" aria-label="Method B">${opts(h2h.b)}</select>

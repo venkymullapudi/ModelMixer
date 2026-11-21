@@ -261,5 +261,16 @@
     return rows.join('\n') + '\n';
   }
 
-  Object.assign(MM, { pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  /** Score two recipes ({method, params, align}) on each bundle: runs = [{ A: {...}, B: {...} }, …] for pairedDiff. */
+  function recipeRuns(bundles, recA, recB) {
+    return bundles.map((T) => {
+      const one = (rec) => {
+        const r = scoreMethod(T, bundleCtx(T, rec.align), rec.method, rec.params);
+        return r.blocked ? { blocked: r.blocked } : { avg: r.avg, retention: r.retention, accs: r.accs };
+      };
+      return { A: one(recA), B: one(recB) };
+    });
+  }
+
+  Object.assign(MM, { recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

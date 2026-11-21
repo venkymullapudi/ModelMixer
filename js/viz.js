@@ -68,6 +68,7 @@
       const rows = Math.max(1, Math.floor((bandH - head - pad / 2) / cell));
       const nShow = Math.min(t.test.n, rows * cols);
       const pAll = predict(t.test.X, t.test.n);
+      const qAll = o.diffWith ? o.diffWith(t.test.X, t.test.n) : null;
       if (!thumb) {
         let correct = 0;
         for (let i = 0; i < t.test.n; i++) if ((pAll[i] > 0.5 ? 1 : 0) === t.test.Y[i]) correct++;
@@ -97,6 +98,12 @@
           ctx.strokeStyle = '#ff3b6b'; ctx.lineWidth = thumb ? 1.2 : 2.2;
           ctx.strokeRect(x + 1, y + 1, sz - 2, sz - 2);
         }
+        if (qAll && (qAll[i] > 0.5 ? 1 : 0) !== cls) {
+          ctx.save(); ctx.setLineDash([3, 2]);
+          ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = thumb ? 1 : 1.8;
+          ctx.strokeRect(x + 3.5, y + 3.5, sz - 7, sz - 7);
+          ctx.restore();
+        }
       }
     });
   }
@@ -116,6 +123,7 @@
     const img = octx.createImageData(N, N);
     // Dim everything outside the task regions so the eye goes to the skills.
     const focus = o.tasks && o.focus !== false ? o.tasks : null;
+    const ins = focus ? new Float32Array(N * N) : null;
     for (let i = 0; i < N * N; i++) {
       const pv = p[i], conf = Math.min(1, Math.abs(pv - 0.5) * 2);
       const col = pv > 0.5 ? CLASS[1] : CLASS[0];
@@ -127,6 +135,7 @@
           const d = Math.hypot(x - t.center[0], y - t.center[1]) / t.radius;
           inside = Math.max(inside, Math.min(1, Math.max(0, (1.08 - d) / 0.1)));
         }
+        if (ins) ins[i] = inside;
         a *= 0.32 + 0.68 * inside;
       }
       img.data[4 * i] = BG[0] + (col[0] - BG[0]) * a;
@@ -171,6 +180,35 @@
       }
     }
 
+    let qd = null;
+    if (o.diffWith) {
+      // compare mode: shade where the pinned recipe (A) predicts a different class from this one (B)
+      qd = o.diffWith(X, N * N);
+      const off3 = document.createElement('canvas');
+      off3.width = N; off3.height = N;
+      const c3 = off3.getContext('2d'), im3 = c3.createImageData(N, N);
+      for (let i = 0; i < N * N; i++) {
+        if ((p[i] > 0.5) === (qd[i] > 0.5)) continue;
+        im3.data[4 * i] = 251; im3.data[4 * i + 1] = 191; im3.data[4 * i + 2] = 36;
+        im3.data[4 * i + 3] = 150 * (ins ? 0.2 + 0.8 * ins[i] : 1);
+      }
+      c3.putImageData(im3, 0, 0);
+      ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(off3, 0, 0, W, H); ctx.restore();
+      // A's boundary (dashed), only inside the task regions where it matters
+      ctx.save();
+      if (focus) {
+        ctx.beginPath();
+        focus.forEach((t) => {
+          const [px, py] = toPx(t.center[0], t.center[1], W, H);
+          const rr = ((t.radius * 1.06) / (2 * MM.EXTENT)) * W;
+          ctx.moveTo(px + rr, py); ctx.arc(px, py, rr, 0, Math.PI * 2);
+        });
+        ctx.clip();
+      }
+      contour(ctx, qd, N, W, H, 'rgba(251,191,36,0.95)', o.thumb ? 1 : 1.4, [5, 4]);
+      ctx.restore();
+    }
+
     if (focus) {
       contour(ctx, p, N, W, H, 'rgba(255,255,255,0.22)', o.thumb ? 0.8 : 1.2);
       ctx.save();
@@ -208,6 +246,7 @@
       o.tasks.forEach((t) => {
         const n = Math.min(t.test.n, o.thumb ? 60 : 170);
         const pr = predict(t.test.X.subarray(0, n * 2), n);
+        const pa = o.diffWith ? o.diffWith(t.test.X.subarray(0, n * 2), n) : null;
         for (let i = 0; i < n; i++) {
           const [px, py] = toPx(t.test.X[2 * i], t.test.X[2 * i + 1], W, H);
           const y = t.test.Y[i], wrong = (pr[i] > 0.5 ? 1 : 0) !== y;
@@ -219,6 +258,10 @@
             ctx.strokeStyle = wrong ? '#ff3b6b' : 'rgba(5,8,16,0.85)';
             if (wrong) { ctx.beginPath(); ctx.arc(px, py, 4.4, 0, Math.PI * 2); }
             ctx.stroke();
+            if (pa && (pa[i] > 0.5) !== (pr[i] > 0.5)) {
+              ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 1.4;
+              ctx.strokeRect(px - 5.5, py - 5.5, 11, 11);
+            }
           }
         }
       });

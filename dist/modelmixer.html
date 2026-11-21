@@ -583,6 +583,12 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
 .verdict.bad { background: rgba(248, 113, 113, 0.07); border-color: rgba(248, 113, 113, 0.3); }
 @media (max-width: 820px) { .robust-ctl { width: 100%; } .h2h-head #robustCsv { margin-left: 0; } }
 
+/* ---------- compare extras ---------- */
+.canvas-legend .sq { display: inline-block; width: 9px; height: 9px; border: 1.5px solid #fbbf24; margin-right: 5px; vertical-align: -1px; }
+.cmp-box .edge { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.cmp-box .edge .verdict { margin: 0; font-size: 12.5px; }
+.cmp-box .edge-msg:empty { display: none; }
+
 </style>
 </head>
 <body>
@@ -640,6 +646,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
                   <span><i class="sw c1"></i>class 1</span>
                   <span id="lgBoundary"><i class="line"></i>decision boundary</span>
                   <span><i class="ring"></i>mistake</span>
+                  <span id="lgDiff" hidden><i class="sq"></i>A ≠ B</span>
                   <span class="toggles" id="overlayToggles"></span>
                 </div>
               </div>
@@ -2610,7 +2617,18 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     return rows.join('\n') + '\n';
   }
 
-  Object.assign(MM, { pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  /** Score two recipes ({method, params, align}) on each bundle: runs = [{ A: {...}, B: {...} }, …] for pairedDiff. */
+  function recipeRuns(bundles, recA, recB) {
+    return bundles.map((T) => {
+      const one = (rec) => {
+        const r = scoreMethod(T, bundleCtx(T, rec.align), rec.method, rec.params);
+        return r.blocked ? { blocked: r.blocked } : { avg: r.avg, retention: r.retention, accs: r.accs };
+      };
+      return { A: one(recA), B: one(recB) };
+    });
+  }
+
+  Object.assign(MM, { recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();
 
 </script>
@@ -2910,6 +2928,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       const rows = Math.max(1, Math.floor((bandH - head - pad / 2) / cell));
       const nShow = Math.min(t.test.n, rows * cols);
       const pAll = predict(t.test.X, t.test.n);
+      const qAll = o.diffWith ? o.diffWith(t.test.X, t.test.n) : null;
       if (!thumb) {
         let correct = 0;
         for (let i = 0; i < t.test.n; i++) if ((pAll[i] > 0.5 ? 1 : 0) === t.test.Y[i]) correct++;
@@ -2939,6 +2958,12 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
           ctx.strokeStyle = '#ff3b6b'; ctx.lineWidth = thumb ? 1.2 : 2.2;
           ctx.strokeRect(x + 1, y + 1, sz - 2, sz - 2);
         }
+        if (qAll && (qAll[i] > 0.5 ? 1 : 0) !== cls) {
+          ctx.save(); ctx.setLineDash([3, 2]);
+          ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = thumb ? 1 : 1.8;
+          ctx.strokeRect(x + 3.5, y + 3.5, sz - 7, sz - 7);
+          ctx.restore();
+        }
       }
     });
   }
@@ -2958,6 +2983,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     const img = octx.createImageData(N, N);
     // Dim everything outside the task regions so the eye goes to the skills.
     const focus = o.tasks && o.focus !== false ? o.tasks : null;
+    const ins = focus ? new Float32Array(N * N) : null;
     for (let i = 0; i < N * N; i++) {
       const pv = p[i], conf = Math.min(1, Math.abs(pv - 0.5) * 2);
       const col = pv > 0.5 ? CLASS[1] : CLASS[0];
@@ -2969,6 +2995,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
           const d = Math.hypot(x - t.center[0], y - t.center[1]) / t.radius;
           inside = Math.max(inside, Math.min(1, Math.max(0, (1.08 - d) / 0.1)));
         }
+        if (ins) ins[i] = inside;
         a *= 0.32 + 0.68 * inside;
       }
       img.data[4 * i] = BG[0] + (col[0] - BG[0]) * a;
@@ -3013,6 +3040,35 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       }
     }
 
+    let qd = null;
+    if (o.diffWith) {
+      // compare mode: shade where the pinned recipe (A) predicts a different class from this one (B)
+      qd = o.diffWith(X, N * N);
+      const off3 = document.createElement('canvas');
+      off3.width = N; off3.height = N;
+      const c3 = off3.getContext('2d'), im3 = c3.createImageData(N, N);
+      for (let i = 0; i < N * N; i++) {
+        if ((p[i] > 0.5) === (qd[i] > 0.5)) continue;
+        im3.data[4 * i] = 251; im3.data[4 * i + 1] = 191; im3.data[4 * i + 2] = 36;
+        im3.data[4 * i + 3] = 150 * (ins ? 0.2 + 0.8 * ins[i] : 1);
+      }
+      c3.putImageData(im3, 0, 0);
+      ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(off3, 0, 0, W, H); ctx.restore();
+      // A's boundary (dashed), only inside the task regions where it matters
+      ctx.save();
+      if (focus) {
+        ctx.beginPath();
+        focus.forEach((t) => {
+          const [px, py] = toPx(t.center[0], t.center[1], W, H);
+          const rr = ((t.radius * 1.06) / (2 * MM.EXTENT)) * W;
+          ctx.moveTo(px + rr, py); ctx.arc(px, py, rr, 0, Math.PI * 2);
+        });
+        ctx.clip();
+      }
+      contour(ctx, qd, N, W, H, 'rgba(251,191,36,0.95)', o.thumb ? 1 : 1.4, [5, 4]);
+      ctx.restore();
+    }
+
     if (focus) {
       contour(ctx, p, N, W, H, 'rgba(255,255,255,0.22)', o.thumb ? 0.8 : 1.2);
       ctx.save();
@@ -3050,6 +3106,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       o.tasks.forEach((t) => {
         const n = Math.min(t.test.n, o.thumb ? 60 : 170);
         const pr = predict(t.test.X.subarray(0, n * 2), n);
+        const pa = o.diffWith ? o.diffWith(t.test.X.subarray(0, n * 2), n) : null;
         for (let i = 0; i < n; i++) {
           const [px, py] = toPx(t.test.X[2 * i], t.test.X[2 * i + 1], W, H);
           const y = t.test.Y[i], wrong = (pr[i] > 0.5 ? 1 : 0) !== y;
@@ -3061,6 +3118,10 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
             ctx.strokeStyle = wrong ? '#ff3b6b' : 'rgba(5,8,16,0.85)';
             if (wrong) { ctx.beginPath(); ctx.arc(px, py, 4.4, 0, Math.PI * 2); }
             ctx.stroke();
+            if (pa && (pa[i] > 0.5) !== (pr[i] > 0.5)) {
+              ctx.strokeStyle = '#fbbf24'; ctx.lineWidth = 1.4;
+              ctx.strokeRect(px - 5.5, py - 5.5, 11, 11);
+            }
           }
         }
       });
@@ -3195,7 +3256,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     experts: MM.SCENARIOS[0].experts.map((e) => ({ ...e })),
     init: 'shared', hidden: 32, ftSteps: 250, seed: 7, align: false,
     method: 'ties', params: {},
-    overlay: { points: true, regions: true, router: true },
+    overlay: { points: true, regions: true, router: true, diff: true },
     tab: 'lab',
     advisor: {}, // answers to the recipe advisor
     sweepKnob: {}, // method id -> knob key shown in the sensitivity chart
@@ -3725,9 +3786,12 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       return;
     }
     blocked.hidden = true;
+    const pin = S.pin && S.overlay.diff !== false ? pinnedResult() : null;
+    const diffWith = pin && !pin.blocked ? pin.predict : null;
+    $('#lgDiff').hidden = !diffWith;
     MM.drawMap(cv, r.predict, {
       tasks: ctx.tasks, showPoints: S.overlay.points, showRegions: S.overlay.regions,
-      gates: r.router && S.overlay.router ? r.router.gates : null, K: ctx.K,
+      gates: r.router && S.overlay.router ? r.router.gates : null, K: ctx.K, diffWith,
     });
   }
   $('#blocked').addEventListener('click', (ev) => {
@@ -3757,6 +3821,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     const planeTasks = !T || !T.tasks || T.tasks[0].kind !== 'digits';
     const tg = planeTasks ? [['points', 'Points'], ['regions', 'Regions']] : [];
     if (m.id === 'moe' && planeTasks) tg.push(['router', 'Router']);
+    if (S.pin) tg.push(['diff', 'A ≠ B']);
     $('#lgBoundary').hidden = !planeTasks; // a digit gallery has no boundary line
     $('#overlayToggles').innerHTML = tg.map(([k, l]) => `<button class="tg ${S.overlay[k] ? 'on' : ''}" data-ov="${k}">${l}</button>`).join('');
   }
@@ -3801,7 +3866,6 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
   // ---------------- KNOB SENSITIVITY ----------------
   const SWEEP_N = 17;
   const sweepCache = new WeakMap(); // trained bundle -> Map(key -> sweep result)
-  const sweepExtra = new Map(); // trainKey -> extra-seed bundles
   let sweepToken = 0, sweepTimer = null;
   const knobFmt = (knob, v) => (knob.key === 'balance' ? `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` : (+v).toFixed(knob.step < 0.01 ? 3 : 2));
   function currentKnob(m) {
@@ -3847,21 +3911,11 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
       const msg = (t) => { const el = $('#sweepMsg'); if (el && token === sweepToken) el.textContent = t; };
       const bundles = [Tnow];
       if (S.sweepSeeds) {
-        const tk = trainKey(S);
-        if (!sweepExtra.has(tk)) {
-          const extra = [];
-          for (const off of [101, 202]) {
-            msg(`Training experts on seed ${S.seed + off}…`);
-            const it = MM.trainBundle({ experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed: S.seed + off });
-            let st, tick = performance.now();
-            while (!(st = it.next()).done) {
-              if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (token !== sweepToken) return; }
-            }
-            extra.push(st.value);
-          }
-          sweepExtra.set(tk, extra);
+        for (let i = 1; i <= 2; i++) {
+          const b = await seedBundle(i, () => token !== sweepToken, msg);
+          if (!b) return;
+          bundles.push(b);
         }
-        bundles.push(...sweepExtra.get(tk));
       }
       const xs = MM.sweepValues(knob, SWEEP_N);
       const curves = [];
@@ -3954,8 +4008,40 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
         <span>Predictions differ</span><span>${pct(cmp.disagree)} of test points</span>
         <span>Inference</span><span>${mult(pin.cost)} → ${mult(r.cost)}</span>
         <span>Needs</span><span>${needs(S.pin.method)} → ${needs(S.method)}</span>
-      </div>${noise}</div>`;
+      </div>${noise}
+      <div class="edge" id="edge">${edgeHTML()}</div></div>`;
   }
+
+  // "Is B's edge real?": both recipes on the same 5 seeds, paired.
+  const EDGE_SEEDS = 5;
+  const edgeCache = new Map();
+  let edgeToken = 0;
+  const edgeKey = () => JSON.stringify([trainKey(S), S.pin, nowRecipe()]);
+  function edgeHTML() {
+    const d = edgeCache.get(edgeKey());
+    if (!d) return `<button class="btn sm" id="edgeBtn">Is B’s edge real? Check on ${EDGE_SEEDS} seeds</button><span class="edge-msg muted small" id="edgeMsg"></span>`;
+    const [tone, html] = pairVerdict(d, '<b>B</b>', '<b>A</b>', 'The Arena can run 10 seeds to settle it.');
+    return `<div class="verdict ${tone}">${html}</div>`;
+  }
+  async function checkEdge() {
+    const token = ++edgeToken, key = edgeKey(), pin = S.pin, now = nowRecipe();
+    const msg = (t) => { const el = $('#edgeMsg'); if (el && token === edgeToken) el.textContent = t; };
+    const btn = $('#edgeBtn');
+    if (btn) btn.disabled = true;
+    const bundles = [];
+    for (let i = 0; i < EDGE_SEEDS; i++) {
+      const b = await seedBundle(i, () => token !== edgeToken, msg);
+      if (!b) return;
+      bundles.push(b);
+    }
+    msg('Scoring both recipes…');
+    await frame();
+    if (token !== edgeToken) return;
+    edgeCache.set(key, MM.pairedDiff(MM.recipeRuns(bundles, pin, now), 'B', 'A'));
+    const el = $('#edge');
+    if (el && edgeKey() === key) el.innerHTML = edgeHTML();
+  }
+  $('#metrics').addEventListener('click', (ev) => { if (ev.target.closest('#edgeBtn')) checkEdge(); });
 
   // ---------------- INSIGHT ----------------
   function renderInsight(m, r, ctx) {
@@ -4089,6 +4175,27 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
   });
 
   // ---------------- ROBUSTNESS (multi-seed) ----------------
+  const seedCache = new Map(); // trainKey -> bundles for seeds S.seed + 101·i (i ≥ 1)
+  /** Bundle for seed index i (0 = the lab's trained experts). Trains and caches when needed; null if cancelled. */
+  async function seedBundle(i, cancelled, msg) {
+    if (i === 0) return T;
+    const tk = trainKey(S);
+    if (!seedCache.has(tk)) seedCache.set(tk, []);
+    const arr = seedCache.get(tk);
+    while (arr.length < i) {
+      const seed = S.seed + 101 * (arr.length + 1);
+      if (msg) msg(`Training experts on seed ${seed}…`);
+      await frame();
+      const it = MM.trainBundle({ experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed });
+      let st, tick = performance.now();
+      while (!(st = it.next()).done) {
+        if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (cancelled()) return null; }
+      }
+      if (trainKey(S) !== tk) return null; // settings changed while training
+      arr.push(st.value);
+    }
+    return arr[i - 1];
+  }
   let robustToken = 0;
   let robustData = null; // { runs, ids, seeds, taskNames, scenario } from the last check
   const h2h = { a: null, b: null };
@@ -4111,7 +4218,6 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     const ids = MM.METHODS.map((m) => m.id);
     const N = [3, 5, 10].includes(+S.robustSeeds) ? +S.robustSeeds : 5;
     const seeds = Array.from({ length: N }, (_, i) => S.seed + i * 101);
-    const cfg = { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps };
     const steps = N * (ids.length + 1);
     let doneSteps = 0;
     const prog = (label) => {
@@ -4120,17 +4226,9 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     const runs = [];
     try {
       for (let s = 0; s < seeds.length; s++) {
-        let bundle = T;
-        if (s > 0) {
-          prog(`Seed ${s + 1}/${N}: training experts…`);
-          await frame();
-          const it = MM.trainBundle({ ...cfg, seed: seeds[s] });
-          let r, tick = performance.now();
-          while (!(r = it.next()).done) {
-            if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (token !== robustToken) return; }
-          }
-          bundle = r.value;
-        }
+        prog(`Seed ${s + 1}/${N}: training experts…`);
+        const bundle = await seedBundle(s, () => token !== robustToken);
+        if (!bundle) return;
         doneSteps++;
         const ctx = MM.bundleCtx(bundle, S.align);
         const run = {};
@@ -4206,6 +4304,25 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     renderH2H(ok);
   }
 
+  /** Plain-language verdict for a pairedDiff(a, b) result. A and B are HTML names. Returns [tone, html]. */
+  function pairVerdict(d, A, B, more) {
+    const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
+    const tTxt = Number.isFinite(d.t) ? `paired t = ${d.t.toFixed(2)}, needs ±${d.crit.toFixed(2)}` : 'same gap on every seed';
+    // a result that only just clears the bar (and isn't won on every seed) is tentative, especially when browsing many pairs
+    const borderline = Number.isFinite(d.t) && Math.abs(d.t) < d.crit * 1.2 && d.wins !== d.n && d.losses !== d.n;
+    const real = borderline ? 'It only just clears the bar, so treat it as tentative (checking many pairs will turn up some by chance).' : 'Likely a real difference on this setup.';
+    const settle = more || 'Run 10 seeds to settle it.';
+    return {
+      a: ['good', `${A} beats ${B} by ${pts(d.mean)} on average and wins ${d.wins}/${d.n} seeds (${tTxt}). ${real}`],
+      b: ['bad', `${B} beats ${A} by ${pts(-d.mean)} on average and wins ${d.losses}/${d.n} seeds (${tTxt}). ${real}`],
+      'lean-a': ['mid', `${A} leans ahead: ${pts(d.mean)} on average, wins ${d.wins}/${d.n} seeds and never loses, but the gap varies too much to call (${tTxt}). ${settle}`],
+      'lean-b': ['mid', `${B} leans ahead: ${pts(-d.mean)} on average, wins ${d.losses}/${d.n} seeds and never loses, but the gap varies too much to call (${tTxt}). ${settle}`],
+      noise: ['mid', `No reliable difference: ${A} averages ${pts(d.mean)}, but the winner flips between seeds (${d.wins} vs ${d.losses}, ${tTxt}). Choose on cost and requirements.`],
+      same: ['mid', `${A} and ${B} score the same on every seed.`],
+      'too-few': ['mid', 'Need at least 2 seeds where both recipes run.'],
+    }[d.verdict];
+  }
+
   // Head-to-head: per-seed difference between two methods (paired across the same seeds).
   function renderH2H(ok) {
     const el = $('#h2h');
@@ -4218,19 +4335,7 @@ dialog.advisor::backdrop { background: rgba(4, 6, 12, 0.7); backdrop-filter: blu
     const X = (v) => `${(50 + (v / M) * 50).toFixed(2)}%`;
     const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
     const A = `<b>${esc(name(h2h.a))}</b>`, B = `<b>${esc(name(h2h.b))}</b>`;
-    const tTxt = Number.isFinite(d.t) ? `paired t = ${d.t.toFixed(2)}, needs ±${d.crit.toFixed(2)}` : 'same gap on every seed';
-    // a result that only just clears the bar (and isn't won on every seed) is tentative, especially when browsing many pairs
-    const borderline = Number.isFinite(d.t) && Math.abs(d.t) < d.crit * 1.2 && d.wins !== d.n && d.losses !== d.n;
-    const real = borderline ? 'It only just clears the bar, so treat it as tentative (checking many pairs will turn up some by chance).' : 'Likely a real difference on this setup.';
-    const verdict = {
-      a: ['good', `${A} beats ${B} by ${pts(d.mean)} on average and wins ${d.wins}/${d.n} seeds (${tTxt}). ${real}`],
-      b: ['bad', `${B} beats ${A} by ${pts(-d.mean)} on average and wins ${d.losses}/${d.n} seeds (${tTxt}). ${real}`],
-      'lean-a': ['mid', `${A} leans ahead: ${pts(d.mean)} on average, wins ${d.wins}/${d.n} seeds and never loses, but the gap varies too much to call (${tTxt}). Run 10 seeds to settle it.`],
-      'lean-b': ['mid', `${B} leans ahead: ${pts(-d.mean)} on average, wins ${d.losses}/${d.n} seeds and never loses, but the gap varies too much to call (${tTxt}). Run 10 seeds to settle it.`],
-      noise: ['mid', `No reliable difference: ${A} averages ${pts(d.mean)}, but the winner flips between seeds (${d.wins} vs ${d.losses}, ${tTxt}). Choose on cost and requirements.`],
-      same: ['mid', `${A} and ${B} score the same on every seed.`],
-      'too-few': ['mid', 'Need at least 2 seeds where both methods run.'],
-    }[d.verdict];
+    const verdict = pairVerdict(d, A, B);
     el.innerHTML = `<div class="h2h-head"><b>Head-to-head</b>
         <select id="h2hA" aria-label="Method A">${opts(h2h.a)}</select><span class="muted">minus</span>
         <select id="h2hB" aria-label="Method B">${opts(h2h.b)}</select>
