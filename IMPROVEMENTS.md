@@ -22,7 +22,8 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
    count and a CSV download.
 5. **Advisor blending:** let the measured toy evidence nudge the ranking (e.g. promote a pick that clearly beats the rule-based #1), and show the measured-vs-rules disagreement in the Arena too.
 6. **Compare extras:** a diff map that highlights where A and B disagree on the plane, and an A-vs-B paired multi-seed check (is B's edge real?).
-7. **Accessibility pass:** keyboard focus rings and arrow-key navigation in the method picker, ARIA
+7. **Per-layer sweep:** a heat map over two layers' gradient values (e.g. SLERP t for hidden 1 vs output), showing which layer the merge is most sensitive to.
+8. **Accessibility pass:** keyboard focus rings and arrow-key navigation in the method picker, ARIA
    labels on canvases, and a colour-blind-safe palette option.
 
 ## Done
