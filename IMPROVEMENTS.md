@@ -6,6 +6,8 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## How to verify an iteration
 
+- Accessibility: keep axe-core at 0 violations on every view (Lab, Arena, Atlas, Export, advisor) and keep every new control labelled and keyboard reachable.
+
 - `node tests/run.js` (CI runs this too). Without Node: `python3 scripts/bundle.py --tests`, then open
   `tests/_browser.html` and expect `N/N passed`.
 - `python3 scripts/bundle.py`, then open `dist/modelmixer.html`, exercise the changed feature, and check
@@ -13,13 +15,27 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Newer methods, part 3:** Localize-and-Stitch (learned sparse masks per task), plus an AdaMerging variant with a confidence-calibrated objective, since plain entropy minimisation over-sharpens on the toy.
-2. **Digits extras:** a conflict scenario (0-vs-1 with 1-vs-7, where both claim the "1"s), a per-pixel saliency view of what each merge kept, and digit-aware advisor evidence.
-3. **Accessibility pass:** keyboard focus rings and arrow-key navigation in the method picker, ARIA
-   labels on canvases, and a colour-blind-safe palette option.
+1. **Import a mergekit config:** paste a mergekit YAML (linear, slerp, ties, dare_ties/dare_linear, della, sce, breadcrumbs, task_arithmetic, karcher, gradient lists) and load it as a Lab recipe, the reverse of Export. Practitioners can then sanity-check a real recipe's knobs on the toys.
+2. **Web Worker engine:** run training, sweeps and seed checks in a worker so the UI never stalls, even in background tabs that throttle timers.
+3. **Newer methods, part 3:** Localize-and-Stitch (learned sparse masks per task), plus an AdaMerging variant with a confidence-calibrated objective.
+4. **Digits extras:** a conflict scenario (0-vs-1 with 1-vs-7, where both claim the "1"s), a per-pixel saliency view of what each merge kept, and digit-aware advisor evidence.
+5. **Phone layout check:** re-verify the newer panels (heat map, head-to-head, compare box, advisor) at 375 px and fix any overflow.
 
 ## Done
 
+- 2026-11-22: **Accessibility pass** (prioritised because the UI had grown a lot and "great UI" was a core requirement). The axe-core audit of every view (Lab, Arena, Atlas, Export, advisor) went from **7 failing rules to 0**:
+  - **Labels:** every slider, select and input is labelled.
+  - **Formula box:** the scrollable box is keyboard-focusable.
+  - **Landmarks and headings:** labelled landmarks, an `h1` for the Lab and a heading order with no skipped levels.
+  - **Contrast:** `--dim` text raised from 3.2:1 to 4.8:1 or better, and rank numbers too.
+
+  Keyboard support:
+  - a visible `:focus-visible` ring;
+  - WAI-ARIA tabs with arrow / Home / End keys and a single tab stop;
+  - arrow keys in the method picker, with focus kept on the chosen chip after it re-renders (this was a real bug: focus fell back to the page);
+  - `aria-pressed` kept in sync on every toggle by a MutationObserver.
+
+  Also: polite live regions for status and toasts, a spoken description of the decision map (method and per-task accuracy, plus the A ≠ B note), and `prefers-reduced-motion` support. Verified with real key presses in headless Chrome.
 - 2026-11-22: **Per-layer heat map.** When per-layer values (mergekit gradients) are on, a 7×7 map shows average accuracy for every combination of two layers' values (pairs: H1×H2, H1×Out, H2×Out; the third layer is held fixed). It marks the current, best and safest cells, where "safest" means an interior cell with the best worst neighbour, because edge cells would win on having fewer neighbours. A summary names the layer the recipe is sensitive to (average swing per axis), and Use best / Use safest snap the values to the slider grid. It computes one row per frame, about 0.2 s for SLERP. Findings: SLERP is sensitive to Hidden 1 (≈17 pts vs 2 for Output), and "Use best" lifts it from 85.8% to 94.0% with t = [0.17, 0.5, 0.83]. TIES λ barely matters for Hidden 2, but λ = 0 on Hidden 1 costs ≈15 pts. `layerGrid` / `pickGrid` in `js/lab.js`, 1 test (grid corners = Layer Stitch exactly; 53 total).
 - 2026-11-22: **Advisor blending.** Once the top-3 picks are measured on the closest toy (3 seeds), a lower pick that beats the rules' #1 under the paired test (significant, or winning every seed) moves to #1. It gets an "↑ measured" badge and the primary "Try it" button, and the old #1 keeps a "rules' #1" tag. Otherwise the rule order stands, and the verdict line explains which case applied. Example: with no shared base and any serving allowed, Karcher beats the rules' Ensemble on 3/3 seeds (+8.0 pts) and is promoted; with default answers, measurements agree and nothing moves. `blendRanking` in `js/advisor.js`, 1 test (52 total). The advisor screenshot now shows the re-ranked case.
 - 2026-11-22: **Compare extras** (moved ahead of more methods: with 17 methods, helping people choose between two matters more than an 18th). In compare mode the B map shades where A and B predict different classes (amber, inside the skill regions) and draws A's boundary dashed. Test points (plane) or digit tiles where the recipes disagree get an amber marker, and an "A ≠ B" toggle and legend are added. "Is B's edge real?" runs both recipes on the same 5 seeds and gives the paired verdict, with the same wording as the Arena head-to-head (shared `pairVerdict`). Extra-seed trainings now live in one cache shared by the sweep band, the Arena check and the edge check, so re-checks are much faster (Arena 5 seeds after an edge check: 6 s instead of about 18 s; sweep band: 0.4 s instead of about 8 s). Example: DARE vs TIES on Two skills is "no reliable difference" (+0.4 pts, 3 vs 2). `recipeRuns` in `js/lab.js`, 1 test (51 total).

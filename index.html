@@ -21,22 +21,23 @@
       </svg>
       <span class="brand-name">Model<b>Mixer</b></span>
     </div>
-    <nav class="tabs" id="tabs">
-      <button data-tab="lab" class="active">Mix Lab</button>
-      <button data-tab="arena">Arena</button>
-      <button data-tab="atlas">Atlas</button>
-      <button data-tab="export">Export</button>
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Views">
+      <button data-tab="lab" class="active" role="tab" id="tabbtn-lab" aria-controls="tab-lab">Mix Lab</button>
+      <button data-tab="arena" role="tab" id="tabbtn-arena" aria-controls="tab-arena">Arena</button>
+      <button data-tab="atlas" role="tab" id="tabbtn-atlas" aria-controls="tab-atlas">Atlas</button>
+      <button data-tab="export" role="tab" id="tabbtn-export" aria-controls="tab-export">Export</button>
     </nav>
     <button class="btn advisor-btn" id="openAdvisor" title="Answer a few questions about your real models and get a ranked recipe">✨ <span>Recipe advisor</span></button>
     <button class="btn ghost share-btn" id="shareLink" title="Copy a link that opens this exact recipe: experts, settings, method, knobs and any pinned comparison">🔗 <span>Share</span></button>
-    <div class="status" id="status"><span class="pulse"></span><span id="statusText">Warming up…</span></div>
+    <div class="status" id="status" role="status" aria-live="polite"><span class="pulse"></span><span id="statusText">Warming up…</span></div>
   </header>
 
   <main>
     <!-- ============ MIX LAB ============ -->
-    <section class="tab-page active" id="tab-lab">
+    <section class="tab-page active" id="tab-lab" role="tabpanel" aria-labelledby="tabbtn-lab">
+      <h1 class="sr-only">Mix Lab</h1>
       <div class="lab">
-        <aside class="panel ingredients" id="ingredients"></aside>
+        <aside class="panel ingredients" id="ingredients" aria-label="Ingredients: the experts you mix"></aside>
 
         <section class="center">
           <div class="panel picker" id="picker"></div>
@@ -48,14 +49,14 @@
                   <figure class="cmp-pane pin" id="pinPane" hidden>
                     <figcaption id="pinCap"></figcaption>
                     <div class="canvas-wrap">
-                      <canvas id="pinCanvas"></canvas>
+                      <canvas id="pinCanvas" role="img" aria-label="Decision map of the pinned recipe"></canvas>
                       <div class="blocked" id="pinBlocked" hidden></div>
                     </div>
                   </figure>
                   <figure class="cmp-pane now">
                     <figcaption id="nowCap" hidden></figcaption>
                     <div class="canvas-wrap">
-                      <canvas id="mainCanvas"></canvas>
+                      <canvas id="mainCanvas" role="img" aria-label="Decision map of the current mix"></canvas>
                       <div class="blocked" id="blocked" hidden></div>
                       <div class="busy" id="busy" hidden><span class="spinner"></span><span id="busyText">Mixing…</span></div>
                     </div>
@@ -80,12 +81,12 @@
           <div class="panel sweep" id="layerPanel" hidden></div>
         </section>
 
-        <aside class="panel insight" id="insight"></aside>
+        <aside class="panel insight" id="insight" aria-label="Insight: how the method works and what it is missing"></aside>
       </div>
     </section>
 
     <!-- ============ ARENA ============ -->
-    <section class="tab-page" id="tab-arena">
+    <section class="tab-page" id="tab-arena" role="tabpanel" aria-labelledby="tabbtn-arena">
       <div class="page-head">
         <div>
           <h1>Arena</h1>
@@ -97,7 +98,7 @@
       <div class="panel robust-panel">
         <div class="robust-head">
           <div>
-            <h3>Is the winner real? <span class="pill-mini">multi-seed check</span></h3>
+            <h2>Is the winner real? <span class="pill-mini">multi-seed check</span></h2>
             <p class="muted">One run can crown a winner by luck. This retrains the experts on several seeds (fresh data samples and fresh initialisations), re-runs every method with your current knobs and shows the spread. Pick a recipe that wins <i>and</i> stays stable, then check any two head-to-head.</p>
           </div>
           <div class="robust-ctl">
@@ -126,7 +127,7 @@
     </section>
 
     <!-- ============ ATLAS ============ -->
-    <section class="tab-page" id="tab-atlas">
+    <section class="tab-page" id="tab-atlas" role="tabpanel" aria-labelledby="tabbtn-atlas">
       <div class="page-head">
         <div>
           <h1>Atlas</h1>
@@ -144,7 +145,7 @@
     </section>
 
     <!-- ============ EXPORT ============ -->
-    <section class="tab-page" id="tab-export">
+    <section class="tab-page" id="tab-export" role="tabpanel" aria-labelledby="tabbtn-export">
       <div class="page-head">
         <div>
           <h1>Export to real models</h1>
@@ -184,7 +185,7 @@
     </div>
   </dialog>
 
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="js/nn.js"></script>
   <script src="js/data.js"></script>

@@ -214,7 +214,7 @@
         </div>
         <div class="setting">
           <label>Fine-tune steps <b id="ftVal">${S.ftSteps}</b></label>
-          <input type="range" min="50" max="800" step="25" value="${S.ftSteps}" id="ftSteps" />
+          <input type="range" min="50" max="800" step="25" value="${S.ftSteps}" id="ftSteps" aria-label="Fine-tune steps" />
         </div>
         <div class="train-row">
           <button class="btn primary" id="retrain">${training ? 'Training…' : 'Retrain'}</button>
@@ -332,7 +332,10 @@
         }).join('')}</div>
       </div>`;
     });
+    // re-rendering replaces the buttons, so keep keyboard focus on the chosen chip
+    const hadFocus = $('#picker').contains(document.activeElement);
     $('#picker').innerHTML = `<div class="families">${groups.join('')}</div>`;
+    if (hadFocus) { const b = $(`#picker [data-method="${S.method}"]`); if (b) b.focus(); }
   }
   $('#picker').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-method]');
@@ -357,7 +360,7 @@
       }
       if (d.type === 'range') {
         return `<div class="ctl"><label>${d.label}<b data-out="${d.key}">${fmt(p[d.key], d.step)}</b></label>
-          <input type="range" data-param="${d.key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${p[d.key]}" /></div>`;
+          <input type="range" aria-label="${esc(d.label)}" data-param="${d.key}" min="${d.min}" max="${d.max}" step="${d.step}" value="${p[d.key]}" /></div>`;
       }
       if (d.type === 'select') {
         return `<div class="ctl"><label>${d.label}</label><div class="seg wide" data-param-seg="${d.key}">
@@ -366,7 +369,7 @@
       if (d.type === 'weights') {
         return `<div class="ctl"><label>${d.label}</label>${Array.from({ length: K }, (_, i) => `
           <div class="wrow" style="--c:${MM.MODEL_COLORS[i]}"><i class="dot"></i><span>${LETTERS[i]}</span>
-            <input type="range" data-weight="${i}" min="0" max="1" step="0.05" value="${p.weights[i]}" /><b data-wout="${i}">${(+p.weights[i]).toFixed(2)}</b></div>`).join('')}</div>`;
+            <input type="range" data-weight="${i}" min="0" max="1" step="0.05" value="${p.weights[i]}" aria-label="Weight of expert ${LETTERS[i]}" /><b data-wout="${i}">${(+p.weights[i]).toFixed(2)}</b></div>`).join('')}</div>`;
       }
       if (d.type === 'layers') {
         const names = ['Hidden 1', 'Hidden 2', 'Output'];
@@ -382,7 +385,7 @@
         <label class="switch-row"><span><b>Per-layer ${esc(g.label)}</b><small>mergekit gradient: one value per layer</small></span>
           <span class="switch"><input type="checkbox" id="gradToggle" ${lw ? 'checked' : ''}/><i></i></span></label>
         ${lw ? `${MM.LAYER_NAMES.map((nm, l) => `<div class="grow"><span>${nm}</span>
-            <input type="range" data-grad="${l}" min="${g.min}" max="${g.max}" step="${g.step}" value="${p.grad[l]}" /><b data-gout="${l}">${gfmt(p.grad[l])}</b></div>`).join('')}
+            <input type="range" aria-label="${nm} ${esc(g.label)}" data-grad="${l}" min="${g.min}" max="${g.max}" step="${g.step}" value="${p.grad[l]}" /><b data-gout="${l}">${gfmt(p.grad[l])}</b></div>`).join('')}
           <div class="gpresets"><span class="tiny muted">Presets</span>${[['flat', 'Flat'], ['up', 'Ramp ↑'], ['down', 'Ramp ↓'], ['mid', 'Middle-heavy']].map(([k, l]) => `<button class="tg" data-gpreset="${k}">${l}</button>`).join('')}</div>` : ''}
       </div>` : '';
     $('#controls').innerHTML = `<div class="block-title">Recipe</div>${rows.join('') || (grad ? '' : '<p class="muted small">No knobs — this method decides everything from the weights themselves.</p>')}${grad}
@@ -552,6 +555,7 @@
       tasks: ctx.tasks, showPoints: S.overlay.points, showRegions: S.overlay.regions,
       gates: r.router && S.overlay.router ? r.router.gates : null, K: ctx.K, diffWith,
     });
+    cv.setAttribute('aria-label', `${ctx.tasks[0].kind === 'digits' ? 'Test-digit gallery' : 'Decision map'} for ${MM.METHOD_BY_ID[S.method].name}: ${r.accs.map((a, i) => `${LETTERS[i]} ${MM.TASKS[ctx.tasks[i].spec.task].name} ${pct(a)}`).join(', ')}${diffWith ? '; amber marks where the pinned recipe disagrees' : ''}`);
   }
   $('#blocked').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-goto-method]');
@@ -642,7 +646,7 @@
     const M = byT.get(key);
     const LN = MM.LAYER_NAMES;
     panel.innerHTML = `<div class="sweep-head">
-        <div><h3>Per-layer sensitivity <span class="pill-mini">which layer matters?</span></h3>
+        <div><h2>Per-layer sensitivity <span class="pill-mini">which layer matters?</span></h2>
           <p class="muted">Average accuracy for every combination of ${esc(g.label)} in two layers, with ${LN[fixed]} held at ${fmtG(g, p.grad[fixed])}. A colour change along one axis only means that layer is the one to tune.</p></div>
         <div class="sweep-ctl"><div class="seg" id="gridPair">${PAIRS.map(([k, l]) => `<button data-pair="${k}" class="${k === pair ? 'on' : ''}">${l}</button>`).join('')}</div></div></div>
       <div class="heat-wrap" id="heatWrap">${M ? '' : '<div class="loading"><span class="spinner"></span> <span id="heatMsg">Mapping…</span></div>'}</div>
@@ -744,7 +748,7 @@
       const why = lwOn
         ? `${esc(m.gradient.label)} is set per layer, so a single-value sweep doesn’t apply. Use the layer sliders and presets, or turn per-layer off to sweep it.`
         : `${m.name} has no continuous knob${m.params.some((d) => d.type === 'weights') && T.K > 2 ? ' to sweep with 3 experts' : ''}, so there is nothing to tune: what you see is what you get.`;
-      panel.innerHTML = `<div class="sweep-head"><div><h3>Knob sensitivity</h3><p class="muted">${why}</p></div></div>`;
+      panel.innerHTML = `<div class="sweep-head"><div><h2>Knob sensitivity</h2><p class="muted">${why}</p></div></div>`;
       return;
     }
     const params = S.params[m.id];
@@ -753,7 +757,7 @@
     if (!byT) { byT = new Map(); sweepCache.set(T, byT); }
     const res = byT.get(key);
     panel.innerHTML = `<div class="sweep-head">
-        <div><h3>Knob sensitivity <span class="pill-mini">how forgiving is this recipe?</span></h3>
+        <div><h2>Knob sensitivity <span class="pill-mini">how forgiving is this recipe?</span></h2>
           <p class="muted">Average accuracy as one knob moves, with the others held at your settings. A flat top means the recipe is forgiving; a sharp peak means you should tune it carefully on real models too.</p></div>
         <div class="sweep-ctl">
           ${ks.length > 1 ? `<div class="seg" id="sweepKnobs">${ks.map((k) => `<button data-k="${k.key}" class="${k.key === knob.key ? 'on' : ''}">${esc(k.label.replace(/\s*\(.*\)$/, ''))}</button>`).join('')}</div>` : `<span class="muted small">${esc(knob.label)}</span>`}
@@ -945,7 +949,7 @@
       <div class="section">
         <div class="sec-title">How it works</div>
         <ol class="steps">${m.how.map((s) => `<li>${s}</li>`).join('')}</ol>
-        <code class="formula">${m.formula}</code>
+        <code class="formula" tabindex="0" aria-label="Formula: ${esc(m.formula)}">${m.formula}</code>
       </div>
       <div class="two">
         <div class="section"><div class="sec-title good">Strengths</div><ul class="pros">${m.pros.map((s) => `<li>${s}</li>`).join('')}</ul></div>
@@ -1313,7 +1317,7 @@
       { q: 'Do the tasks overlap in input space?', a: [['Yes, and disagree', 'No mix can satisfy contradictory labels; routers can’t separate them either. You need a task signal (prompt / tag) or multi-task training.', ['moe']], ['No', 'Region-specific skills merge well — see the Two/Three skills scenarios.', ['ties']]] },
       { q: 'Combining two models of the same skill?', a: [['Yes', 'SLERP or Model Stock — smooth, norm-preserving blends.', ['slerp', 'model_stock']], ['Different skills', 'Prefer task-vector or data-informed methods.', ['ties', 'regmean']]] },
     ];
-    $('#guide').innerHTML = guide.map((g) => `<div class="panel gcard"><h4>${g.q}</h4>${g.a.map(([k, t, ms]) => `
+    $('#guide').innerHTML = guide.map((g) => `<div class="panel gcard"><h3>${g.q}</h3>${g.a.map(([k, t, ms]) => `
       <div class="gans"><span class="gk">${k}</span><p>${t}</p><div class="gms">${ms.map((id) => `<button class="chip sm" data-open="${id}" style="--fc:${MM.FAMILIES[MM.METHOD_BY_ID[id].family].color}">${MM.METHOD_BY_ID[id].short}</button>`).join('')}</div></div>`).join('')}</div>`).join('');
 
     $('#families').innerHTML = Object.entries(MM.FAMILIES).map(([fid, fm]) => `<div class="panel fcard" style="--fc:${fm.color}">
@@ -1412,10 +1416,10 @@
     const opts = MM.METHODS.map((x) => `<option value="${x.id}" ${x.id === id ? 'selected' : ''}>${x.name}${x.mergekit ? '' : '  (no mergekit)'}</option>`).join('');
     $('#exportForm').innerHTML = `
       <div class="panel-title"><span>Recipe</span><span class="hint">mirrors the lab</span></div>
-      <div class="field"><label>Method</label><select id="exMethod">${opts}</select></div>
-      <div class="field"><label>Base model ${m.req.base ? '' : '<span class="hint">(unused by this method)</span>'}</label><input id="exBase" value="${esc(S.exp.base)}" spellcheck="false" /></div>
-      ${Array.from({ length: K }, (_, i) => `<div class="field" style="--c:${MM.MODEL_COLORS[i]}"><label><i class="dot"></i>Expert ${LETTERS[i]}&nbsp;<span class="hint">(${MM.TASKS[S.experts[i].task].name} in the lab)</span></label><input data-exm="${i}" value="${esc(S.exp.models[i])}" spellcheck="false" />
-        ${id === 'moe' ? `<input class="sub" data-exp="${i}" value="${esc(S.exp.prompts[i])}" placeholder="routing prompts, comma separated" />` : ''}</div>`).join('')}
+      <div class="field"><label for="exMethod">Method</label><select id="exMethod">${opts}</select></div>
+      <div class="field"><label for="exBase">Base model ${m.req.base ? '' : '<span class="hint">(unused by this method)</span>'}</label><input id="exBase" value="${esc(S.exp.base)}" spellcheck="false" /></div>
+      ${Array.from({ length: K }, (_, i) => `<div class="field" style="--c:${MM.MODEL_COLORS[i]}"><label><i class="dot"></i>Expert ${LETTERS[i]}&nbsp;<span class="hint">(${MM.TASKS[S.experts[i].task].name} in the lab)</span></label><input aria-label="Expert ${LETTERS[i]} model id" data-exm="${i}" value="${esc(S.exp.models[i])}" spellcheck="false" />
+        ${id === 'moe' ? `<input class="sub" aria-label="Expert ${LETTERS[i]} routing prompts" data-exp="${i}" value="${esc(S.exp.prompts[i])}" placeholder="routing prompts, comma separated" />` : ''}</div>`).join('')}
       <div class="field"><label>dtype</label><div class="seg wide" id="exDtype">${['bfloat16', 'float16', 'float32'].map((d) => `<button data-v="${d}" class="${S.exp.dtype === d ? 'on' : ''}">${d}</button>`).join('')}</div></div>
       <div class="note">Parameters (weights, density, λ, t…) come from the lab’s current recipe for <b>${m.name}</b>. Tune it there, then copy the config.</div>`;
     const y = yamlFor(id);
@@ -1577,7 +1581,7 @@
 
   function renderAdvisor() {
     const a = Object.assign({}, MM.ADVISOR_DEFAULTS, S.advisor);
-    $('#advQs').innerHTML = MM.ADVISOR_QUESTIONS.map((q) => `<div class="adv-q"><h4>${q.q}</h4>${q.hint ? `<small>${q.hint}</small>` : ''}
+    $('#advQs').innerHTML = MM.ADVISOR_QUESTIONS.map((q) => `<div class="adv-q"><h3>${q.q}</h3>${q.hint ? `<small>${q.hint}</small>` : ''}
       <div class="seg ${q.options.length > 2 ? 'col' : ''}" data-adv="${q.key}">${q.options.map(([v, l]) => `<button data-v="${v}" class="${a[q.key] === v ? 'on' : ''}">${l}</button>`).join('')}</div></div>`).join('');
     const r = (advResult = MM.adviseRecipe(a));
     const sc = MM.SCENARIOS.find((x) => x.id === r.scenario);
@@ -1643,10 +1647,39 @@
   advDlg.addEventListener('click', (ev) => { if (ev.target === advDlg) closeAdvisor(); });
   document.addEventListener('click', (ev) => { if (ev.target.closest('[data-open-advisor]')) openAdvisor(); });
 
+  $('#picker').addEventListener('keydown', (ev) => {
+    const chips = $$('#picker button');
+    const i = chips.indexOf(document.activeElement);
+    if (i < 0) return;
+    const j = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: chips.length - 1 }[ev.key];
+    if (j === undefined) return;
+    ev.preventDefault();
+    chips[(j + chips.length) % chips.length].focus();
+  });
+
+  // Keep aria-pressed in step with the visual "on"/"active" state of every toggle-like button.
+  function syncPressed(root) {
+    (root || document).querySelectorAll('.seg button, button.tg, #picker button.chip').forEach((b) => {
+      b.setAttribute('aria-pressed', b.classList.contains('on') || b.classList.contains('active') ? 'true' : 'false');
+    });
+  }
+  new MutationObserver((muts) => {
+    for (const m of muts) {
+      if (m.type === 'attributes') { const b = m.target; if (b.matches && b.matches('.seg button, button.tg, #picker button.chip')) b.setAttribute('aria-pressed', b.classList.contains('on') || b.classList.contains('active') ? 'true' : 'false'); }
+      else m.addedNodes.forEach((n) => { if (n.nodeType === 1) syncPressed(n.parentNode || n); });
+    }
+  }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+  syncPressed();
+
   // ---------------- tabs ----------------
   function setTab(tab) {
     S.tab = tab; persist();
-    $$('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+    $$('#tabs button').forEach((b) => {
+      const on = b.dataset.tab === tab;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1; // roving tab stop: arrow keys move between tabs
+    });
     $$('.tab-page').forEach((p) => p.classList.toggle('active', p.id === `tab-${tab}`));
     if (tab === 'arena') markRobustStale();
     if (tab === 'arena' && (arenaStale || !$('#board').innerHTML) && T && T.experts) runArena();
@@ -1655,6 +1688,17 @@
     if (tab === 'lab' && current) refresh(true);
     window.scrollTo({ top: 0 });
   }
+  $('#tabs').addEventListener('keydown', (ev) => {
+    const btns = $$('#tabs button');
+    const i = btns.indexOf(document.activeElement);
+    if (i < 0) return;
+    const j = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: btns.length - 1 }[ev.key];
+    if (j === undefined) return;
+    ev.preventDefault();
+    const b = btns[(j + btns.length) % btns.length];
+    b.focus();
+    setTab(b.dataset.tab);
+  });
   $('#tabs').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-tab]');
     if (b) setTab(b.dataset.tab);

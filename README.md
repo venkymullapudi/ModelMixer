@@ -7,7 +7,7 @@ recipe as a [mergekit](https://github.com/arcee-ai/mergekit) config for real Hug
 **▶ Live demo: <https://venkymullapudi.github.io/ModelMixer/>**
 
 No install, no server, no dependencies: everything (training, merging, evaluation, plots) runs in plain
-JavaScript in the browser.
+JavaScript in the browser. It is keyboard-navigable and screen-reader labelled (axe-core: 0 violations).
 
 ![Mix Lab: TIES-Merging on the Two skills scenario, with decision map, recipe knobs, scorecard and insight panel](docs/screenshots/lab.webp)
 
