@@ -283,6 +283,20 @@ parameters:
       assert(csv[2] === '7,moe,,,,,"needs data, ""really"""', csv[2]);
     });
 
+    test('Advisor evidence toy: digits map to the digit scenarios with the right init', () => {
+      const d = advise({ toy: 'digits' });
+      assert(d.scenario === 'digits' && d.init === 'shared' && !d.align, JSON.stringify([d.scenario, d.init, d.align]));
+      const c = advise({ toy: 'digits', conflict: 'yes' });
+      assert(c.scenario === 'digits-conflict', c.scenario);
+      const n = advise({ toy: 'digits', base: 'no' });
+      assert(n.scenario === 'digits' && n.init === 'independent' && n.align, JSON.stringify([n.scenario, n.init, n.align]));
+      const p = advise({});
+      assert(p.scenario === 'two' && p.init === 'shared', 'plane default unchanged');
+      assert(advise({ base: 'no' }).init === 'independent' && advise({ toy: 'digits', count: '3+' }).notes.some((x) => /two experts/.test(x)), 'init / note');
+      // the rules (ranking) don't depend on the evidence toy
+      assert(advise({ toy: 'digits' }).recs.map((x) => x.id).join() === p.recs.map((x) => x.id).join(), 'toy must not change the rule ranking');
+    });
+
     test('blendRanking: promotes a pick that beats the rules\' #1 on every seed, otherwise keeps rule order', () => {
       const r = (xs) => xs.map((avg) => ({ avg }));
       const win = MM.blendRanking(['a', 'b', 'c'], { a: r([0.80, 0.82, 0.81]), b: r([0.86, 0.88, 0.85]), c: r([0.79, 0.90, 0.70]) });

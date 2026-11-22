@@ -18,8 +18,10 @@
     { key: 'train', q: 'Any training budget after merging?', options: [['no', 'Merge only'], ['yes', 'A short training run']] },
     { key: 'deploy', q: 'What can you serve?',
       options: [['single', 'One model, 1× cost'], ['router', 'Experts behind a router'], ['any', 'Every model, per request']] },
+    { key: 'toy', q: 'Check the picks on which toy?', hint: 'Evidence only: the rules above don’t change. Digits have 64-pixel inputs, closer to real high-dimensional models.',
+      options: [['plane', 'Points on a plane (2-D)'], ['digits', '8×8 digits (images)']] },
   ];
-  const ADVISOR_DEFAULTS = { base: 'yes', goal: 'skills', count: '2', conflict: 'no', data: 'no', train: 'no', deploy: 'single' };
+  const ADVISOR_DEFAULTS = { base: 'yes', goal: 'skills', count: '2', conflict: 'no', data: 'no', train: 'no', deploy: 'single', toy: 'plane' };
 
   // Rough prior for "a good default in practice" before situation-specific adjustments.
   const PRIOR = { ties: 7, dare: 7, della: 7, karcher: 5, sce: 6, adamerging: 7, localize_stitch: 7, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
@@ -111,8 +113,13 @@
     const all = Object.values(st);
     const recs = all.filter((s) => !s.out).sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
     const excluded = all.filter((s) => s.out).map((s) => ({ id: s.id, why: s.out }));
-    const scenario = a.base === 'no' ? 'strangers' : a.conflict === 'yes' ? 'overlap' : a.count === '3+' ? 'three' : 'two';
-    return { answers: a, recs, excluded, notes, scenario, align: a.base === 'no' };
+    // closest toy for the measured evidence: plane scenarios, or the digit (image) scenarios
+    const digits = a.toy === 'digits';
+    const scenario = digits ? (a.conflict === 'yes' ? 'digits-conflict' : 'digits')
+      : a.base === 'no' ? 'strangers' : a.conflict === 'yes' ? 'overlap' : a.count === '3+' ? 'three' : 'two';
+    const init = a.base === 'no' ? 'independent' : 'shared'; // the digit toys default to a shared base, so override
+    if (digits && a.count === '3+') notes.push('The digit toys use two experts, so the measurements compare pairs.');
+    return { answers: a, recs, excluded, notes, scenario, init, align: a.base === 'no' };
   }
 
   /**

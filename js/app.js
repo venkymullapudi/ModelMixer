@@ -1719,13 +1719,14 @@ dtype: bfloat16
   const evCache = {}; // `${scenario}|${align}|${id}` -> seed summary
   const evSeeds = {}; // same key -> per-seed results, for the paired re-ranking
   let evToken = 0;
-  const evKey = (r, id) => `${r.scenario}|${r.align ? 1 : 0}|${id}`;
+  const toyKey = (r) => `${r.scenario}:${r.init || 'shared'}`;
+  const evKey = (r, id) => `${toyKey(r)}|${r.align ? 1 : 0}|${id}`;
   function evidenceHTML(id, r, sc) {
     const e = evCache[evKey(r, id)];
     if (!e) return `<span class="ev-wait"><span class="spinner"></span> Measuring on the ${sc.name} toy…</span>`;
     if (e.blocked) return `<span class="muted">Can’t run on the ${sc.name} toy: ${e.blocked}</span>`;
     const tone = e.mean > 0.95 ? 'good' : e.mean > 0.85 ? 'mid' : 'bad';
-    return `<span class="ev-label">Measured on the ${sc.name} toy${r.align ? ' (aligned)' : ''}</span>
+    return `<span class="ev-label">Measured on the ${sc.name} toy${r.init === 'independent' && sc.init !== 'independent' ? ' (independent inits, aligned)' : r.align ? ' (aligned)' : ''}</span>
       <span class="ev-val ${tone}">${pct(e.mean)} <small>± ${(e.sd * 100).toFixed(1)}</small></span>
       <span class="ev-sub">worst task ${pct(e.worstTask)} · ${e.seeds} seeds · default knobs</span>`;
   }
@@ -1753,20 +1754,20 @@ dtype: bfloat16
     if (!ids.length) return;
     const sc = MM.SCENARIOS.find((x) => x.id === r.scenario);
     await frame();
-    if (!evBundles[r.scenario]) {
+    if (!evBundles[toyKey(r)]) {
       const bundles = await Promise.all(EV_SEEDS.map((seed) => {
-        const cfg = MM.toyConfig(r.scenario, seed);
+        const cfg = Object.assign(MM.toyConfig(r.scenario, seed), { init: r.init || 'shared' });
         // Reuse the lab's trained experts when they are exactly this toy config (saves ~3 s).
         if (T && T.experts && !training && trainKey(S) === trainKey(cfg)) return T;
         return trainAsync(cfg, { cancelled: () => token !== evToken });
       }));
       if (token !== evToken || bundles.some((b) => !b)) return;
-      evBundles[r.scenario] = bundles;
+      evBundles[toyKey(r)] = bundles;
     }
     for (const id of ids) {
       await frame();
       if (token !== evToken) return;
-      const runs = MM.seedRuns(evBundles[r.scenario], [id], r.align, (mid, K) => MM.defaultParams(MM.METHOD_BY_ID[mid], K));
+      const runs = MM.seedRuns(evBundles[toyKey(r)], [id], r.align, (mid, K) => MM.defaultParams(MM.METHOD_BY_ID[mid], K));
       evCache[evKey(r, id)] = MM.summarizeSeeds(runs, [id])[0];
       evSeeds[evKey(r, id)] = runs.map((run) => run[id]);
       const el = $(`#advRecs [data-ev="${id}"]`);
@@ -1835,15 +1836,18 @@ dtype: bfloat16
     }
     const sc = MM.SCENARIOS.find((s) => s.id === advResult.scenario);
     const switching = !sameScenario(sc);
-    if (switching) { S.experts = sc.experts.map((e) => ({ ...e })); S.init = sc.init; }
+    const wantInit = advResult.init || sc.init;
+    const needTrain = switching || S.init !== wantInit;
+    if (switching) S.experts = sc.experts.map((e) => ({ ...e }));
+    S.init = wantInit;
     S.align = advResult.align;
     S.method = id;
     arenaStale = robustStale = true;
     setTab('lab');
     renderPicker();
-    if (switching) scheduleRetrain();
+    if (needTrain) scheduleRetrain();
     else { persist(); renderIngredients(); refresh(); }
-    toast(`${MM.METHOD_BY_ID[id].name} on the ${sc.name} scenario${S.align ? ', neurons aligned' : ''}`);
+    toast(`${MM.METHOD_BY_ID[id].name} on the ${sc.name} scenario${wantInit !== sc.init ? ', independent inits' : ''}${S.align ? ', neurons aligned' : ''}`);
   });
   $('#openAdvisor').addEventListener('click', openAdvisor);
   $('#closeAdvisor').addEventListener('click', closeAdvisor);
