@@ -6,8 +6,8 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## How to verify an iteration
 
-- Phone: `python3 scripts/phone_audit.py` should show ✓ (no horizontal overflow) for every view and state.
-- Accessibility: keep axe-core at 0 violations on every view (Lab, Arena, Atlas, Export, advisor) and keep every new control labelled and keyboard reachable.
+- Phone: `python3 scripts/phone_audit.py` (exits 1 on failure; CI runs it) should show ✓ (no horizontal overflow) for every view and state.
+- Accessibility: `python3 scripts/axe_audit.py` (exits 1 on failure; CI runs it) must report 0 violations on every view (Lab, Arena, Atlas, Export, advisor, report) and keep every new control labelled and keyboard reachable.
 
 - `node tests/run.js` (CI runs this too). Without Node: `python3 scripts/bundle.py --tests`, then open
   `tests/_browser.html` and expect `N/N passed`.
@@ -16,10 +16,11 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Browser checks in CI:** run the axe audit and `scripts/phone_audit.py` in GitHub Actions (Playwright plus Chromium), so accessibility and phone layout can't silently regress.
-2. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
+1. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
 
 ## Done
+
+- 2026-11-22: **Browser checks in CI.** A new `browser` job in `.github/workflows/ci.yml` installs Playwright with its bundled Chromium, builds the app, and runs two gates: `scripts/axe_audit.py` (axe-core 4.9.1 on Lab, Arena, Atlas, Export, the advisor and the report dialog) and `scripts/phone_audit.py` (17 views and states at 375 px). Both scripts now exit 1 on any violation, overflow or page error, and `PW_CHANNEL` picks the browser (Google Chrome locally by default, Chromium in CI). If the phone audit fails, CI uploads its screenshots. Proved the gate works by planting an unlabelled input and a 600 px-wide element: axe reported 2 rules and the phone audit failed 13 views with exit 1; both pass again after reverting.
 
 - 2026-11-22: **Recipe gallery** (Atlas → "Learn by example"). Five cards, each opening A (pinned) vs B (live) in the Lab through a share link, with a one-line lesson:
   - per-layer SLERP beats a flat t (85.8 → 93.1);

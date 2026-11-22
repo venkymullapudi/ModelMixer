@@ -1,10 +1,10 @@
 """Audit ModelMixer at phone width (375 px, touch): page-level horizontal overflow per view/state, plus screenshots.
 
 Usage:  python3 scripts/phone_audit.py [repo_root] [screenshot_dir]
-Needs:  pip install playwright   (uses the installed Google Chrome via channel="chrome")
-Rebuild dist/ first (python3 scripts/bundle.py). Every line should read ✓ and "errors: none".
+Needs:  pip install playwright   (local: your Google Chrome; CI: PW_CHANNEL="" uses Playwright's Chromium)
+Rebuild dist/ first (python3 scripts/bundle.py). Exits 1 if any view overflows or the page logs an error.
 """
-import pathlib, sys
+import os, pathlib, sys
 from playwright.sync_api import sync_playwright
 
 ROOT = pathlib.Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else pathlib.Path(__file__).resolve().parent.parent
@@ -27,10 +27,15 @@ FIND = """() => {
 }"""
 
 
+FAILS = []
+errs = []
+
+
 def check(pg, label, shot=None):
     pg.wait_for_timeout(500)
     r = pg.evaluate(FIND)
     flag = '✓' if r['sw'] <= r['W'] and not r['n'] else '✗'
+    if flag == '✗': FAILS.append(label)
     print(f"{flag} {label:28s} scrollWidth {r['sw']} / {r['W']}  offenders {r['n']}")
     for b in r['bad']: print('     ', b)
     if shot: pg.screenshot(path=str(OUT / f'{shot}.png'), full_page=False)
@@ -38,7 +43,7 @@ def check(pg, label, shot=None):
 
 
 with sync_playwright() as p:
-    b = p.chromium.launch(channel="chrome", headless=True)
+    b = p.chromium.launch(channel=os.environ.get('PW_CHANNEL', 'chrome') or None, headless=True)
     ctx = b.new_context(viewport={"width": 375, "height": 812}, device_scale_factor=2, is_mobile=True, has_touch=True)
     pg = ctx.new_page()
     pg.add_init_script("try { localStorage.setItem('modelmixer:tour', 'done') } catch (e) {}")  # no first-run tour in captures
@@ -80,3 +85,4 @@ with sync_playwright() as p:
     pg.locator('#stageHead').scroll_into_view_if_needed(); check(pg, 'digits gallery', 'p_digits')
     print('errors:', errs or 'none')
     b.close()
+sys.exit(1 if FAILS or errs else 0)

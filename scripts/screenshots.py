@@ -38,7 +38,7 @@ def pick_scenario(page, label, kind=None):
 
 
 with sync_playwright() as p:
-    browser = p.chromium.launch(channel="chrome", headless=True)
+    browser = p.chromium.launch(channel=os.environ.get('PW_CHANNEL', 'chrome') or None, headless=True)
     ctx = browser.new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=2, color_scheme="dark")
     page = ctx.new_page()
     page.add_init_script("try { localStorage.setItem('modelmixer:tour', 'done') } catch (e) {}")  # no first-run tour in captures
