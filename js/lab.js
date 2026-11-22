@@ -9,12 +9,18 @@
 
   /** Generator: yields {type:'start'|'step'|'done', ...} events and returns the trained bundle.
    *  cfg = { experts:[spec], init:'shared'|'independent', hidden, ftSteps, seed } */
-  function* trainBundle(cfg) {
-    const { experts: specs, init, hidden, ftSteps, seed } = cfg;
-    const K = specs.length;
+  /** Layout and task data for a training config (cheap; no training). */
+  function bundleShape(cfg) {
+    const { experts: specs, hidden, seed } = cfg;
     const digits = MM.taskKind(specs[0].task) === 'digits';
     const layout = digits ? MM.makeLayout([MM.DIGIT_D, hidden, hidden, 1]) : MM.makeLayout([2, hidden, hidden, 1], MM.makeEncoder(9, MM.EXTENT, 0.5));
-    const tasks = specs.map((e, i) => MM.makeTaskData(e, i, seed));
+    return { layout, tasks: specs.map((e, i) => MM.makeTaskData(e, i, seed)), digits };
+  }
+
+  function* trainBundle(cfg) {
+    const { experts: specs, init, ftSteps, seed } = cfg;
+    const K = specs.length;
+    const { layout, tasks, digits } = bundleShape(cfg);
     const shared = init === 'shared';
     const total = shared ? BASE_STEPS + K * ftSteps : K * (BASE_STEPS + ftSteps);
     const losses = [];
@@ -312,5 +318,5 @@
     return { best, safe, near: cnt ? near / cnt : 0, sensA: sensA / C, sensB: sensB / R };
   }
 
-  Object.assign(MM, { layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

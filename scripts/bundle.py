@@ -6,8 +6,11 @@ root = pathlib.Path(__file__).resolve().parent.parent
 html = (root / "index.html").read_text()
 html = html.replace('<link rel="stylesheet" href="css/styles.css" />',
                     "<style>\n" + (root / "css/styles.css").read_text() + "\n</style>")
+ENGINE = {"js/nn.js", "js/data.js", "js/methods.js", "js/merge.js", "js/lab.js"}
 def inline(m):
-    return "<script>\n" + (root / m.group(1)).read_text() + "\n</script>"
+    # engine scripts are tagged so the app can rebuild them inside a Web Worker (no duplicate copy needed)
+    tag = '<script data-engine>' if m.group(1) in ENGINE else '<script>'
+    return tag + "\n" + (root / m.group(1)).read_text() + "\n</script>"
 html = re.sub(r'<script src="(js/[^"]+)"></script>', inline, html)
 out = root / "dist" / "modelmixer.html"
 out.parent.mkdir(exist_ok=True)

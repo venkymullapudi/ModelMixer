@@ -8,6 +8,75 @@
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const frame = () => new Promise((r) => setTimeout(r, 0));
 
+  // ---------------- training off the main thread (Web Worker) ----------------
+  // The single-file build tags its inline engine scripts; a Blob-URL worker re-runs them, so training never
+  // blocks the page and isn't throttled in background tabs. Without them (multi-file dev mode) or if workers
+  // are unavailable, training falls back to the chunked main-thread loop. Results are identical either way.
+  const ENGINE_SRC = (() => {
+    try {
+      const parts = Array.from(document.querySelectorAll('script[data-engine]')).map((s) => s.textContent);
+      return parts.length >= 5 && parts.every((t) => t.trim()) ? parts.join('\n;\n') : null;
+    } catch (e) { return null; }
+  })();
+  let workerURL = null;
+  let workerOK = !!ENGINE_SRC && typeof Worker !== 'undefined' && typeof Blob !== 'undefined';
+  function workerMain() {
+    self.onmessage = (e) => {
+      const { cfg, every } = e.data;
+      try {
+        const it = self.MM.trainBundle(cfg);
+        let r, done = 0, total = 1, live = null;
+        while (!(r = it.next()).done) {
+          const ev = r.value;
+          if (ev.type === 'start') { total = ev.total; live = ev.live; }
+          else if (ev.type === 'step') { if (++done % every === 0) self.postMessage({ type: 'progress', done, total, which: ev.which, P: ev.P.slice(), losses: live.losses.slice() }); }
+          else if (ev.type === 'done') self.postMessage({ type: 'progress', done, total, which: ev.which, P: ev.P.slice(), losses: live.losses.slice() });
+        }
+        const b = r.value;
+        delete b.ctx;
+        self.postMessage({ type: 'result', bundle: b });
+      } catch (err) { self.postMessage({ type: 'error', message: String((err && err.message) || err) }); }
+    };
+  }
+  async function trainMainThread(cfg, opt) {
+    const it = MM.trainBundle(cfg);
+    let r, done = 0, total = 1, live = null, tick = performance.now();
+    while (!(r = it.next()).done) {
+      const ev = r.value;
+      if (ev.type === 'start') { total = ev.total; live = ev.live; }
+      else if (ev.type === 'step') { if (++done % 40 === 0 && opt.onProgress) opt.onProgress({ done, total, which: ev.which, P: ev.P, losses: live.losses }); }
+      else if (ev.type === 'done' && opt.onProgress) opt.onProgress({ done, total, which: ev.which, P: ev.P, losses: live.losses });
+      if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (opt.cancelled && opt.cancelled()) return null; }
+    }
+    return r.value;
+  }
+  /** Train a bundle; resolves to the bundle, or null if cancelled. opt: { onProgress, cancelled }. */
+  function trainAsync(cfg, opt) {
+    opt = opt || {};
+    const plain = JSON.parse(JSON.stringify(cfg));
+    if (!workerOK) return trainMainThread(plain, opt);
+    return new Promise((resolve, reject) => {
+      let w;
+      try {
+        if (!workerURL) workerURL = URL.createObjectURL(new Blob([`self.window = self;\n${ENGINE_SRC}\n;(${workerMain.toString()})();`], { type: 'text/javascript' }));
+        w = new Worker(workerURL);
+      } catch (e) { workerOK = false; resolve(trainMainThread(plain, opt)); return; }
+      let settled = false;
+      const end = () => { settled = true; clearInterval(poll); w.terminate(); };
+      const poll = setInterval(() => { if (!settled && opt.cancelled && opt.cancelled()) { end(); resolve(null); } }, 100);
+      w.onmessage = (e) => {
+        const m = e.data;
+        if (settled) return;
+        if (m.type === 'progress') { if (opt.onProgress) opt.onProgress(m); }
+        else if (m.type === 'result') { end(); m.bundle.ctx = {}; resolve(m.bundle); }
+        else if (m.type === 'error') { end(); reject(new Error(m.message)); }
+      };
+      w.onerror = (ev) => { if (ev && ev.preventDefault) ev.preventDefault(); if (settled) return; end(); workerOK = false; resolve(trainMainThread(plain, opt)); };
+      w.postMessage({ cfg: plain, every: 40 });
+    });
+  }
+  const MAX_PARALLEL = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+
   // ---------------- state ----------------
   const S = {
     scenario: 'two',
@@ -101,24 +170,22 @@
     arenaStale = robustStale = true;
     renderIngredients();
     status('Training experts…', true);
-    const it = MM.trainBundle({ experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed: S.seed });
-    let total = 1, done = 0, sinceTick = 0;
+    const cfg = { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed: S.seed };
+    const shape = MM.bundleShape(cfg);
+    T = Object.assign(T || {}, { live: { layout: shape.layout, tasks: shape.tasks, base: null, experts: [], losses: [] } });
     try {
-      for (;;) {
-        let r;
-        for (let i = 0; i < 12; i++) {
-          r = it.next();
-          if (r.done) break;
-          const ev = r.value;
-          if (ev.type === 'start') { total = ev.total; T = Object.assign(T || {}, { live: ev.live }); }
-          else if (ev.type === 'step') { done++; if (++sinceTick % 48 === 0) drawThumb(ev.which, ev.P, T.live.tasks); }
-          else if (ev.type === 'done') drawThumb(ev.which, ev.P, T.live.tasks);
-        }
-        if (r.done) { T = r.value; break; }
-        if (token !== trainToken) throw new Error('cancelled');
-        setProgress(done / total, T.live.losses);
-        await frame();
-      }
+      const res = await trainAsync(cfg, {
+        cancelled: () => token !== trainToken,
+        onProgress: (m) => {
+          if (token !== trainToken || !T.live) return;
+          T.live.losses = m.losses || T.live.losses;
+          if (m.which === 'base') T.live.base = m.P; else T.live.experts[m.which] = m.P;
+          setProgress(m.done / m.total, T.live.losses);
+          drawThumb(m.which, m.P, T.live.tasks);
+        },
+      });
+      if (!res || token !== trainToken) throw new Error('cancelled');
+      T = res;
       training = false;
       setProgress(1, T.losses);
       status(`${T.K} experts ready · ${T.layout.total.toLocaleString()} params each`);
@@ -894,12 +961,8 @@
     const msg = (t) => { const el = $('#edgeMsg'); if (el && token === edgeToken) el.textContent = t; };
     const btn = $('#edgeBtn');
     if (btn) btn.disabled = true;
-    const bundles = [];
-    for (let i = 0; i < EDGE_SEEDS; i++) {
-      const b = await seedBundle(i, () => token !== edgeToken, msg);
-      if (!b) return;
-      bundles.push(b);
-    }
+    const bundles = await seedBundles(EDGE_SEEDS, () => token !== edgeToken, msg);
+    if (!bundles) return;
     msg('Scoring both recipes…');
     await frame();
     if (token !== edgeToken) return;
@@ -1045,22 +1108,32 @@
   /** Bundle for seed index i (0 = the lab's trained experts). Trains and caches when needed; null if cancelled. */
   async function seedBundle(i, cancelled, msg) {
     if (i === 0) return T;
+    const all = await seedBundles(i + 1, cancelled, msg);
+    return all ? all[i] : null;
+  }
+  /** Bundles for seed indices 0..n-1 (0 = the lab's experts); missing ones train in parallel workers. */
+  async function seedBundles(n, cancelled, msg) {
     const tk = trainKey(S);
     if (!seedCache.has(tk)) seedCache.set(tk, []);
     const arr = seedCache.get(tk);
-    while (arr.length < i) {
-      const seed = S.seed + 101 * (arr.length + 1);
-      if (msg) msg(`Training experts on seed ${seed}…`);
-      await frame();
-      const it = MM.trainBundle({ experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed });
-      let st, tick = performance.now();
-      while (!(st = it.next()).done) {
-        if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (cancelled()) return null; }
-      }
+    const missing = [];
+    for (let i = 1; i < n; i++) if (!arr[i - 1]) missing.push(i);
+    let finished = 0;
+    const base = { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps };
+    const runOne = async (i) => {
+      const b = await trainAsync({ ...base, seed: S.seed + 101 * i }, { cancelled });
+      if (!b) return false;
+      arr[i - 1] = b; finished++;
+      if (msg) msg(`Training experts on extra seeds… ${finished}/${missing.length}`);
+      return true;
+    };
+    if (missing.length && msg) msg(`Training experts on ${missing.length} extra seed${missing.length > 1 ? 's' : ''}${workerOK && missing.length > 1 ? ' in parallel' : ''}…`);
+    for (let k = 0; k < missing.length; k += workerOK ? MAX_PARALLEL : 1) {
+      const ok = await Promise.all(missing.slice(k, k + (workerOK ? MAX_PARALLEL : 1)).map(runOne));
+      if (ok.includes(false) || cancelled()) return null;
       if (trainKey(S) !== tk) return null; // settings changed while training
-      arr.push(st.value);
     }
-    return arr[i - 1];
+    return [T, ...arr.slice(0, n - 1)];
   }
   let robustToken = 0;
   let robustData = null; // { runs, ids, seeds, taskNames, scenario } from the last check
@@ -1092,7 +1165,11 @@
     const runs = [];
     try {
       for (let s = 0; s < seeds.length; s++) {
-        prog(`Seed ${s + 1}/${N}: training experts…`);
+        if (s === 0) {
+          // train every missing seed up front, in parallel workers when available
+          const ready = await seedBundles(N, () => token !== robustToken, (t) => prog(t));
+          if (!ready) return;
+        }
         const bundle = await seedBundle(s, () => token !== robustToken);
         if (!bundle) return;
         doneSteps++;
@@ -1597,18 +1674,13 @@ dtype: bfloat16
     const sc = MM.SCENARIOS.find((x) => x.id === r.scenario);
     await frame();
     if (!evBundles[r.scenario]) {
-      const bundles = [];
-      for (const seed of EV_SEEDS) {
+      const bundles = await Promise.all(EV_SEEDS.map((seed) => {
         const cfg = MM.toyConfig(r.scenario, seed);
         // Reuse the lab's trained experts when they are exactly this toy config (saves ~3 s).
-        if (T && T.experts && !training && trainKey(S) === trainKey(cfg)) { bundles.push(T); continue; }
-        const it = MM.trainBundle(cfg);
-        let st, tick = performance.now();
-        while (!(st = it.next()).done) {
-          if (performance.now() - tick > 30) { await frame(); tick = performance.now(); if (token !== evToken) return; }
-        }
-        bundles.push(st.value);
-      }
+        if (T && T.experts && !training && trainKey(S) === trainKey(cfg)) return T;
+        return trainAsync(cfg, { cancelled: () => token !== evToken });
+      }));
+      if (token !== evToken || bundles.some((b) => !b)) return;
       evBundles[r.scenario] = bundles;
     }
     for (const id of ids) {
@@ -1777,5 +1849,5 @@ dtype: bfloat16
   train();
   if (sharedMsg) toast(sharedMsg);
 
-  window.ModelMixer = { state: S, get trained() { return T; }, compute, getCtx, recipeLink, openRecipe };
+  window.ModelMixer = { state: S, get trained() { return T; }, compute, getCtx, recipeLink, openRecipe, trainAsync, get usesWorker() { return workerOK; } };
 })();
