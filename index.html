@@ -30,6 +30,7 @@
     <button class="btn advisor-btn" id="openAdvisor" title="Answer a few questions about your real models and get a ranked recipe">✨ <span>Recipe advisor</span></button>
     <button class="btn ghost share-btn" id="shareLink" title="Copy a link that opens this exact recipe: experts, settings, method, knobs and any pinned comparison">🔗 <span>Share</span></button>
     <button class="btn ghost share-btn" id="openReport" title="One page with this recipe, its results, how forgiving it is and the mergekit config: print, save as PDF, download or copy as Markdown">📄 <span>Report</span></button>
+    <button class="btn ghost share-btn tour-btn" id="openTour" title="Take the 5-step tour" aria-label="Take the tour">?</button>
     <div class="status" id="status" role="status" aria-live="polite"><span class="pulse"></span><span id="statusText">Warming up…</span></div>
   </header>
 
@@ -209,6 +210,19 @@
     </div>
     <iframe id="repFrame" title="Recipe report preview"></iframe>
   </dialog>
+
+  <div class="tour-spot" id="tourSpot" hidden></div>
+  <div class="tour-pop" id="tourPop" role="dialog" aria-labelledby="tourTitle" aria-describedby="tourText" hidden>
+    <div class="tour-step" id="tourStep"></div>
+    <h2 id="tourTitle"></h2>
+    <p id="tourText"></p>
+    <div class="tour-nav">
+      <button class="btn ghost sm" id="tourSkip">Skip tour</button>
+      <span class="tour-gap"></span>
+      <button class="btn ghost sm" id="tourBack">Back</button>
+      <button class="btn sm primary" id="tourNext">Next</button>
+    </div>
+  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

@@ -670,6 +670,17 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
 .btn.icon { padding: 2px 8px; font-size: 14px; line-height: 1.2; }
 .btn.icon:disabled { opacity: 0.35; cursor: default; }
 
+/* ---------- first-run tour ---------- */
+.tour-spot { position: fixed; z-index: 60; border-radius: 14px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(4, 6, 12, 0.62); outline: 2px solid #a78bfa; outline-offset: 0; transition: all 0.2s ease; }
+.tour-pop { position: fixed; z-index: 61; background: var(--panel-solid); border: 1px solid rgba(167, 139, 250, 0.5); border-radius: 14px; padding: 14px 16px 12px; box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.7); }
+.tour-pop .tour-step { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #a78bfa; }
+.tour-pop h2 { margin: 4px 0 6px; font-size: 16px; }
+.tour-pop p { margin: 0 0 12px; font-size: 13px; line-height: 1.55; color: #cdd3e3; }
+.tour-nav { display: flex; gap: 6px; align-items: center; }
+.tour-nav .tour-gap { flex: 1; }
+.tour-btn { min-width: 34px; justify-content: center; font-weight: 800; }
+@media (prefers-reduced-motion: reduce) { .tour-spot { transition: none; } }
+
 </style>
 </head>
 <body>
@@ -691,6 +702,7 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     <button class="btn advisor-btn" id="openAdvisor" title="Answer a few questions about your real models and get a ranked recipe">✨ <span>Recipe advisor</span></button>
     <button class="btn ghost share-btn" id="shareLink" title="Copy a link that opens this exact recipe: experts, settings, method, knobs and any pinned comparison">🔗 <span>Share</span></button>
     <button class="btn ghost share-btn" id="openReport" title="One page with this recipe, its results, how forgiving it is and the mergekit config: print, save as PDF, download or copy as Markdown">📄 <span>Report</span></button>
+    <button class="btn ghost share-btn tour-btn" id="openTour" title="Take the 5-step tour" aria-label="Take the tour">?</button>
     <div class="status" id="status" role="status" aria-live="polite"><span class="pulse"></span><span id="statusText">Warming up…</span></div>
   </header>
 
@@ -870,6 +882,19 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     </div>
     <iframe id="repFrame" title="Recipe report preview"></iframe>
   </dialog>
+
+  <div class="tour-spot" id="tourSpot" hidden></div>
+  <div class="tour-pop" id="tourPop" role="dialog" aria-labelledby="tourTitle" aria-describedby="tourText" hidden>
+    <div class="tour-step" id="tourStep"></div>
+    <h2 id="tourTitle"></h2>
+    <p id="tourText"></p>
+    <div class="tour-nav">
+      <button class="btn ghost sm" id="tourSkip">Skip tour</button>
+      <span class="tour-gap"></span>
+      <button class="btn ghost sm" id="tourBack">Back</button>
+      <button class="btn sm primary" id="tourNext">Next</button>
+    </div>
+  </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -4262,6 +4287,7 @@ ${parts.join('\n')}
       renderPicker();
       refresh();
       if (S.tab === 'arena') runArena();
+      maybeStartTour();
     } catch (e) {
       if (e.message !== 'cancelled') { console.error(e); status('Training failed — see console'); training = false; }
     }
@@ -5738,6 +5764,67 @@ dtype: bfloat16
     toast(`Imported ${meta.name}`);
   });
   $('#mkOut').addEventListener('click', (ev) => { if (ev.target.closest('#mkOpen')) setTab('lab'); });
+
+  // ---------------- FIRST-RUN TOUR ----------------
+  const TOUR_KEY = 'modelmixer:tour';
+  const TOUR = [
+    { sel: '#ingredients .scenarios', title: 'Pick a scenario', text: 'Each scenario trains small expert networks right here in your browser, each on its own skill. Two skills, conflicts, strangers with no shared base, image-like digits: start with Two skills.' },
+    { sel: '#picker', title: 'Choose how to mix them', text: '18 merging methods in six families, from plain weight averaging to TIES, DARE, RegMean, Mixture of Experts and distillation. A lock means the method needs something this scenario lacks.' },
+    { sel: '#controls', title: 'Tune the recipe', text: 'Every knob updates the merge live. ⌘Z / Ctrl+Z undoes. The sensitivity panel below shows how forgiving each knob is, and the best and safest settings.' },
+    { sel: '.stage', title: 'See what the mix keeps and loses', text: 'The map shows what the merged model predicts. The scorecard compares it with each expert alone. Pin a recipe to compare two side by side, with a paired check of whether one is really better.' },
+    { sel: '#openAdvisor', title: 'Not sure where to start?', text: 'Describe your real models to the Recipe advisor for ranked picks backed by toy measurements. The Arena runs every method, Report gives you one shareable page, and Export writes the mergekit config.' },
+  ];
+  let tourIdx = -1;
+  const tourSeen = () => { try { return localStorage.getItem(TOUR_KEY) === 'done'; } catch (e) { return true; } };
+  function maybeStartTour() {
+    if (tourIdx >= 0 || tourSeen() || S.tab !== 'lab' || (advDlg && advDlg.open)) return;
+    setTimeout(() => { if (!tourSeen() && tourIdx < 0) startTour(); }, 400);
+  }
+  function startTour() { setTab('lab'); tourIdx = 0; $('#tourPop').hidden = false; $('#tourSpot').hidden = false; showTourStep(); }
+  function endTour() {
+    tourIdx = -1;
+    $('#tourPop').hidden = true; $('#tourSpot').hidden = true;
+    try { localStorage.setItem(TOUR_KEY, 'done'); } catch (e) { /* storage unavailable */ }
+    const b = $('#openTour'); if (b) b.focus({ preventScroll: true });
+  }
+  function placeTour() {
+    if (tourIdx < 0) return;
+    const step = TOUR[tourIdx], target = document.querySelector(step.sel);
+    const pop = $('#tourPop'), spot = $('#tourSpot');
+    if (!target) return;
+    const r = target.getBoundingClientRect(), pad = 6, vw = window.innerWidth, vh = window.innerHeight;
+    Object.assign(spot.style, { left: `${r.left - pad}px`, top: `${r.top - pad}px`, width: `${r.width + 2 * pad}px`, height: `${r.height + 2 * pad}px` });
+    const w = Math.min(340, vw - 24), ph = pop.offsetHeight || 180;
+    pop.style.width = `${w}px`;
+    let top = r.bottom + 14;
+    if (top + ph > vh - 12) top = r.top - ph - 14;           // no room below: go above
+    if (top < 12) top = Math.max(12, Math.min(vh - ph - 12, r.top + 12)); // tall target: overlap its top edge
+    const left = Math.max(12, Math.min(vw - w - 12, r.left + Math.min(24, r.width / 4)));
+    Object.assign(pop.style, { top: `${top}px`, left: `${left}px` });
+  }
+  function showTourStep() {
+    const step = TOUR[tourIdx], target = document.querySelector(step.sel);
+    $('#tourStep').textContent = `Step ${tourIdx + 1} of ${TOUR.length}`;
+    $('#tourTitle').textContent = step.title;
+    $('#tourText').textContent = step.text;
+    $('#tourBack').disabled = tourIdx === 0;
+    $('#tourNext').textContent = tourIdx === TOUR.length - 1 ? 'Done' : 'Next';
+    if (target) target.scrollIntoView({ block: 'center', behavior: 'auto' });
+    requestAnimationFrame(() => { placeTour(); $('#tourNext').focus({ preventScroll: true }); });
+  }
+  const tourGo = (d) => { const n = tourIdx + d; if (n >= TOUR.length) return endTour(); if (n < 0) return; tourIdx = n; showTourStep(); };
+  $('#tourNext').addEventListener('click', () => tourGo(1));
+  $('#tourBack').addEventListener('click', () => tourGo(-1));
+  $('#tourSkip').addEventListener('click', endTour);
+  $('#openTour').addEventListener('click', () => { if (tourIdx >= 0) endTour(); else startTour(); });
+  document.addEventListener('keydown', (ev) => {
+    if (tourIdx < 0) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); endTour(); }
+    else if (ev.key === 'ArrowRight') { ev.preventDefault(); tourGo(1); }
+    else if (ev.key === 'ArrowLeft') { ev.preventDefault(); tourGo(-1); }
+  });
+  window.addEventListener('resize', placeTour);
+  window.addEventListener('scroll', placeTour, { passive: true });
 
   // ---------------- RECIPE REPORT ----------------
   /** Gather everything known about the current recipe. Only checks that were actually run are included. */

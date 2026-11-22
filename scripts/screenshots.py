@@ -41,6 +41,7 @@ with sync_playwright() as p:
     browser = p.chromium.launch(channel="chrome", headless=True)
     ctx = browser.new_context(viewport={"width": 1440, "height": 900}, device_scale_factor=2, color_scheme="dark")
     page = ctx.new_page()
+    page.add_init_script("try { localStorage.setItem('modelmixer:tour', 'done') } catch (e) {}")  # no first-run tour in captures
     errors = []
     page.on("pageerror", lambda e: errors.append(str(e)))
     page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)

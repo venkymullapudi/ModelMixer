@@ -657,3 +657,14 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
 .undo-row { display: inline-flex; gap: 4px; }
 .btn.icon { padding: 2px 8px; font-size: 14px; line-height: 1.2; }
 .btn.icon:disabled { opacity: 0.35; cursor: default; }
+
+/* ---------- first-run tour ---------- */
+.tour-spot { position: fixed; z-index: 60; border-radius: 14px; pointer-events: none; box-shadow: 0 0 0 9999px rgba(4, 6, 12, 0.62); outline: 2px solid #a78bfa; outline-offset: 0; transition: all 0.2s ease; }
+.tour-pop { position: fixed; z-index: 61; background: var(--panel-solid); border: 1px solid rgba(167, 139, 250, 0.5); border-radius: 14px; padding: 14px 16px 12px; box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.7); }
+.tour-pop .tour-step { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #a78bfa; }
+.tour-pop h2 { margin: 4px 0 6px; font-size: 16px; }
+.tour-pop p { margin: 0 0 12px; font-size: 13px; line-height: 1.55; color: #cdd3e3; }
+.tour-nav { display: flex; gap: 6px; align-items: center; }
+.tour-nav .tour-gap { flex: 1; }
+.tour-btn { min-width: 34px; justify-content: center; font-weight: 800; }
+@media (prefers-reduced-motion: reduce) { .tour-spot { transition: none; } }

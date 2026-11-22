@@ -276,6 +276,7 @@
       renderPicker();
       refresh();
       if (S.tab === 'arena') runArena();
+      maybeStartTour();
     } catch (e) {
       if (e.message !== 'cancelled') { console.error(e); status('Training failed — see console'); training = false; }
     }
@@ -1752,6 +1753,67 @@ dtype: bfloat16
     toast(`Imported ${meta.name}`);
   });
   $('#mkOut').addEventListener('click', (ev) => { if (ev.target.closest('#mkOpen')) setTab('lab'); });
+
+  // ---------------- FIRST-RUN TOUR ----------------
+  const TOUR_KEY = 'modelmixer:tour';
+  const TOUR = [
+    { sel: '#ingredients .scenarios', title: 'Pick a scenario', text: 'Each scenario trains small expert networks right here in your browser, each on its own skill. Two skills, conflicts, strangers with no shared base, image-like digits: start with Two skills.' },
+    { sel: '#picker', title: 'Choose how to mix them', text: '18 merging methods in six families, from plain weight averaging to TIES, DARE, RegMean, Mixture of Experts and distillation. A lock means the method needs something this scenario lacks.' },
+    { sel: '#controls', title: 'Tune the recipe', text: 'Every knob updates the merge live. ⌘Z / Ctrl+Z undoes. The sensitivity panel below shows how forgiving each knob is, and the best and safest settings.' },
+    { sel: '.stage', title: 'See what the mix keeps and loses', text: 'The map shows what the merged model predicts. The scorecard compares it with each expert alone. Pin a recipe to compare two side by side, with a paired check of whether one is really better.' },
+    { sel: '#openAdvisor', title: 'Not sure where to start?', text: 'Describe your real models to the Recipe advisor for ranked picks backed by toy measurements. The Arena runs every method, Report gives you one shareable page, and Export writes the mergekit config.' },
+  ];
+  let tourIdx = -1;
+  const tourSeen = () => { try { return localStorage.getItem(TOUR_KEY) === 'done'; } catch (e) { return true; } };
+  function maybeStartTour() {
+    if (tourIdx >= 0 || tourSeen() || S.tab !== 'lab' || (advDlg && advDlg.open)) return;
+    setTimeout(() => { if (!tourSeen() && tourIdx < 0) startTour(); }, 400);
+  }
+  function startTour() { setTab('lab'); tourIdx = 0; $('#tourPop').hidden = false; $('#tourSpot').hidden = false; showTourStep(); }
+  function endTour() {
+    tourIdx = -1;
+    $('#tourPop').hidden = true; $('#tourSpot').hidden = true;
+    try { localStorage.setItem(TOUR_KEY, 'done'); } catch (e) { /* storage unavailable */ }
+    const b = $('#openTour'); if (b) b.focus({ preventScroll: true });
+  }
+  function placeTour() {
+    if (tourIdx < 0) return;
+    const step = TOUR[tourIdx], target = document.querySelector(step.sel);
+    const pop = $('#tourPop'), spot = $('#tourSpot');
+    if (!target) return;
+    const r = target.getBoundingClientRect(), pad = 6, vw = window.innerWidth, vh = window.innerHeight;
+    Object.assign(spot.style, { left: `${r.left - pad}px`, top: `${r.top - pad}px`, width: `${r.width + 2 * pad}px`, height: `${r.height + 2 * pad}px` });
+    const w = Math.min(340, vw - 24), ph = pop.offsetHeight || 180;
+    pop.style.width = `${w}px`;
+    let top = r.bottom + 14;
+    if (top + ph > vh - 12) top = r.top - ph - 14;           // no room below: go above
+    if (top < 12) top = Math.max(12, Math.min(vh - ph - 12, r.top + 12)); // tall target: overlap its top edge
+    const left = Math.max(12, Math.min(vw - w - 12, r.left + Math.min(24, r.width / 4)));
+    Object.assign(pop.style, { top: `${top}px`, left: `${left}px` });
+  }
+  function showTourStep() {
+    const step = TOUR[tourIdx], target = document.querySelector(step.sel);
+    $('#tourStep').textContent = `Step ${tourIdx + 1} of ${TOUR.length}`;
+    $('#tourTitle').textContent = step.title;
+    $('#tourText').textContent = step.text;
+    $('#tourBack').disabled = tourIdx === 0;
+    $('#tourNext').textContent = tourIdx === TOUR.length - 1 ? 'Done' : 'Next';
+    if (target) target.scrollIntoView({ block: 'center', behavior: 'auto' });
+    requestAnimationFrame(() => { placeTour(); $('#tourNext').focus({ preventScroll: true }); });
+  }
+  const tourGo = (d) => { const n = tourIdx + d; if (n >= TOUR.length) return endTour(); if (n < 0) return; tourIdx = n; showTourStep(); };
+  $('#tourNext').addEventListener('click', () => tourGo(1));
+  $('#tourBack').addEventListener('click', () => tourGo(-1));
+  $('#tourSkip').addEventListener('click', endTour);
+  $('#openTour').addEventListener('click', () => { if (tourIdx >= 0) endTour(); else startTour(); });
+  document.addEventListener('keydown', (ev) => {
+    if (tourIdx < 0) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); endTour(); }
+    else if (ev.key === 'ArrowRight') { ev.preventDefault(); tourGo(1); }
+    else if (ev.key === 'ArrowLeft') { ev.preventDefault(); tourGo(-1); }
+  });
+  window.addEventListener('resize', placeTour);
+  window.addEventListener('scroll', placeTour, { passive: true });
 
   // ---------------- RECIPE REPORT ----------------
   /** Gather everything known about the current recipe. Only checks that were actually run are included. */
