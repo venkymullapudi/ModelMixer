@@ -1,5 +1,7 @@
 # ModelMixer
 
+[![CI](https://github.com/venkymullapudi/ModelMixer/actions/workflows/ci.yml/badge.svg)](https://github.com/venkymullapudi/ModelMixer/actions/workflows/ci.yml) [![Deploy to GitHub Pages](https://github.com/venkymullapudi/ModelMixer/actions/workflows/pages.yml/badge.svg)](https://github.com/venkymullapudi/ModelMixer/actions/workflows/pages.yml)
+
 **An interactive lab for model merging.** Train a few small expert networks in your browser, mix them
 with 17 different techniques, and *see* what each mix keeps, loses and needs — then export the same
 recipe as a [mergekit](https://github.com/arcee-ai/mergekit) config for real Hugging Face models.
