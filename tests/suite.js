@@ -474,11 +474,11 @@ parameters:
     });
 
     test('AdaMerging lowers prediction entropy; task-wise result = Task Arithmetic with the learned λs', () => {
-      const rl = MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'layer' }));
+      const rl = MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'layer', objective: 'entropy' }));
       const cl = ctx.cache['ada:layer:entropy'];
       assert(cl.e1 < cl.e0 && cl.lam.length === 2 * T.layout.nLayers, `layer-wise entropy ${cl.e0} → ${cl.e1}`);
       assert(cl.lam.every((v) => v >= 0 && v <= 1.5), 'λ out of bounds');
-      const rt = MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'task' }));
+      const rt = MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'task', objective: 'entropy' }));
       const ct = ctx.cache['ada:task:entropy'];
       assert(ct.e1 < ct.e0 && ct.lam.length === 2, `task-wise entropy ${ct.e0} → ${ct.e1}`);
       const ta = MM.runMethod('task_arithmetic', ctx, Object.assign(params('task_arithmetic', 2), { lambda: 1, weights: [ct.lam[0], ct.lam[1], 1] })).params;
@@ -486,11 +486,15 @@ parameters:
       return `entropy ${cl.e0.toFixed(3)} → ${cl.e1.toFixed(3)}; λ ${cl.lam.map((v) => v.toFixed(2)).join(' ')}; ${pct(MM.scoreMethod(T, ctx, 'adamerging', params('adamerging', 2)).avg)}`;
     });
 
-    test('AdaMerging pseudo-label objective lowers its loss', () => {
-      MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'layer', objective: 'pseudo' }));
-      const c = ctx.cache['ada:layer:pseudo'];
-      assert(c && c.e1 < c.e0 && c.lam.every((v) => v >= 0 && v <= 1.5), JSON.stringify(c && { e0: c.e0, e1: c.e1, lam: c.lam }));
-      return `loss ${c.e0.toFixed(3)} → ${c.e1.toFixed(3)}; ${pct(MM.scoreMethod(T, ctx, 'adamerging', Object.assign(params('adamerging', 2), { objective: 'pseudo' })).avg)}`;
+    test('AdaMerging anchored and expert-average objectives lower their losses; anchoring keeps λ closer to λ₀', () => {
+      for (const obj of ['anchored', 'ensemble']) {
+        MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'layer', objective: obj }));
+        const c = ctx.cache[`ada:layer:${obj}`];
+        assert(c && c.e1 < c.e0 && c.lam.every((v) => v >= 0 && v <= 1.5), `${obj}: ${JSON.stringify(c && { e0: c.e0, e1: c.e1 })}`);
+      }
+      const dev = (k) => ctx.cache[k].lam.reduce((a, v) => a + (v - 0.3) ** 2, 0);
+      assert(dev('ada:layer:anchored') <= dev('ada:layer:entropy') + 1e-9, 'anchored λ should stay at least as close to 0.3 as plain entropy');
+      return `defaults: ${JSON.stringify(params('adamerging', 2))} → ${pct(MM.scoreMethod(T, ctx, 'adamerging', params('adamerging', 2)).avg)}`;
     });
 
     test('Localize-and-Stitch: masks keep the requested fraction; outside them θ = base; overlaps are averaged', () => {

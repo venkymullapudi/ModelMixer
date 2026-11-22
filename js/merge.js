@@ -418,7 +418,7 @@
     // unlabeled inputs (test-time adaptation; no labels). θ = θ_base + Σ_k λ_k(,l) · τ_k
     adamerging(ctx, p) {
       const mode = p.mode === 'task' ? 'task' : 'layer';
-      const objective = p.objective === 'pseudo' ? 'pseudo' : 'entropy';
+      const objective = ['ensemble', 'anchored'].includes(p.objective) ? p.objective : 'entropy';
       const key = `ada:${mode}:${objective}`;
       const taus = taskVectors(ctx), K = ctx.K, layout = ctx.layout, base = ctx.base;
       const nL = mode === 'layer' ? layout.nLayers : 1;
@@ -440,16 +440,15 @@
         const X = new Float32Array(m * d);
         for (let i = 0; i < m; i++) { const s = Math.floor(i * stride); X.set(all.X.subarray(s * d, s * d + d), i * d); }
         const P = new Float32Array(base.length);
-        // objective: prediction entropy (paper), or cross-entropy to pseudo-labels from the most confident expert
+        // objectives (picked on 12 toy bundles, see IMPROVEMENTS.md): 'entropy' (the paper) · 'anchored'
+        // (entropy + a pull back toward the initial λ so coefficients can't run away; the default) ·
+        // 'ensemble' (cross-entropy to the experts' average: steadiest on the plane toys, weaker on images).
+        // Most-confident-expert labels and entropy-only-where-experts-agree were measured and dropped.
         let target = null;
-        if (objective === 'pseudo') {
+        if (objective === 'ensemble') {
           const probs = ctx.experts.map((e) => MM.predictProb(layout, e, X, m));
           target = new Float32Array(m);
-          for (let i = 0; i < m; i++) {
-            let best = 0;
-            for (let k = 1; k < K; k++) if (Math.abs(probs[k][i] - 0.5) > Math.abs(probs[best][i] - 0.5)) best = k;
-            target[i] = probs[best][i];
-          }
+          for (let i = 0; i < m; i++) { let s2 = 0; for (let k = 0; k < K; k++) s2 += probs[k][i]; target[i] = s2 / K; }
         }
         const entropy = (lm) => {
           const out = MM.forward(layout, build(lm, P), X, m, false).out;
@@ -458,7 +457,9 @@
             const q = 1 / (1 + Math.exp(-out[i])), y = target ? target[i] : q;
             e -= y * Math.log(q + 1e-9) + (1 - y) * Math.log(1 - q + 1e-9);
           }
-          return e / m;
+          e /= m;
+          if (objective === 'anchored') { let r2 = 0; for (let i = 0; i < lm.length; i++) r2 += (lm[i] - 0.3) ** 2; e += 0.05 * r2 / lm.length; }
+          return e;
         };
         const lam = new Float64Array(K * nL).fill(0.3); // the paper's initial coefficient
         const mA = new Float64Array(lam.length), vA = new Float64Array(lam.length);
@@ -487,7 +488,7 @@
       const c = ctx.cache[key];
       const P = build(c.lam, new Float32Array(base.length));
       const fmt = (v) => (+v).toFixed(2);
-      const info = [{ label: objective === 'pseudo' ? 'Loss vs pseudo-labels (unlabeled)' : 'Prediction entropy (unlabeled)', value: `${c.e0.toFixed(3)} → ${c.e1.toFixed(3)}` }];
+      const info = [{ label: { ensemble: 'Loss vs expert average', anchored: 'Entropy + anchor to λ₀', entropy: 'Prediction entropy (unlabeled)' }[objective], value: `${c.e0.toFixed(3)} → ${c.e1.toFixed(3)}` }];
       for (let k = 0; k < K; k++) {
         const row = c.lam.slice(k * c.nL, (k + 1) * c.nL);
         info.push({ label: `λ ${'ABC'[k]}${c.nL > 1 ? ' per layer' : ''}`, value: row.map(fmt).join(' / ') });

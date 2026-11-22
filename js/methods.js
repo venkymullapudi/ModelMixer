@@ -188,8 +188,8 @@
       req: { base: true, data: true, training: false }, multiInit: false, interference: 'yes',
       mergekit: null, oss: [OSS.fusion], paper: 'Yang et al., 2024 — AdaMerging (ICLR)',
       params: [
-        { key: 'mode', type: 'select', label: 'Coefficients', options: [['layer', 'Layer-wise (K×L)'], ['task', 'Task-wise (K)']], default: 'layer' },
-        { key: 'objective', type: 'select', label: 'Objective', options: [['entropy', 'Entropy (paper)'], ['pseudo', 'Most-confident-expert labels']], default: 'entropy' },
+        { key: 'mode', type: 'select', label: 'Coefficients', options: [['task', 'Task-wise (K)'], ['layer', 'Layer-wise (K×L)']], default: 'task' },
+        { key: 'objective', type: 'select', label: 'Objective', options: [['anchored', 'Entropy, anchored'], ['entropy', 'Entropy (paper)'], ['ensemble', 'Expert-average targets']], default: 'anchored' },
       ],
     },
     {
@@ -276,7 +276,7 @@
     della: 'Like DARE, DELLA tolerates aggressive sparsity on large language models. ε sets how strongly magnitude shifts the keep probability; tune density first.',
     karcher: 'Typically used to blend several fine-tunes of one model, where SLERP would need to be chained pairwise.',
     sce: 'Used to fuse chat models in FuseChat. Lowering top-k concentrates the merge on the entries where experts disagree; keep λ near 1 to start.',
-    adamerging: 'Run a few hundred unlabeled inputs per task through the merge. The paper reports clear gains over task arithmetic on vision models, where layer-wise coefficients helped most.',
+    adamerging: 'Run a few hundred unlabeled inputs per task through the merge. The paper reports clear gains over task arithmetic on vision models, and this lab agrees on its image-like Digits toy (≈ +12 pts over Task Arithmetic), while on the 2-D toys it roughly ties. The paper found layer-wise coefficients best on ViTs; on these small toys task-wise is slightly better.',
     localize_stitch: 'The paper localizes with a few labelled examples per task and finds masks around 1% of parameters are enough on large models. These tiny toys need far denser masks (0.3), and learned masks barely beat the dataless largest-|τ| ones.',
     regmean: 'Collect layer-input Gram matrices from a few hundred examples per task. α a little below 1 is the usual stabiliser.',
   };

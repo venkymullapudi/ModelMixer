@@ -58,7 +58,7 @@ python3 scripts/bundle.py
 | --- | --- |
 | Weight averaging | Linear / Model Soup, SLERP, Karcher mean (multi-model SLERP), Model Stock |
 | Task vectors | Task Arithmetic, TIES-Merging, DARE (TIES / Linear), DELLA, SCE, Model Breadcrumbs |
-| Data-informed | Fisher merging, RegMean, AdaMerging (entropy-tuned λ on unlabeled inputs), Localize-and-Stitch (sparse per-task masks) |
+| Data-informed | Fisher merging, RegMean, AdaMerging (λ tuned on unlabeled inputs; about +12 pts over Task Arithmetic on the Digits toy), Localize-and-Stitch (sparse per-task masks) |
 | Layer surgery | Layer Stitch (Frankenmerge / passthrough) |
 | Output mixing | Ensemble, Mixture of Experts (learned router, top-1 or soft) |
 | Distillation | Student distilled from an MoE or ensemble teacher |
