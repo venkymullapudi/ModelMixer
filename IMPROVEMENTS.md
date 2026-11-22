@@ -17,10 +17,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Recipe diff in the compare box:** when A and B differ, list exactly which settings changed (method, each knob, alignment) next to the accuracy deltas, so a practitioner can see what caused the gap without reading two recipe labels.
+1. **One-knob attribution:** when A and B differ in more than one setting, offer "which change mattered?": score the recipes that change one setting at a time from A toward B, and show each change's share of the gap.
 2. **Seed stability for the gallery lessons:** the "Conflicting skills have a ceiling" card is already checked on seeds by a test; add a Digits-conflict card only if its saliency reading holds on most seeds (today it does not: TIES flips between "conflict" and "lost").
 
 ## Done
+
+- 2026-11-23: **Recipe diff in the compare box.** The B-vs-A box now lists exactly what changed, in reading order: method, neuron alignment, then, for the same method, each knob, option, expert weight, per-layer source, or per-layer values. Values are formatted like the controls, e.g. `Density k 0.20 → 0.25`, `Neuron alignment off → on`, `λ per layer off → 0.50 → 1.00 → 1.50`. Knobs replaced by per-layer values are not listed twice. Right after pinning it says "nothing yet". The recipe report's comparison section carries the same list (HTML and Markdown). Pure `recipeDiff(A, B, K)` in `js/lab.js` with a test covering every parameter type (69 total). Verified in the browser: knob, knob + alignment, method + alignment, and the report. axe 0, keyboard and phone gates pass.
 
 - 2026-11-23: **Keyboard shortcuts sheet.** Press `?` anywhere, or use the fourth skip link (first Tab stops), to open a "Keyboard shortcuts" dialog. It lists undo / redo (⌘ or Ctrl shown per platform), knob keys, skip links, the one-stop method picker, view tabs, Esc for dialogs, and tour keys. `?` is ignored while typing in a text field and while another dialog or the tour is open, and the tour's last step mentions it. Keyboard audit +6 steps: opens on `?`, focus moves in, 11 rows, Esc closes, focus returns, and `?` in the Export base-model field just types (the first version of this check expected the `?` at the end of the field, but `focus()` puts the caret at the start; the app was right). axe 0, phone gate passes, 68 tests.
 

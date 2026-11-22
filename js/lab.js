@@ -121,6 +121,48 @@
 
   /** Short human label for a recipe, e.g. "TIES · k 0.20 · λ 1.00 · aligned". */
   const ABBR = { density: 'k', lambda: 'λ', drop: 'p', gamma: 'γ', t: 't', eps: 'ε', alpha: 'α', seed: 'seed' };
+  /**
+   * What differs between two recipes A and B ({ method, params, align }), in the order a practitioner reads it:
+   * [{ what, a, b }]. Knobs are compared only when the method is the same (different methods have different knobs).
+   * Values are formatted like the controls; knobs replaced by per-layer values are skipped.
+   */
+  function recipeDiff(A, B, K) {
+    const out = [];
+    const ma = MM.METHOD_BY_ID[A.method], mb = MM.METHOD_BY_ID[B.method];
+    if (A.method !== B.method) out.push({ what: 'Method', a: ma.name, b: mb.name });
+    if (!!A.align !== !!B.align) out.push({ what: 'Neuron alignment', a: A.align ? 'on' : 'off', b: B.align ? 'on' : 'off' });
+    if (A.method !== B.method) return out;
+    const m = ma, pa = A.params, pb = B.params;
+    const g = m.gradient && !(m.gradient.k2 && K !== 2) ? m.gradient : null;
+    const lwA = !!(g && pa.layerwise), lwB = !!(g && pb.layerwise);
+    const name = (d) => d.label.replace(/\s*\(.*\)\s*$/, '').trim();
+    const num = (v, step) => (step >= 1 ? String(Math.round(v)) : (+v).toFixed(2));
+    for (const d of m.params) {
+      const perLayer = g && (d.key === g.key || (g.key === 'balance' && d.type === 'weights'));
+      if (perLayer && (lwA || lwB)) continue; // shown as per-layer values below
+      if (d.type === 'range') {
+        if (Math.abs(+pa[d.key] - +pb[d.key]) > 1e-9) out.push({ what: name(d), a: num(pa[d.key], d.step), b: num(pb[d.key], d.step) });
+      } else if (d.type === 'select') {
+        const lbl = (v) => { const o = d.options.find(([k]) => k === String(v)); return o ? o[1] : String(v); };
+        if (String(pa[d.key]) !== String(pb[d.key])) out.push({ what: name(d), a: lbl(pa[d.key]), b: lbl(pb[d.key]) });
+      } else if (d.type === 'weights') {
+        const wa = pa.weights.slice(0, K), wb = pb.weights.slice(0, K);
+        if (wa.some((x, i) => Math.abs(x - wb[i]) > 1e-9)) out.push({ what: 'Expert weights', a: wa.map((x) => (+x).toFixed(2)).join(' / '), b: wb.map((x) => (+x).toFixed(2)).join(' / ') });
+      } else if (d.type === 'layers') {
+        (MM.LAYER_NAMES || ['Hidden 1', 'Hidden 2', 'Output']).forEach((ln, l) => {
+          if (+pa.layers[l] !== +pb.layers[l]) out.push({ what: `${ln} from`, a: 'ABC'[pa.layers[l]], b: 'ABC'[pb.layers[l]] });
+        });
+      }
+    }
+    if (g) {
+      const gl = g.label;
+      const gv = (p) => p.grad.map((v) => (+v).toFixed(2)).join(' → ');
+      if (lwA !== lwB) out.push({ what: `${gl} per layer`, a: lwA ? gv(pa) : 'off', b: lwB ? gv(pb) : 'off' });
+      else if (lwA && pa.grad.some((v, i) => Math.abs(v - pb.grad[i]) > 1e-9)) out.push({ what: `${gl} per layer`, a: gv(pa), b: gv(pb) });
+    }
+    return out;
+  }
+
   function recipeLabel(id, params, align, K) {
     const m = MM.METHOD_BY_ID[id];
     const parts = [m.short];
@@ -418,5 +460,5 @@
     };
   }
 
-  Object.assign(MM, { saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { recipeDiff, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

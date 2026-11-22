@@ -1029,6 +1029,12 @@
     }
   });
 
+  /** "What changed" between pinned A and current B: the settings behind the accuracy gap. */
+  function changesHTML() {
+    const diff = MM.recipeDiff(S.pin, nowRecipe(), T.K);
+    if (!diff.length) return '<div class="cmp-changes"><b>What changed:</b> nothing yet. Change the method or a knob to compare.</div>';
+    return `<div class="cmp-changes"><b>What changed</b><ul>${diff.map((x) => `<li><span>${esc(x.what)}</span> <code>${esc(x.a)}</code> → <code>${esc(x.b)}</code></li>`).join('')}</ul></div>`;
+  }
   function compareBox(r, pin) {
     const sgn = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
     const mult = (x) => (x > 1.05 ? `${x.toFixed(1)}×` : '1×');
@@ -1044,7 +1050,7 @@
         <span>Predictions differ</span><span>${pct(cmp.disagree)} of test points</span>
         <span>Inference</span><span>${mult(pin.cost)} → ${mult(r.cost)}</span>
         <span>Needs</span><span>${needs(S.pin.method)} → ${needs(S.method)}</span>
-      </div>${noise}
+      </div>${changesHTML()}${noise}
       <div class="edge" id="edge">${edgeHTML()}</div></div>`;
   }
 
@@ -2000,7 +2006,7 @@ dtype: bfloat16
         verdict: text('#robust .verdict'), h2h: text('#h2h .verdict'),
       };
     }
-    const compare = S.pin ? { pinned: labelOf(S.pin), now: labelOf(nowRecipe()), summary: text('.cmp-box > div:nth-child(2)'), edge: text('#edge .verdict') } : null;
+    const compare = S.pin ? { pinned: labelOf(S.pin), now: labelOf(nowRecipe()), changes: MM.recipeDiff(S.pin, nowRecipe(), T.K), summary: text('.cmp-box > div:nth-child(2)'), edge: text('#edge .verdict') } : null;
     let mapPng = null;
     try {
       const cv = $('#mainCanvas'), c2 = document.createElement('canvas');

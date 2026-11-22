@@ -232,6 +232,22 @@ parameters:
       assert(h.undo() === snap(0.2, pin), 'next undo removes the knob drag and keeps the pin');
       assert(h.undo() === snap(0.2, null), 'last undo removes the pin');
     });
+    test('recipeDiff: method, alignment, knobs, selects, weights, layers and per-layer values', () => {
+      const P = (id, over) => Object.assign(params(id, 2), over || {});
+      const R = (method, p, align) => ({ method, params: p, align: !!align });
+      assert(MM.recipeDiff(R('ties', P('ties')), R('ties', P('ties')), 2).length === 0, 'identical recipes: no changes');
+      const m = MM.recipeDiff(R('ties', P('ties')), R('dare', P('dare'), true), 2);
+      assert(m.length === 2 && m[0].what === 'Method' && m[0].b === MM.METHOD_BY_ID.dare.name && m[1].what === 'Neuron alignment' && m[1].b === 'on', JSON.stringify(m));
+      const k = MM.recipeDiff(R('ties', P('ties', { density: 0.2 })), R('ties', P('ties', { density: 0.35 })), 2);
+      assert(k.length === 1 && k[0].a === '0.20' && k[0].b === '0.35' && !/\(/.test(k[0].what), JSON.stringify(k));
+      const sel = MM.recipeDiff(R('dare', P('dare', { mode: 'ties' })), R('dare', P('dare', { mode: 'linear' })), 2);
+      assert(sel.length === 1 && sel[0].b === 'DARE-Linear (sum)', JSON.stringify(sel));
+      const w = MM.recipeDiff(R('linear', P('linear')), R('linear', P('linear', { weights: [1, 0.5, 1] })), 2);
+      assert(w.length === 1 && w[0].what === 'Expert weights' && w[0].b === '1.00 / 0.50', JSON.stringify(w));
+      const lw = MM.recipeDiff(R('ties', P('ties', { lambda: 1 })), R('ties', P('ties', { lambda: 1.5, layerwise: true, grad: [0.5, 1, 1.5] })), 2);
+      assert(lw.length === 1 && lw[0].what === 'λ per layer' && lw[0].a === 'off' && lw[0].b === '0.50 → 1.00 → 1.50', `scalar λ hidden when per-layer: ${JSON.stringify(lw)}`);
+      return `${k[0].what} ${k[0].a} → ${k[0].b}`;
+    });
     test('makeHistory: push, coalesce drags, undo/redo, redo cleared by a new change, limit', () => {
       const h = MM.makeHistory(4, 500);
       h.record('a', 0, null);
