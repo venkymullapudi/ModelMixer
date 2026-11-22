@@ -341,6 +341,17 @@
     return na > 0 && nb > 0 ? d / Math.sqrt(na * nb) : 0;
   }
 
+  /** Per-task saliency maps of each expert on its own task (the reference patterns). */
+  function expertSaliency(ctx) {
+    return ctx.tasks.map((t, k) => digitSaliency((X, n) => MM.predictProb(ctx.layout, ctx.experts[k], X, n), t));
+  }
+  /** A merge's saliency on every task, its pattern match with each expert, and the mean match. */
+  function saliencyRow(ctx, predict, expertMaps) {
+    const maps = ctx.tasks.map((t) => digitSaliency(predict, t));
+    const match = maps.map((m, k) => mapCosine(expertMaps[k], m));
+    return { maps, match, mean: match.reduce((a, b) => a + b, 0) / match.length };
+  }
+
   // ---------- undo / redo ----------
   /**
    * Snapshot history. record(snap, t, key) adds a snapshot (strings compared for equality); if the previous
@@ -367,5 +378,5 @@
     };
   }
 
-  Object.assign(MM, { makeHistory, digitSaliency, mapCosine, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { makeHistory, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

@@ -663,6 +663,20 @@ parameters:
       const mg = MM.digitSaliency(MM.scoreMethod(Td, MM.bundleCtx(Td, false), 'linear', params('linear', 2)).predict, t);
       return `Linear keeps ${Math.round(MM.mapCosine(ex, mg) * 100)}% of expert A's pixel pattern`;
     });
+    test('Arena saliency strip: experts match themselves, merges give one finite match per task', () => {
+      const c = MM.bundleCtx(Td, false), ex = MM.expertSaliency(c);
+      assert(ex.length === Td.K && ex.every((m) => m.length === 64), 'one 8×8 map per task');
+      const self0 = MM.saliencyRow(c, (X, n) => MM.predictProb(c.layout, c.experts[0], X, n), ex);
+      assert(Math.abs(self0.match[0] - 1) < 1e-9, 'expert A matches its own map');
+      const out = [];
+      for (const id of ['linear', 'ties', 'ensemble']) {
+        const r = MM.saliencyRow(c, MM.scoreMethod(Td, c, id, params(id, 2)).predict, ex);
+        assert(r.match.length === Td.K && r.match.every((v) => Number.isFinite(v) && v >= -1 && v <= 1 + 1e-9), `${id} matches`);
+        assert(Math.abs(r.mean - r.match.reduce((a, b) => a + b, 0) / Td.K) < 1e-12, `${id} mean`);
+        out.push(`${id} ${Math.round(r.mean * 100)}%`);
+      }
+      return out.join(', ');
+    });
     test('Digits: links round-trip and mixed kinds are rejected', () => {
       const base = { init: 'shared', hidden: 32, ftSteps: 250, seed: 7, align: false, method: 'ties', params: params('ties', 2), pin: null };
       const d = MM.decodeRecipe(MM.encodeRecipe(Object.assign({ experts: [{ task: 'd01' }, { task: 'd45', flip: true }] }, base)));

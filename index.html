@@ -112,6 +112,16 @@
       </div>
       <h2 class="section-title">What each mix sees</h2>
       <div class="thumb-grid" id="thumbGrid"></div>
+      <div id="arenaSal" hidden>
+        <h2 class="section-title">Where each mix looks</h2>
+        <div class="panel">
+          <div class="asal-head">
+            <p class="muted small">Pixel saliency for every method on every task, next to each expert's own map. A high pattern match means the merge reads the same pixels as the expert; a high match with low accuracy is the conflict signature, and a low match with high accuracy means the mix solves the task another way (a Mixture of Experts router, for example). Each map is scaled to its own peak. Click a row to open it in the Lab.</p>
+            <button class="btn sm" id="runArenaSal">Compute for every method</button>
+          </div>
+          <div id="arenaSalGrid" class="asal" aria-live="polite"></div>
+        </div>
+      </div>
       <div class="two-col">
         <div class="panel chart-panel">
           <h3>Interpolation path A → B</h3>

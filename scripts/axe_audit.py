@@ -42,6 +42,12 @@ with sync_playwright() as p:
     pg.click("#openAdvisor"); pg.wait_for_timeout(600); out.append(audit(pg, "advisor", "#advisor"))
     pg.click("#closeAdvisor"); pg.wait_for_timeout(200)
     pg.click("#openReport"); pg.wait_for_timeout(600); out.append(audit(pg, "report", "#reportDlg"))
+    pg.keyboard.press("Escape"); pg.wait_for_timeout(200)
+    pg.click('[data-tab="lab"]'); pg.locator("#ingredients button.scenario", has_text="Digits").first.click()
+    pg.wait_for_timeout(500); pg.wait_for_function(READY, timeout=120000)
+    pg.click('[data-tab="arena"]'); pg.wait_for_function("() => /methods compared/.test(document.querySelector('#statusText').textContent)", timeout=120000)
+    pg.click('#runArenaSal'); pg.wait_for_function("() => /saliency for \\d+ methods/.test(document.querySelector('#statusText').textContent)", timeout=120000)
+    out.append(audit(pg, "digits arena + saliency", "#tab-arena"))
     b.close()
 
 seen = {}

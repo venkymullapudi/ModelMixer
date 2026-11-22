@@ -678,3 +678,30 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
 .gal-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
 .gal-vs b { color: #a78bfa; }
 .gal-card .btn { align-self: flex-start; }
+
+/* ---------- arena saliency strip ---------- */
+.asal-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+.asal-head p { margin: 0; max-width: 720px; line-height: 1.5; }
+.asal-head .btn { flex: none; }
+.asal { display: flex; flex-direction: column; gap: 4px; }
+.asal-row { display: grid; grid-template-columns: minmax(90px, 160px) repeat(var(--k), minmax(0, 120px)) 52px; gap: 10px; align-items: center; padding: 4px 6px; border-radius: 10px; border: 1px solid transparent; background: none; color: inherit; text-align: left; font: inherit; width: 100%; }
+button.asal-row { cursor: pointer; }
+button.asal-row:hover { border-color: var(--line); background: var(--panel); }
+.asal-top { font-size: 11.5px; color: var(--dim); }
+.asal-task { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.asal-task .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); display: inline-block; flex: none; }
+.asal-mean { text-align: center; font-size: 11.5px; color: var(--dim); }
+.asal-name { display: flex; flex-direction: column; font-size: 12.5px; min-width: 0; }
+.asal-name .fam-dot { display: none; }
+.asal-name small { color: var(--dim); font-family: var(--mono); font-size: 11px; }
+.asal-cell { display: flex; align-items: center; gap: 6px; }
+.asal-cell figure { margin: 0; }
+.asal canvas.sal { width: 48px; height: 48px; display: block; border-radius: 5px; image-rendering: pixelated; border: 1px solid var(--line); }
+@media (max-width: 560px) {
+  .asal-head { flex-direction: column; }
+  .asal-row { grid-template-columns: minmax(0, 1fr) repeat(var(--k), 44px) 40px; gap: 6px; }
+  .asal-task { justify-content: center; }
+  .asal-task span { display: none; }
+  .asal canvas.sal { width: 36px; height: 36px; }
+  .asal-cell { flex-direction: column; gap: 2px; }
+}

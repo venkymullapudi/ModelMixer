@@ -691,6 +691,33 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
 .gal-vs b { color: #a78bfa; }
 .gal-card .btn { align-self: flex-start; }
 
+/* ---------- arena saliency strip ---------- */
+.asal-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+.asal-head p { margin: 0; max-width: 720px; line-height: 1.5; }
+.asal-head .btn { flex: none; }
+.asal { display: flex; flex-direction: column; gap: 4px; }
+.asal-row { display: grid; grid-template-columns: minmax(90px, 160px) repeat(var(--k), minmax(0, 120px)) 52px; gap: 10px; align-items: center; padding: 4px 6px; border-radius: 10px; border: 1px solid transparent; background: none; color: inherit; text-align: left; font: inherit; width: 100%; }
+button.asal-row { cursor: pointer; }
+button.asal-row:hover { border-color: var(--line); background: var(--panel); }
+.asal-top { font-size: 11.5px; color: var(--dim); }
+.asal-task { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.asal-task .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); display: inline-block; flex: none; }
+.asal-mean { text-align: center; font-size: 11.5px; color: var(--dim); }
+.asal-name { display: flex; flex-direction: column; font-size: 12.5px; min-width: 0; }
+.asal-name .fam-dot { display: none; }
+.asal-name small { color: var(--dim); font-family: var(--mono); font-size: 11px; }
+.asal-cell { display: flex; align-items: center; gap: 6px; }
+.asal-cell figure { margin: 0; }
+.asal canvas.sal { width: 48px; height: 48px; display: block; border-radius: 5px; image-rendering: pixelated; border: 1px solid var(--line); }
+@media (max-width: 560px) {
+  .asal-head { flex-direction: column; }
+  .asal-row { grid-template-columns: minmax(0, 1fr) repeat(var(--k), 44px) 40px; gap: 6px; }
+  .asal-task { justify-content: center; }
+  .asal-task span { display: none; }
+  .asal canvas.sal { width: 36px; height: 36px; }
+  .asal-cell { flex-direction: column; gap: 2px; }
+}
+
 </style>
 </head>
 <body>
@@ -794,6 +821,16 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
       </div>
       <h2 class="section-title">What each mix sees</h2>
       <div class="thumb-grid" id="thumbGrid"></div>
+      <div id="arenaSal" hidden>
+        <h2 class="section-title">Where each mix looks</h2>
+        <div class="panel">
+          <div class="asal-head">
+            <p class="muted small">Pixel saliency for every method on every task, next to each expert's own map. A high pattern match means the merge reads the same pixels as the expert; a high match with low accuracy is the conflict signature, and a low match with high accuracy means the mix solves the task another way (a Mixture of Experts router, for example). Each map is scaled to its own peak. Click a row to open it in the Lab.</p>
+            <button class="btn sm" id="runArenaSal">Compute for every method</button>
+          </div>
+          <div id="arenaSalGrid" class="asal" aria-live="polite"></div>
+        </div>
+      </div>
       <div class="two-col">
         <div class="panel chart-panel">
           <h3>Interpolation path A → B</h3>
@@ -2944,6 +2981,17 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     return na > 0 && nb > 0 ? d / Math.sqrt(na * nb) : 0;
   }
 
+  /** Per-task saliency maps of each expert on its own task (the reference patterns). */
+  function expertSaliency(ctx) {
+    return ctx.tasks.map((t, k) => digitSaliency((X, n) => MM.predictProb(ctx.layout, ctx.experts[k], X, n), t));
+  }
+  /** A merge's saliency on every task, its pattern match with each expert, and the mean match. */
+  function saliencyRow(ctx, predict, expertMaps) {
+    const maps = ctx.tasks.map((t) => digitSaliency(predict, t));
+    const match = maps.map((m, k) => mapCosine(expertMaps[k], m));
+    return { maps, match, mean: match.reduce((a, b) => a + b, 0) / match.length };
+  }
+
   // ---------- undo / redo ----------
   /**
    * Snapshot history. record(snap, t, key) adds a snapshot (strings compared for equality); if the previous
@@ -2970,7 +3018,7 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     };
   }
 
-  Object.assign(MM, { makeHistory, digitSaliency, mapCosine, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { makeHistory, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();
 
 </script>
@@ -5248,8 +5296,7 @@ ${parts.join('\n')}
     salTimer = setTimeout(() => {
       const el = $('#salGrid');
       if (!el || T !== Tnow || r !== current) return;
-      let ex = salCache.get(Tnow);
-      if (!ex) { ex = ctx.tasks.map((t, k) => MM.digitSaliency((X, n) => MM.predictProb(ctx.layout, ctx.experts[k], X, n), t)); salCache.set(Tnow, ex); }
+      const ex = expertMaps(ctx);
       const mg = ctx.tasks.map((t) => MM.digitSaliency(r.predict, t));
       el.innerHTML = ctx.tasks.map((t, k) => {
         const cos = MM.mapCosine(ex[k], mg[k]);
@@ -5278,6 +5325,10 @@ ${parts.join('\n')}
       const results = MM.METHODS.map((m) => ({ m, r: compute(m.id, ctx) }));
       renderBoard(results);
       renderThumbGrid(results, ctx);
+      arenaResults = results; arenaSalRun++;
+      $('#arenaSal').hidden = ctx.tasks[0].kind !== 'digits';
+      $('#arenaSalGrid').innerHTML = '';
+      $('#runArenaSal').disabled = false;
       renderPathChart(ctx);
       renderLambdaChart(ctx);
       arenaStale = false;
@@ -5285,6 +5336,47 @@ ${parts.join('\n')}
     }, 40);
   }
   $('#runArena').addEventListener('click', () => { for (const k in (T && T.ctx) || {}) Object.keys(T.ctx[k].cache).filter((c) => c.startsWith('distill')).forEach((c) => delete T.ctx[k].cache[c]); runArena(); });
+
+  // Arena saliency strip (digit tasks, on demand): one row per method, computed a method per tick so the page stays live
+  let arenaResults = null, arenaSalRun = 0;
+  function expertMaps(ctx) {
+    let ex = salCache.get(T);
+    if (!ex) { ex = MM.expertSaliency(ctx); salCache.set(T, ex); }
+    return ex;
+  }
+  $('#runArenaSal').addEventListener('click', () => {
+    const ctx = getCtx();
+    if (!ctx || !arenaResults || ctx.tasks[0].kind !== 'digits') return;
+    const run = ++arenaSalRun, ex = expertMaps(ctx);
+    const list = arenaResults.filter((x) => !x.r.blocked).sort((a, b) => b.r.avg - a.r.avg);
+    const grid = $('#arenaSalGrid'), btn = $('#runArenaSal');
+    btn.disabled = true;
+    const cell = (id, label) => `<figure><canvas class="sal" id="${id}" role="img" aria-label="${esc(label)}"></canvas></figure>`;
+    const score = (c) => `<div class="sal-score ${c > 0.9 ? 'good' : c > 0.7 ? 'mid' : 'bad'}"><b>${Math.round(c * 100)}%</b><small>match</small></div>`;
+    const cols = `style="--k:${ctx.tasks.length}"`;
+    const taskName = (k) => `${LETTERS[k]} · ${MM.TASKS[ctx.tasks[k].spec.task].name}`;
+    grid.innerHTML = `<div class="asal-row asal-top" ${cols}><div></div>${ctx.tasks.map((_, k) => `<div class="asal-task" style="--c:${MM.MODEL_COLORS[k]}" title="${esc(taskName(k))}"><i class="dot"></i>${LETTERS[k]}<span> · ${esc(MM.TASKS[ctx.tasks[k].spec.task].name)}</span></div>`).join('')}<div class="asal-mean">mean</div></div>
+      <div class="asal-row asal-ref" ${cols}><div class="asal-name"><b>Experts</b><small>reference</small></div>${ctx.tasks.map((_, k) => `<div class="asal-cell">${cell(`asE${k}`, `Expert ${LETTERS[k]} pixel saliency`)}</div>`).join('')}<div></div></div>`;
+    ctx.tasks.forEach((_, k) => MM.drawSaliency($(`#asE${k}`), ex[k], Math.max(...ex[k])));
+    let i = 0;
+    const step = () => {
+      if (run !== arenaSalRun) return;
+      if (i >= list.length) { status(`Arena: saliency for ${list.length} methods`); return; }
+      const x = list[i++], row = MM.saliencyRow(ctx, x.r.predict, ex);
+      grid.insertAdjacentHTML('beforeend', `<button class="asal-row" ${cols} data-open="${x.m.id}" aria-label="Open ${esc(x.m.name)} in the Lab: mean pattern match ${Math.round(row.mean * 100)}%, accuracy ${pct(x.r.avg)}">
+        <div class="asal-name"><span class="fam-dot" style="background:${MM.FAMILIES[x.m.family].color}"></span><b>${esc(x.m.short)}</b><small>${pct(x.r.avg)}</small></div>
+        ${row.maps.map((_, k) => `<div class="asal-cell">${cell(`as-${x.m.id}-${k}`, `${x.m.name} saliency on task ${LETTERS[k]}`)}${score(row.match[k])}</div>`).join('')}
+        <div class="asal-mean">${score(row.mean)}</div></button>`);
+      row.maps.forEach((m, k) => MM.drawSaliency($(`#as-${x.m.id}-${k}`), m, Math.max(...m)));
+      status(`Arena: pixel saliency ${i}/${list.length}…`, true);
+      setTimeout(step, 0);
+    };
+    setTimeout(step, 0);
+  });
+  $('#arenaSalGrid').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-open]');
+    if (b) { setTab('lab'); selectMethod(b.dataset.open); }
+  });
 
   function renderBoard(results) {
     const K = T.K;

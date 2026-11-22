@@ -1147,8 +1147,7 @@
     salTimer = setTimeout(() => {
       const el = $('#salGrid');
       if (!el || T !== Tnow || r !== current) return;
-      let ex = salCache.get(Tnow);
-      if (!ex) { ex = ctx.tasks.map((t, k) => MM.digitSaliency((X, n) => MM.predictProb(ctx.layout, ctx.experts[k], X, n), t)); salCache.set(Tnow, ex); }
+      const ex = expertMaps(ctx);
       const mg = ctx.tasks.map((t) => MM.digitSaliency(r.predict, t));
       el.innerHTML = ctx.tasks.map((t, k) => {
         const cos = MM.mapCosine(ex[k], mg[k]);
@@ -1177,6 +1176,10 @@
       const results = MM.METHODS.map((m) => ({ m, r: compute(m.id, ctx) }));
       renderBoard(results);
       renderThumbGrid(results, ctx);
+      arenaResults = results; arenaSalRun++;
+      $('#arenaSal').hidden = ctx.tasks[0].kind !== 'digits';
+      $('#arenaSalGrid').innerHTML = '';
+      $('#runArenaSal').disabled = false;
       renderPathChart(ctx);
       renderLambdaChart(ctx);
       arenaStale = false;
@@ -1184,6 +1187,47 @@
     }, 40);
   }
   $('#runArena').addEventListener('click', () => { for (const k in (T && T.ctx) || {}) Object.keys(T.ctx[k].cache).filter((c) => c.startsWith('distill')).forEach((c) => delete T.ctx[k].cache[c]); runArena(); });
+
+  // Arena saliency strip (digit tasks, on demand): one row per method, computed a method per tick so the page stays live
+  let arenaResults = null, arenaSalRun = 0;
+  function expertMaps(ctx) {
+    let ex = salCache.get(T);
+    if (!ex) { ex = MM.expertSaliency(ctx); salCache.set(T, ex); }
+    return ex;
+  }
+  $('#runArenaSal').addEventListener('click', () => {
+    const ctx = getCtx();
+    if (!ctx || !arenaResults || ctx.tasks[0].kind !== 'digits') return;
+    const run = ++arenaSalRun, ex = expertMaps(ctx);
+    const list = arenaResults.filter((x) => !x.r.blocked).sort((a, b) => b.r.avg - a.r.avg);
+    const grid = $('#arenaSalGrid'), btn = $('#runArenaSal');
+    btn.disabled = true;
+    const cell = (id, label) => `<figure><canvas class="sal" id="${id}" role="img" aria-label="${esc(label)}"></canvas></figure>`;
+    const score = (c) => `<div class="sal-score ${c > 0.9 ? 'good' : c > 0.7 ? 'mid' : 'bad'}"><b>${Math.round(c * 100)}%</b><small>match</small></div>`;
+    const cols = `style="--k:${ctx.tasks.length}"`;
+    const taskName = (k) => `${LETTERS[k]} · ${MM.TASKS[ctx.tasks[k].spec.task].name}`;
+    grid.innerHTML = `<div class="asal-row asal-top" ${cols}><div></div>${ctx.tasks.map((_, k) => `<div class="asal-task" style="--c:${MM.MODEL_COLORS[k]}" title="${esc(taskName(k))}"><i class="dot"></i>${LETTERS[k]}<span> · ${esc(MM.TASKS[ctx.tasks[k].spec.task].name)}</span></div>`).join('')}<div class="asal-mean">mean</div></div>
+      <div class="asal-row asal-ref" ${cols}><div class="asal-name"><b>Experts</b><small>reference</small></div>${ctx.tasks.map((_, k) => `<div class="asal-cell">${cell(`asE${k}`, `Expert ${LETTERS[k]} pixel saliency`)}</div>`).join('')}<div></div></div>`;
+    ctx.tasks.forEach((_, k) => MM.drawSaliency($(`#asE${k}`), ex[k], Math.max(...ex[k])));
+    let i = 0;
+    const step = () => {
+      if (run !== arenaSalRun) return;
+      if (i >= list.length) { status(`Arena: saliency for ${list.length} methods`); return; }
+      const x = list[i++], row = MM.saliencyRow(ctx, x.r.predict, ex);
+      grid.insertAdjacentHTML('beforeend', `<button class="asal-row" ${cols} data-open="${x.m.id}" aria-label="Open ${esc(x.m.name)} in the Lab: mean pattern match ${Math.round(row.mean * 100)}%, accuracy ${pct(x.r.avg)}">
+        <div class="asal-name"><span class="fam-dot" style="background:${MM.FAMILIES[x.m.family].color}"></span><b>${esc(x.m.short)}</b><small>${pct(x.r.avg)}</small></div>
+        ${row.maps.map((_, k) => `<div class="asal-cell">${cell(`as-${x.m.id}-${k}`, `${x.m.name} saliency on task ${LETTERS[k]}`)}${score(row.match[k])}</div>`).join('')}
+        <div class="asal-mean">${score(row.mean)}</div></button>`);
+      row.maps.forEach((m, k) => MM.drawSaliency($(`#as-${x.m.id}-${k}`), m, Math.max(...m)));
+      status(`Arena: pixel saliency ${i}/${list.length}…`, true);
+      setTimeout(step, 0);
+    };
+    setTimeout(step, 0);
+  });
+  $('#arenaSalGrid').addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-open]');
+    if (b) { setTab('lab'); selectMethod(b.dataset.open); }
+  });
 
   function renderBoard(results) {
     const K = T.K;
