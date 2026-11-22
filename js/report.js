@@ -23,13 +23,27 @@
     return { kind: 'lost', tone: 'bad', text: 'has lost both the skill and the expert’s pixel pattern' };
   }
 
+  const READING_KIND_LABEL = { same: 'same pixels, skill kept', other: 'different pixels, skill kept', conflict: 'conflict signature', lost: 'skill lost' };
+  /**
+   * Stability of a task's reading over seeds (a saliencySeedSummary entry): all agree, mostly (≥ 80%), or unstable.
+   * Returns { level: 'stable' | 'mostly' | 'unstable', text }.
+   */
+  function seedStability(s) {
+    const kinds = Object.entries(s.counts).sort((a, b) => b[1] - a[1]).map(([k, c]) => `${READING_KIND_LABEL[k]} ${c}/${s.n}`).join(', ');
+    const range = `match ${Math.round(s.mean * 100)}% ± ${Math.round(s.sd * 100)}, range ${Math.round(s.min * 100)}–${Math.round(s.max * 100)}%`;
+    if (s.agree === 1) return { level: 'stable', text: `the same reading on all ${s.n} seeds (${range})` };
+    if (s.agree >= 0.8) return { level: 'mostly', text: `mostly stable across ${s.n} seeds: ${kinds} (${range})` };
+    return { level: 'unstable', text: `unstable across ${s.n} seeds: ${kinds} (${range})` };
+  }
+
   /**
    * d = { title, date, link,
    *   recipe: { method, family, label, scenario, experts:[...], lineage, aligned, width, ftSteps, seed },
    *   result: { tasks:[{ name, merged, expert, base }], avg, retention, cost, storage, warnings:[] }, mapPng,
    *   sensitivity?, layerMap?, robust?: { seeds, rows:[{ name, mean, sd, worst, stability, current }], verdict, h2h },
    *   compare?: { pinned, now, summary, edge },
-   *   saliency?: { tasks:[{ name, match, merged, expert, expertPng?, mergedPng? }], mean, router? }, method: { tagline, how:[], pros:[], cons:[], realWorld, paper, oss:[{name,url}] },
+   *   saliency?: { tasks:[{ name, match, merged, expert, expertPng?, mergedPng?, seeds? }], mean, router? },
+   *     (seeds = a saliencySeedSummary entry, present only if the multi-seed check was run) method: { tagline, how:[], pros:[], cons:[], realWorld, paper, oss:[{name,url}] },
    *   export: { file, yaml, cmd, note } }
    */
   function buildReport(d) {
@@ -51,12 +65,19 @@
     md.push('');
     if (d.sensitivity) md.push('## How forgiving is it?', '', d.sensitivity, '');
     if (d.layerMap) md.push('## Which layer matters?', '', d.layerMap, '');
-    const sal = d.saliency ? d.saliency.tasks.map((t) => Object.assign({}, t, { reading: saliencyReading(t.match, t.merged, t.expert, { router: d.saliency.router }) })) : null;
+    const sal = d.saliency ? d.saliency.tasks.map((t) => {
+      const reading = saliencyReading(t.match, t.merged, t.expert, { router: d.saliency.router });
+      const stab = t.seeds ? seedStability(t.seeds) : null;
+      // an unstable reading is reported as what this seed shows, not as a property of the method
+      const claim = stab && stab.level === 'unstable' ? `On this seed, the merge ${reading.text}, but treat that as a guess` : `This merge ${reading.text}`;
+      return Object.assign({}, t, { reading, stab, claim });
+    }) : null;
+    const anySeeds = !!(sal && sal.some((t) => t.stab));
     if (sal) {
       md.push('## Where the merge looks (pixel saliency)', '');
-      md.push('| Task | Pattern match with expert | Merged | Expert | Reading |', '| --- | --- | --- | --- | --- |');
-      sal.forEach((t) => md.push(`| ${mdCell(t.name)} | ${Math.round(t.match * 100)}% | ${pct(t.merged)} | ${pct(t.expert)} | ${mdCell(t.reading.text)} |`));
-      md.push('', `Mean pattern match ${Math.round(d.saliency.mean * 100)}%. Saliency is how much each of the 64 pixels moves the prediction; the match is the cosine between the merge's map and the expert's.`, '');
+      md.push(`| Task | Pattern match with expert | Merged | Expert | Reading |${anySeeds ? ' Across seeds |' : ''}`, `| --- | --- | --- | --- | --- |${anySeeds ? ' --- |' : ''}`);
+      sal.forEach((t) => md.push(`| ${mdCell(t.name)} | ${Math.round(t.match * 100)}% | ${pct(t.merged)} | ${pct(t.expert)} | ${mdCell(t.claim)} |${anySeeds ? ` ${mdCell(t.stab ? t.stab.text : 'not checked')} |` : ''}`));
+      md.push('', `Mean pattern match ${Math.round(d.saliency.mean * 100)}%. Saliency is how much each of the 64 pixels moves the prediction; the match is the cosine between the merge's map and the expert's.${anySeeds ? '' : ' Readings near the 80% line can change with the seed: run the 5-seed check in the Lab before relying on one.'}`, '');
     }
     if (d.robust) {
       md.push(`## Is the winner real? (${d.robust.seeds} seeds)`, '');
@@ -101,7 +122,8 @@
     if (sal) parts.push(sec('Where the merge looks (pixel saliency)', `<p class="muted">How much each of the 64 pixels moves the prediction, for each expert and for this merge (each map scaled to its own peak). The match is the cosine between the two maps; mean ${Math.round(d.saliency.mean * 100)}%.</p>
       <div class="sal">${sal.map((t) => `<div class="salr">
         <div class="salm">${t.expertPng ? `<figure><img src="${esc(t.expertPng)}" alt="Expert pixel saliency for ${esc(t.name)}" /><figcaption>expert</figcaption></figure>` : ''}${t.mergedPng ? `<figure><img src="${esc(t.mergedPng)}" alt="Merged model pixel saliency for ${esc(t.name)}" /><figcaption>merged</figcaption></figure>` : ''}</div>
-        <div><b>${esc(t.name)}</b> <span class="pill ${t.match > 0.9 ? 'good' : t.match > 0.7 ? 'mid' : 'bad'}">${Math.round(t.match * 100)}% match</span><br/><span class="muted">${pct(t.merged)} merged vs ${pct(t.expert)} expert.</span> This merge ${esc(t.reading.text)}.</div></div>`).join('')}</div>`));
+        <div><b>${esc(t.name)}</b> <span class="pill ${t.match > 0.9 ? 'good' : t.match > 0.7 ? 'mid' : 'bad'}">${Math.round(t.match * 100)}% match</span><br/><span class="muted">${pct(t.merged)} merged vs ${pct(t.expert)} expert.</span> ${esc(t.claim)}.${t.stab ? `<br/><span class="stab ${t.stab.level}">${t.stab.level === 'stable' ? '✓' : t.stab.level === 'mostly' ? '≈' : '⚠'} ${esc(t.stab.text.charAt(0).toUpperCase() + t.stab.text.slice(1))}.</span>` : ''}</div></div>`).join('')}</div>
+      ${anySeeds ? '' : '<p class="muted">Readings near the 80% line can change with the seed: run the 5-seed check in the Lab before relying on one.</p>'}`));
     if (d.sensitivity) parts.push(sec('How forgiving is it?', `<p>${esc(d.sensitivity)}</p>`));
     if (d.layerMap) parts.push(sec('Which layer matters?', `<p>${esc(d.layerMap)}</p>`));
     if (d.robust) parts.push(sec(`Is the winner real? (${d.robust.seeds} seeds)`, `<table>${row(['Method', 'Mean ± sd', 'Worst task', 'Stability'], 'th')}${d.robust.rows.map((x) => `<tr class="${x.current ? 'cur' : ''}"><td>${esc(x.name)}${x.current ? ' <span class="tag">this recipe</span>' : ''}</td><td>${pct(x.mean)} ± ${(x.sd * 100).toFixed(1)}</td><td>${pct(x.worst)}</td><td>${esc(x.stability)}</td></tr>`).join('')}</table>
@@ -135,6 +157,7 @@
   .salm figcaption { font-size: 11px; color: #6b7280; }
   .pill { font-size: 11.5px; border-radius: 999px; padding: 1px 8px; border: 1px solid; } .pill.good { color: #047857; border-color: #a7f3d0; background: #ecfdf5; }
   .pill.mid { color: #92400e; border-color: #fde68a; background: #fffbeb; } .pill.bad { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+  .stab { font-size: 12.5px; } .stab.stable { color: #047857; } .stab.mostly { color: #92400e; } .stab.unstable { color: #b91c1c; }
   footer { margin-top: 32px; color: #6b7280; font-size: 12px; }
   @media (max-width: 600px) { .res, .two { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
   @media print { body { padding: 0; } a { color: inherit; } h2 { break-after: avoid; } section { break-inside: avoid; } }
@@ -147,5 +170,5 @@ ${parts.join('\n')}
     return { markdown, html };
   }
 
-  Object.assign(MM, { buildReport, saliencyReading });
+  Object.assign(MM, { buildReport, saliencyReading, seedStability, READING_KIND_LABEL });
 })();

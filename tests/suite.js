@@ -273,6 +273,16 @@ parameters:
         { name: 'B · Digits 1 vs 7', match: 0.93, merged: 0.52, expert: 1 }] } }));
       assert(c.html.includes('Where the merge looks') && c.html.includes('35% match') && c.html.includes('base64,BBBB'), 'saliency section in html');
       assert(c.markdown.includes('| A · Digits 0 vs 1 | 35% |') && c.markdown.includes('conflict signature'), 'saliency table in markdown');
+      assert(c.html.includes('5-seed check') && !c.markdown.includes('Across seeds'), 'unchecked: suggest the seed check, no seed column');
+      const st = (counts, n) => { const top = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0]; return { n, counts, top, agree: counts[top] / n, mean: 0.8, sd: 0.1, min: 0.6, max: 0.9 }; };
+      const s = MM.buildReport(Object.assign({}, base, { saliency: { mean: 0.6, tasks: [
+        { name: 'A · Digits 0 vs 1', match: 0.87, merged: 0.82, expert: 1, seeds: st({ lost: 3, conflict: 2 }, 5) },
+        { name: 'B · Digits 1 vs 7', match: 0.35, merged: 0.98, expert: 1, seeds: st({ other: 5 }, 5) }] } }));
+      assert(s.markdown.includes('Across seeds |') && s.markdown.includes('unstable across 5 seeds: skill lost 3/5, conflict signature 2/5'), 'seed column in markdown');
+      assert(s.html.includes('On this seed, the merge looks at the right pixels') && s.html.includes('treat that as a guess'), 'unstable reading is softened');
+      assert(s.html.includes('The same reading on all 5 seeds') && s.html.includes('This merge keeps the skill but reads different pixels'), 'stable reading stated plainly');
+      assert(!s.html.includes('5-seed check'), 'no nudge once checked');
+      assert(MM.seedStability(st({ same: 4, other: 1 }, 5)).level === 'mostly' && MM.seedStability(st({ same: 3, other: 2 }, 5)).level === 'unstable', '4/5 mostly, 3/5 unstable');
     });
     test('saliencyReading: the four match × accuracy cases', () => {
       const r = (m, a) => MM.saliencyReading(m, a, 1).tone + ':' + MM.saliencyReading(m, a, 1).text.split(' ').slice(0, 3).join(' ');

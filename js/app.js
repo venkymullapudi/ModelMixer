@@ -1161,15 +1161,14 @@
   const salSeedCache = new Map();
   let salSeedToken = 0;
   const salSeedKey = () => JSON.stringify([trainKey(S), nowRecipe()]);
-  const KIND_LABEL = { same: 'same pixels, skill kept', other: 'different pixels, skill kept', conflict: 'conflict signature', lost: 'skill lost' };
   function salSeedsHTML() {
     const d = salSeedCache.get(salSeedKey());
     if (!d) return `<button class="btn sm" id="salSeedBtn">Is this reading stable? Check on ${SAL_SEEDS} seeds</button><span class="muted small" id="salSeedMsg" aria-live="polite"></span>`;
+    // same wording as the report (MM.seedStability), so the Lab and a shared report never disagree
     const lines = d.map((t, k) => {
-      const tone = t.agree === 1 ? 'good' : t.agree >= 0.8 ? 'mid' : 'bad';
-      const kinds = Object.entries(t.counts).sort((a, b) => b[1] - a[1]).map(([kd, c]) => `${KIND_LABEL[kd]} ${c}/${t.n}`).join(', ');
-      const verdict = t.agree === 1 ? `the same reading on all ${t.n} seeds` : t.agree >= 0.8 ? `mostly stable (${kinds})` : `unstable (${kinds}), so treat the one-seed reading above as a guess`;
-      return `<li class="${tone}"><b>${LETTERS[k]}</b> ${verdict}. Pattern match ${Math.round(t.mean * 100)}% ± ${Math.round(t.sd * 100)} (range ${Math.round(t.min * 100)}–${Math.round(t.max * 100)}%).</li>`;
+      const st = MM.seedStability(t);
+      const tone = { stable: 'good', mostly: 'mid', unstable: 'bad' }[st.level];
+      return `<li class="${tone}"><b>${LETTERS[k]}</b> ${esc(st.text)}${st.level === 'unstable' ? ', so treat the one-seed reading above as a guess' : ''}.</li>`;
     }).join('');
     return `<div class="sal-seed-title">Across ${d[0] ? d[0].n : SAL_SEEDS} seeds</div><ul class="sal-seed-list">${lines}</ul>`;
   }
@@ -1980,9 +1979,10 @@ dtype: bfloat16
           return c.toDataURL('image/png');
         } catch (e) { return null; }
       };
+      const seeds = salSeedCache.get(salSeedKey()); // only if the 5-seed check ran for exactly this recipe
       saliency = {
         mean: row.mean, router: !!r.router,
-        tasks: T.tasks.map((t, i) => ({ name: `${LETTERS[i]} · ${taskName(t)}`, match: row.match[i], merged: r.accs[i], expert: T.expertAccs[i][i], expertPng: png(ex[i]), mergedPng: png(row.maps[i]) })),
+        tasks: T.tasks.map((t, i) => ({ name: `${LETTERS[i]} · ${taskName(t)}`, match: row.match[i], merged: r.accs[i], expert: T.expertAccs[i][i], expertPng: png(ex[i]), mergedPng: png(row.maps[i]), seeds: seeds ? seeds[i] : null })),
       };
     }
     return {
