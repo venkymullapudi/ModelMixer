@@ -3628,7 +3628,21 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
   let workerOK = !!ENGINE_SRC && typeof Worker !== 'undefined' && typeof Blob !== 'undefined';
   function workerMain() {
     self.onmessage = (e) => {
-      const { cfg, every } = e.data;
+      const { kind, cfg, every } = e.data;
+      if (kind === 'score') {
+        // score recipes on a trained bundle; send back numbers only (results hold closures)
+        try {
+          const b = e.data.bundle, recipes = e.data.recipes, out = {};
+          b.ctx = {};
+          recipes.forEach((rc, n) => {
+            const r = self.MM.scoreMethod(b, self.MM.bundleCtx(b, rc.align), rc.method, rc.params);
+            out[rc.key] = r.blocked ? { blocked: r.blocked } : { avg: r.avg, retention: r.retention, accs: r.accs };
+            self.postMessage({ type: 'progress', done: n + 1, total: recipes.length, key: rc.key });
+          });
+          self.postMessage({ type: 'result', result: out });
+        } catch (err) { self.postMessage({ type: 'error', message: String((err && err.message) || err) }); }
+        return;
+      }
       try {
         const it = self.MM.trainBundle(cfg);
         let r, done = 0, total = 1, live = null;
@@ -3640,7 +3654,7 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
         }
         const b = r.value;
         delete b.ctx;
-        self.postMessage({ type: 'result', bundle: b });
+        self.postMessage({ type: 'result', result: b });
       } catch (err) { self.postMessage({ type: 'error', message: String((err && err.message) || err) }); }
     };
   }
@@ -3656,17 +3670,15 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     }
     return r.value;
   }
-  /** Train a bundle; resolves to the bundle, or null if cancelled. opt: { onProgress, cancelled }. */
-  function trainAsync(cfg, opt) {
-    opt = opt || {};
-    const plain = JSON.parse(JSON.stringify(cfg));
-    if (!workerOK) return trainMainThread(plain, opt);
+  /** Run one job in a fresh worker. Resolves to the job's result, or null if cancelled; `fallback` runs in-page. */
+  function workerJob(msg, opt, fallback) {
+    if (!workerOK) return fallback();
     return new Promise((resolve, reject) => {
       let w;
       try {
         if (!workerURL) workerURL = URL.createObjectURL(new Blob([`self.window = self;\n${ENGINE_SRC}\n;(${workerMain.toString()})();`], { type: 'text/javascript' }));
         w = new Worker(workerURL);
-      } catch (e) { workerOK = false; resolve(trainMainThread(plain, opt)); return; }
+      } catch (e) { workerOK = false; resolve(fallback()); return; }
       let settled = false;
       const end = () => { settled = true; clearInterval(poll); w.terminate(); };
       const poll = setInterval(() => { if (!settled && opt.cancelled && opt.cancelled()) { end(); resolve(null); } }, 100);
@@ -3674,12 +3686,40 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
         const m = e.data;
         if (settled) return;
         if (m.type === 'progress') { if (opt.onProgress) opt.onProgress(m); }
-        else if (m.type === 'result') { end(); m.bundle.ctx = {}; resolve(m.bundle); }
+        else if (m.type === 'result') { end(); resolve(m.result); }
         else if (m.type === 'error') { end(); reject(new Error(m.message)); }
       };
-      w.onerror = (ev) => { if (ev && ev.preventDefault) ev.preventDefault(); if (settled) return; end(); workerOK = false; resolve(trainMainThread(plain, opt)); };
-      w.postMessage({ cfg: plain, every: 40 });
+      w.onerror = (ev) => { if (ev && ev.preventDefault) ev.preventDefault(); if (settled) return; end(); workerOK = false; resolve(fallback()); };
+      w.postMessage(msg);
     });
+  }
+  /** Train a bundle; resolves to the bundle, or null if cancelled. opt: { onProgress, cancelled }. */
+  async function trainAsync(cfg, opt) {
+    opt = opt || {};
+    const plain = JSON.parse(JSON.stringify(cfg));
+    const b = await workerJob({ kind: 'train', cfg: plain, every: 40 }, opt, () => trainMainThread(plain, opt));
+    if (b) b.ctx = b.ctx || {};
+    return b;
+  }
+  /** Score recipes [{key, method, params, align}] on a bundle → { key: {avg, retention, accs} | {blocked} }. */
+  function scoreAsync(bundle, recipes, opt) {
+    opt = opt || {};
+    const plainRecipes = JSON.parse(JSON.stringify(recipes));
+    const inPage = async () => {
+      const out = {};
+      for (let n = 0; n < plainRecipes.length; n++) {
+        const rc = plainRecipes[n];
+        await frame();
+        if (opt.cancelled && opt.cancelled()) return null;
+        const r = MM.scoreMethod(bundle, MM.bundleCtx(bundle, rc.align), rc.method, rc.params);
+        out[rc.key] = r.blocked ? { blocked: r.blocked } : { avg: r.avg, retention: r.retention, accs: r.accs };
+        if (opt.onProgress) opt.onProgress({ done: n + 1, total: plainRecipes.length, key: rc.key });
+      }
+      return out;
+    };
+    // ship the bundle without its contexts (they hold caches and closures) or live training state
+    const { ctx, live, ...plainBundle } = bundle;
+    return workerJob({ kind: 'score', bundle: plainBundle, recipes: plainRecipes }, opt, inPage);
   }
   const MAX_PARALLEL = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
 
@@ -4572,7 +4612,11 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     msg('Scoring both recipes…');
     await frame();
     if (token !== edgeToken) return;
-    edgeCache.set(key, MM.pairedDiff(MM.recipeRuns(bundles, pin, now), 'B', 'A'));
+    const cancelled = () => token !== edgeToken;
+    const recipes = [{ key: 'A', method: pin.method, params: pin.params, align: pin.align }, { key: 'B', method: now.method, params: now.params, align: now.align }];
+    const runs = await Promise.all(bundles.map((b) => scoreAsync(b, recipes, { cancelled })));
+    if (cancelled() || runs.some((r) => !r)) return;
+    edgeCache.set(key, MM.pairedDiff(runs, 'B', 'A'));
     const el = $('#edge');
     if (el && edgeKey() === key) el.innerHTML = edgeHTML();
   }
@@ -4770,27 +4814,28 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     };
     const runs = [];
     try {
-      for (let s = 0; s < seeds.length; s++) {
-        if (s === 0) {
-          // train every missing seed up front, in parallel workers when available
-          const ready = await seedBundles(N, () => token !== robustToken, (t) => prog(t));
-          if (!ready) return;
-        }
-        const bundle = await seedBundle(s, () => token !== robustToken);
-        if (!bundle) return;
-        doneSteps++;
-        const ctx = MM.bundleCtx(bundle, S.align);
-        const run = {};
-        for (const id of ids) {
-          prog(`Seed ${s + 1}/${N}: mixing with ${MM.METHOD_BY_ID[id].short}…`);
-          await frame();
-          if (token !== robustToken) return;
-          const r = MM.scoreMethod(bundle, ctx, id, S.params[id]);
-          run[id] = r.blocked ? { blocked: r.blocked } : { avg: r.avg, retention: r.retention, accs: r.accs };
-          doneSteps++;
-        }
-        runs.push(run);
+      // train every missing seed (parallel workers), then score all seeds (parallel workers too)
+      const cancelled = () => token !== robustToken;
+      const bundles = await seedBundles(N, cancelled, (t) => prog(t));
+      if (!bundles) return;
+      doneSteps = N;
+      const recipes = ids.map((id) => ({ key: id, method: id, params: S.params[id], align: S.align }));
+      const runsBySeed = new Array(N);
+      const scoreSeed = async (s) => {
+        const res = await scoreAsync(bundles[s], recipes, {
+          cancelled,
+          onProgress: () => { doneSteps++; prog(`Mixing ${ids.length} methods on ${N} seeds${workerOK ? ' in parallel' : ''}…`); },
+        });
+        if (!res) return false;
+        runsBySeed[s] = res;
+        return true;
+      };
+      prog(`Mixing ${ids.length} methods on ${N} seeds${workerOK ? ' in parallel' : ''}…`);
+      for (let k = 0; k < N; k += workerOK ? MAX_PARALLEL : 1) {
+        const ok = await Promise.all(Array.from({ length: Math.min(workerOK ? MAX_PARALLEL : 1, N - k) }, (_, j) => scoreSeed(k + j)));
+        if (ok.includes(false) || cancelled()) return;
       }
+      runs.push(...runsBySeed);
       robustStale = false;
       robustData = { runs, ids, seeds, taskNames: T.tasks.map((t) => MM.TASKS[t.spec.task].name + (t.spec.flip ? ' (inv)' : '')), scenario: S.scenario };
       h2h.a = h2h.b = null;
@@ -5455,7 +5500,7 @@ dtype: bfloat16
   train();
   if (sharedMsg) toast(sharedMsg);
 
-  window.ModelMixer = { state: S, get trained() { return T; }, compute, getCtx, recipeLink, openRecipe, trainAsync, get usesWorker() { return workerOK; } };
+  window.ModelMixer = { state: S, get trained() { return T; }, compute, getCtx, recipeLink, openRecipe, trainAsync, scoreAsync, get usesWorker() { return workerOK; } };
 })();
 
 </script>

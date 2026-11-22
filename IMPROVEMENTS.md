@@ -15,13 +15,13 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Score in workers too:** move multi-seed scoring of the heavy methods (distillation, MoE router training, AdaMerging) into the training workers. They still cause a ~0.9 s main-thread stall during the Arena check.
-2. **Newer methods, part 3:** Localize-and-Stitch (learned sparse masks per task), plus an AdaMerging variant with a confidence-calibrated objective.
-3. **Digits extras:** a conflict scenario (0-vs-1 with 1-vs-7, where both claim the "1"s), a per-pixel saliency view of what each merge kept, and digit-aware advisor evidence.
-4. **Phone layout check:** re-verify the newer panels (heat map, head-to-head, compare box, advisor) at 375 px and fix any overflow.
+1. **Newer methods, part 3:** Localize-and-Stitch (learned sparse masks per task), plus an AdaMerging variant with a confidence-calibrated objective.
+2. **Digits extras:** a conflict scenario (0-vs-1 with 1-vs-7, where both claim the "1"s), a per-pixel saliency view of what each merge kept, and digit-aware advisor evidence.
+3. **Phone layout check:** re-verify the newer panels (heat map, head-to-head, compare box, advisor) at 375 px and fix any overflow.
 
 ## Done
 
+- 2026-11-22: **Scoring in workers too.** Workers now take a second job type, scoring a list of recipes on a trained bundle and returning numbers only. The bundle is sent without its contexts, which hold closures. The Arena multi-seed check scores each seed in its own worker, in parallel, and the compare edge check does the same. In-page fallback is unchanged. Verified against the in-page dev build: the 5-seed results table is identical (all 17 rows, same verdict), the Arena check takes 7.4 s instead of 21.4 s in-page (11.3 s after the previous run), and the longest main-thread stall is 23 ms instead of 824 ms. The edge check takes 3.9 s instead of about 13 s, with the same verdict. 55 tests, axe 0.
 - 2026-11-22: **Training in Web Workers.** The single-file build tags its inline engine scripts (`<script data-engine>`), and the app turns them into a Blob-URL worker. That works over `file://` and adds nothing to the bundle size. The lab, the seed cache (sweep band, Arena check, compare edge check) and advisor evidence all train through one `trainAsync`, with progress, live thumbnails and cancellation. Independent seeds train in parallel (up to 4 workers). The multi-file dev mode falls back to the main-thread loop. Verified in headless Chrome: worker models are bit-identical to main-thread ones (max |Δ| = 0), there are no stalls during lab training, advisor evidence takes 2.9 s instead of about 7 s, and the Arena 5-seed check takes 11.3 s instead of about 18 s, with the same verdicts as before. 55 tests, axe 0.
 - 2026-11-22: **Import a mergekit config** (Export tab), the reverse of Export. It uses a small YAML-subset parser (maps, lists of maps, inline lists and maps, quotes, comments) and a mapper for linear, slerp, nuslerp, karcher, task_arithmetic, ties, dare_ties / dare_linear, della / della_linear, breadcrumbs (and _ties), sce, model_stock, passthrough slices and mergekit-moe:
   - gradient lists are sampled at the first, middle and last layer;
