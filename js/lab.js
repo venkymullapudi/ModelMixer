@@ -123,14 +123,17 @@
   const ABBR = { density: 'k', lambda: 'λ', drop: 'p', gamma: 'γ', t: 't', eps: 'ε', alpha: 'α', seed: 'seed' };
   /**
    * What differs between two recipes A and B ({ method, params, align }), in the order a practitioner reads it:
-   * [{ what, a, b }]. Knobs are compared only when the method is the same (different methods have different knobs).
-   * Values are formatted like the controls; knobs replaced by per-layer values are skipped.
+   * [{ what, a, b, apply }]. Knobs are compared only when the method is the same (different methods have different
+   * knobs). Values are formatted like the controls; knobs replaced by per-layer values are skipped.
+   * apply(r) returns a copy of recipe r with just this one change taken from B (used for attribution).
    */
   function recipeDiff(A, B, K) {
     const out = [];
+    const clone = (r) => ({ method: r.method, align: !!r.align, params: JSON.parse(JSON.stringify(r.params)) });
+    const setP = (fn) => (r) => { const c = clone(r); fn(c.params); return c; };
     const ma = MM.METHOD_BY_ID[A.method], mb = MM.METHOD_BY_ID[B.method];
-    if (A.method !== B.method) out.push({ what: 'Method', a: ma.name, b: mb.name });
-    if (!!A.align !== !!B.align) out.push({ what: 'Neuron alignment', a: A.align ? 'on' : 'off', b: B.align ? 'on' : 'off' });
+    if (A.method !== B.method) out.push({ what: 'Method', a: ma.name, b: mb.name, apply: (r) => ({ method: B.method, align: !!r.align, params: JSON.parse(JSON.stringify(B.params)) }) });
+    if (!!A.align !== !!B.align) out.push({ what: 'Neuron alignment', a: A.align ? 'on' : 'off', b: B.align ? 'on' : 'off', apply: (r) => Object.assign(clone(r), { align: !!B.align }) });
     if (A.method !== B.method) return out;
     const m = ma, pa = A.params, pb = B.params;
     const g = m.gradient && !(m.gradient.k2 && K !== 2) ? m.gradient : null;
@@ -141,26 +144,51 @@
       const perLayer = g && (d.key === g.key || (g.key === 'balance' && d.type === 'weights'));
       if (perLayer && (lwA || lwB)) continue; // shown as per-layer values below
       if (d.type === 'range') {
-        if (Math.abs(+pa[d.key] - +pb[d.key]) > 1e-9) out.push({ what: name(d), a: num(pa[d.key], d.step), b: num(pb[d.key], d.step) });
+        if (Math.abs(+pa[d.key] - +pb[d.key]) > 1e-9) out.push({ what: name(d), a: num(pa[d.key], d.step), b: num(pb[d.key], d.step), apply: setP((p) => { p[d.key] = pb[d.key]; }) });
       } else if (d.type === 'select') {
         const lbl = (v) => { const o = d.options.find(([k]) => k === String(v)); return o ? o[1] : String(v); };
-        if (String(pa[d.key]) !== String(pb[d.key])) out.push({ what: name(d), a: lbl(pa[d.key]), b: lbl(pb[d.key]) });
+        if (String(pa[d.key]) !== String(pb[d.key])) out.push({ what: name(d), a: lbl(pa[d.key]), b: lbl(pb[d.key]), apply: setP((p) => { p[d.key] = pb[d.key]; }) });
       } else if (d.type === 'weights') {
         const wa = pa.weights.slice(0, K), wb = pb.weights.slice(0, K);
-        if (wa.some((x, i) => Math.abs(x - wb[i]) > 1e-9)) out.push({ what: 'Expert weights', a: wa.map((x) => (+x).toFixed(2)).join(' / '), b: wb.map((x) => (+x).toFixed(2)).join(' / ') });
+        if (wa.some((x, i) => Math.abs(x - wb[i]) > 1e-9)) out.push({ what: 'Expert weights', a: wa.map((x) => (+x).toFixed(2)).join(' / '), b: wb.map((x) => (+x).toFixed(2)).join(' / '), apply: setP((p) => { p.weights = pb.weights.slice(); }) });
       } else if (d.type === 'layers') {
         (MM.LAYER_NAMES || ['Hidden 1', 'Hidden 2', 'Output']).forEach((ln, l) => {
-          if (+pa.layers[l] !== +pb.layers[l]) out.push({ what: `${ln} from`, a: 'ABC'[pa.layers[l]], b: 'ABC'[pb.layers[l]] });
+          if (+pa.layers[l] !== +pb.layers[l]) out.push({ what: `${ln} from`, a: 'ABC'[pa.layers[l]], b: 'ABC'[pb.layers[l]], apply: setP((p) => { p.layers[l] = pb.layers[l]; }) });
         });
       }
     }
     if (g) {
       const gl = g.label;
       const gv = (p) => p.grad.map((v) => (+v).toFixed(2)).join(' → ');
-      if (lwA !== lwB) out.push({ what: `${gl} per layer`, a: lwA ? gv(pa) : 'off', b: lwB ? gv(pb) : 'off' });
-      else if (lwA && pa.grad.some((v, i) => Math.abs(v - pb.grad[i]) > 1e-9)) out.push({ what: `${gl} per layer`, a: gv(pa), b: gv(pb) });
+      // the per-layer change also carries B's scalar knob, which the per-layer values replace
+      const takeLayers = setP((p) => {
+        p.layerwise = pb.layerwise; p.grad = pb.grad.slice();
+        if (g.key in pb) p[g.key] = pb[g.key];
+        if (g.key === 'balance' && pb.weights) p.weights = pb.weights.slice();
+      });
+      if (lwA !== lwB) out.push({ what: `${gl} per layer`, a: lwA ? gv(pa) : 'off', b: lwB ? gv(pb) : 'off', apply: takeLayers });
+      else if (lwA && pa.grad.some((v, i) => Math.abs(v - pb.grad[i]) > 1e-9)) out.push({ what: `${gl} per layer`, a: gv(pa), b: gv(pb), apply: takeLayers });
     }
     return out;
+  }
+
+  /**
+   * Which change mattered? Starting from A, apply each change in recipeDiff(A, B) on its own and score it.
+   * score(recipe) -> average accuracy (or null if the recipe can't run). Returns
+   * { a, b, total, parts: [{ what, a, b, delta }], interaction } where interaction = total − Σ deltas
+   * (what the changes do together beyond their separate effects). null if fewer than 2 changes.
+   */
+  function attributeChanges(A, B, K, score) {
+    const diff = recipeDiff(A, B, K);
+    if (diff.length < 2) return null;
+    const sa = score(A), sb = score(B);
+    if (sa == null || sb == null) return null;
+    const parts = diff.map((x) => {
+      const s1 = score(x.apply(A));
+      return { what: x.what, a: x.a, b: x.b, delta: s1 == null ? null : s1 - sa };
+    });
+    const known = parts.filter((p) => p.delta != null).reduce((t, p) => t + p.delta, 0);
+    return { a: sa, b: sb, total: sb - sa, parts, interaction: (sb - sa) - known };
   }
 
   function recipeLabel(id, params, align, K) {
@@ -460,5 +488,5 @@
     };
   }
 
-  Object.assign(MM, { recipeDiff, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { recipeDiff, attributeChanges, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

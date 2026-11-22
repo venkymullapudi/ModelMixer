@@ -1033,8 +1033,31 @@
   function changesHTML() {
     const diff = MM.recipeDiff(S.pin, nowRecipe(), T.K);
     if (!diff.length) return '<div class="cmp-changes"><b>What changed:</b> nothing yet. Change the method or a knob to compare.</div>';
-    return `<div class="cmp-changes"><b>What changed</b><ul>${diff.map((x) => `<li><span>${esc(x.what)}</span> <code>${esc(x.a)}</code> → <code>${esc(x.b)}</code></li>`).join('')}</ul></div>`;
+    const at = attrCache.get(edgeKey());
+    const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}`;
+    const scale = at ? Math.max(0.005, ...at.parts.map((p) => Math.abs(p.delta || 0)), Math.abs(at.interaction)) : 1;
+    const bar = (d) => `<span class="attr-bar"><i style="${d >= 0 ? 'left:50%' : `right:50%`};width:${Math.min(50, (Math.abs(d) / scale) * 50).toFixed(1)}%" class="${d >= 0 ? 'up' : 'down'}"></i></span>`;
+    const delta = (i) => { const p = at && at.parts[i]; return !p ? '' : p.delta == null ? '<span class="muted">can’t run alone</span>' : `${bar(p.delta)}<b class="attr-pts">${pts(p.delta)}</b>`; };
+    const items = diff.map((x, i) => `<li><span>${esc(x.what)}</span> <code>${esc(x.a)}</code> → <code>${esc(x.b)}</code>${at ? `<span class="attr">${delta(i)}</span>` : ''}</li>`).join('');
+    const tail = diff.length < 2 ? '' : at
+      ? `<div class="attr-foot">Each line is A with only that change, in pts of average accuracy (seed ${S.seed}). Together: ${pts(at.total)} pts; ${Math.abs(at.interaction) < 0.005 ? 'the changes roughly add up (within half a point).' : `${pts(at.interaction)} pts comes from changes interacting, not from any one alone.`}</div>`
+      : '<button class="btn sm ghost" id="attrBtn">Which change mattered?</button>';
+    return `<div class="cmp-changes"><b>What changed</b><ul>${items}</ul>${tail}</div>`;
   }
+  // "Which change mattered?": A with one change from B at a time, scored on the lab's experts
+  const attrCache = new Map();
+  async function runAttribution() {
+    const key = edgeKey(), A = S.pin, B = nowRecipe(), K = T.K, Tnow = T;
+    const btn = $('#attrBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Scoring each change…'; }
+    await frame();
+    const score = (r) => { const res = MM.scoreMethod(Tnow, MM.bundleCtx(Tnow, r.align), r.method, r.params); return res.blocked ? null : res.avg; };
+    const at = MM.attributeChanges(A, B, K, score);
+    if (!at || T !== Tnow) return;
+    attrCache.set(key, at);
+    if (edgeKey() === key) refresh();
+  }
+  $('#metrics').addEventListener('click', (ev) => { if (ev.target.closest('#attrBtn')) runAttribution(); });
   function compareBox(r, pin) {
     const sgn = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
     const mult = (x) => (x > 1.05 ? `${x.toFixed(1)}×` : '1×');
@@ -2006,7 +2029,9 @@ dtype: bfloat16
         verdict: text('#robust .verdict'), h2h: text('#h2h .verdict'),
       };
     }
-    const compare = S.pin ? { pinned: labelOf(S.pin), now: labelOf(nowRecipe()), changes: MM.recipeDiff(S.pin, nowRecipe(), T.K), summary: text('.cmp-box > div:nth-child(2)'), edge: text('#edge .verdict') } : null;
+    const at = S.pin ? attrCache.get(edgeKey()) : null;
+    const compare = S.pin ? { pinned: labelOf(S.pin), now: labelOf(nowRecipe()), changes: MM.recipeDiff(S.pin, nowRecipe(), T.K).map((x, i) => ({ what: x.what, a: x.a, b: x.b, delta: at && at.parts[i] ? at.parts[i].delta : undefined })),
+      attribution: at ? { total: at.total, interaction: at.interaction, seed: S.seed } : null, summary: text('.cmp-box > div:nth-child(2)'), edge: text('#edge .verdict') } : null;
     let mapPng = null;
     try {
       const cv = $('#mainCanvas'), c2 = document.createElement('canvas');

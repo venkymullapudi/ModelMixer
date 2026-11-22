@@ -17,10 +17,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **One-knob attribution:** when A and B differ in more than one setting, offer "which change mattered?": score the recipes that change one setting at a time from A toward B, and show each change's share of the gap.
+1. **Attribution across seeds:** "Which change mattered?" runs on the lab seed only. Offer to repeat it on the cached 5-seed bundles and show each change's mean ± sd, so a +0.8-pt knob effect can be told apart from noise.
 2. **Seed stability for the gallery lessons:** the "Conflicting skills have a ceiling" card is already checked on seeds by a test; add a Digits-conflict card only if its saliency reading holds on most seeds (today it does not: TIES flips between "conflict" and "lost").
 
 ## Done
+
+- 2026-11-23: **Which change mattered?** When pinned A and current B differ in two or more settings, the compare box offers "Which change mattered?". It scores A with each single change from B (`attributeChanges` in `js/lab.js`, on the lab's experts) and shows, next to each line of "What changed", a diverging bar and the effect in points, plus the total and the interaction (total minus the separate effects). Example on Two skills, TIES k 0.20 → 0.24, λ 1.00 → 1.30, alignment off → on: alignment +0.0, density +0.8, λ −1.5, together −0.4; the changes roughly add up. Each `recipeDiff` item now carries `apply()`. The per-layer change also carries the scalar knob it replaces, so that effect isn't misread as interaction (tested). The result is cached per (A, B) and dropped as soon as B changes. The report lists "(alone: ±x pts)" per change and the interaction. 1 test with a synthetic score (exact deltas and interaction) plus real toy scores (70 total). axe 0, keyboard and phone gates pass.
 
 - 2026-11-23: **Recipe diff in the compare box.** The B-vs-A box now lists exactly what changed, in reading order: method, neuron alignment, then, for the same method, each knob, option, expert weight, per-layer source, or per-layer values. Values are formatted like the controls, e.g. `Density k 0.20 → 0.25`, `Neuron alignment off → on`, `λ per layer off → 0.50 → 1.00 → 1.50`. Knobs replaced by per-layer values are not listed twice. Right after pinning it says "nothing yet". The recipe report's comparison section carries the same list (HTML and Markdown). Pure `recipeDiff(A, B, K)` in `js/lab.js` with a test covering every parameter type (69 total). Verified in the browser: knob, knob + alignment, method + alignment, and the report. axe 0, keyboard and phone gates pass.
 

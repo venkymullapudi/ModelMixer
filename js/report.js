@@ -41,11 +41,14 @@
    *   recipe: { method, family, label, scenario, experts:[...], lineage, aligned, width, ftSteps, seed },
    *   result: { tasks:[{ name, merged, expert, base }], avg, retention, cost, storage, warnings:[] }, mapPng,
    *   sensitivity?, layerMap?, robust?: { seeds, rows:[{ name, mean, sd, worst, stability, current }], verdict, h2h },
-   *   compare?: { pinned, now, changes?: [{ what, a, b }], summary, edge },
+   *   compare?: { pinned, now, changes?: [{ what, a, b, delta? }], attribution?: { total, interaction, seed }, summary, edge },
    *   saliency?: { tasks:[{ name, match, merged, expert, expertPng?, mergedPng?, seeds? }], mean, router? },
    *     (seeds = a saliencySeedSummary entry, present only if the multi-seed check was run) method: { tagline, how:[], pros:[], cons:[], realWorld, paper, oss:[{name,url}] },
    *   export: { file, yaml, cmd, note } }
    */
+  const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
+  const attrTxt = (x) => (x.delta === undefined ? '' : x.delta === null ? ' (can’t run alone)' : ` (alone: ${pts(x.delta)})`);
+  const attrFoot = (a) => `"Alone" is A with only that change, on seed ${a.seed}. Together: ${pts(a.total)}; ${Math.abs(a.interaction) < 0.005 ? 'the changes roughly add up (within half a point).' : `${pts(a.interaction)} comes from the changes interacting.`}`;
   function buildReport(d) {
     const r = d.recipe, res = d.result, m = d.method;
     // ---------- Markdown ----------
@@ -89,7 +92,10 @@
     }
     if (d.compare) {
       md.push('## Compared with the pinned recipe', '', `A (pinned): \`${d.compare.pinned}\` · B (this recipe): \`${d.compare.now}\``, '');
-      if ((d.compare.changes || []).length) md.push('**What changed (A → B)**', '', ...d.compare.changes.map((x) => `- ${x.what}: \`${x.a}\` → \`${x.b}\``), '');
+      if ((d.compare.changes || []).length) {
+        md.push('**What changed (A → B)**', '', ...d.compare.changes.map((x) => `- ${x.what}: \`${x.a}\` → \`${x.b}\`${attrTxt(x)}`), '');
+        if (d.compare.attribution) md.push(attrFoot(d.compare.attribution), '');
+      }
       if (d.compare.summary) md.push(d.compare.summary, '');
       if (d.compare.edge) md.push(`Paired check: ${d.compare.edge}`, '');
     }
@@ -130,7 +136,7 @@
     if (d.robust) parts.push(sec(`Is the winner real? (${d.robust.seeds} seeds)`, `<table>${row(['Method', 'Mean ± sd', 'Worst task', 'Stability'], 'th')}${d.robust.rows.map((x) => `<tr class="${x.current ? 'cur' : ''}"><td>${esc(x.name)}${x.current ? ' <span class="tag">this recipe</span>' : ''}</td><td>${pct(x.mean)} ± ${(x.sd * 100).toFixed(1)}</td><td>${pct(x.worst)}</td><td>${esc(x.stability)}</td></tr>`).join('')}</table>
       ${d.robust.verdict ? `<p>${esc(d.robust.verdict)}</p>` : ''}${d.robust.h2h ? `<p><b>Head-to-head:</b> ${esc(d.robust.h2h)}</p>` : ''}`));
     if (d.compare) parts.push(sec('Compared with the pinned recipe', `<p>A (pinned): <code>${esc(d.compare.pinned)}</code><br/>B (this recipe): <code>${esc(d.compare.now)}</code></p>
-      ${(d.compare.changes || []).length ? `<p><b>What changed (A → B):</b></p><ul>${d.compare.changes.map((x) => `<li>${esc(x.what)}: <code>${esc(x.a)}</code> → <code>${esc(x.b)}</code></li>`).join('')}</ul>` : ''}
+      ${(d.compare.changes || []).length ? `<p><b>What changed (A → B):</b></p><ul>${d.compare.changes.map((x) => `<li>${esc(x.what)}: <code>${esc(x.a)}</code> → <code>${esc(x.b)}</code>${esc(attrTxt(x))}</li>`).join('')}</ul>${d.compare.attribution ? `<p class="muted">${esc(attrFoot(d.compare.attribution))}</p>` : ''}` : ''}
       ${d.compare.summary ? `<p>${esc(d.compare.summary)}</p>` : ''}${d.compare.edge ? `<p><b>Paired check:</b> ${esc(d.compare.edge)}</p>` : ''}`));
     parts.push(sec(`About ${r.method}`, `<p>${esc(m.tagline || '')}</p><ol>${(m.how || []).map((h) => `<li>${esc(h)}</li>`).join('')}</ol>
       <div class="two"><div><h3>Strengths</h3><ul>${(m.pros || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>

@@ -754,6 +754,16 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .cmp-changes li > span { color: var(--dim); }
 .cmp-changes code { font-family: var(--mono); font-size: 11.5px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; padding: 0 4px; }
 
+/* ---------- compare: which change mattered ---------- */
+.cmp-changes #attrBtn { margin-top: 6px; }
+.cmp-changes .attr { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.attr-bar { position: relative; display: inline-block; width: 56px; height: 8px; border-radius: 4px; background: rgba(255, 255, 255, 0.06); }
+.attr-bar::after { content: ''; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line2); }
+.attr-bar i { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+.attr-bar i.up { background: #34d399; } .attr-bar i.down { background: #f87171; }
+.attr-pts { font-family: var(--mono); font-size: 11.5px; min-width: 40px; text-align: right; }
+.attr-foot { margin-top: 6px; font-size: 11.5px; color: var(--dim); line-height: 1.45; }
+
 </style>
 </head>
 <body>
@@ -2816,14 +2826,17 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
   const ABBR = { density: 'k', lambda: 'λ', drop: 'p', gamma: 'γ', t: 't', eps: 'ε', alpha: 'α', seed: 'seed' };
   /**
    * What differs between two recipes A and B ({ method, params, align }), in the order a practitioner reads it:
-   * [{ what, a, b }]. Knobs are compared only when the method is the same (different methods have different knobs).
-   * Values are formatted like the controls; knobs replaced by per-layer values are skipped.
+   * [{ what, a, b, apply }]. Knobs are compared only when the method is the same (different methods have different
+   * knobs). Values are formatted like the controls; knobs replaced by per-layer values are skipped.
+   * apply(r) returns a copy of recipe r with just this one change taken from B (used for attribution).
    */
   function recipeDiff(A, B, K) {
     const out = [];
+    const clone = (r) => ({ method: r.method, align: !!r.align, params: JSON.parse(JSON.stringify(r.params)) });
+    const setP = (fn) => (r) => { const c = clone(r); fn(c.params); return c; };
     const ma = MM.METHOD_BY_ID[A.method], mb = MM.METHOD_BY_ID[B.method];
-    if (A.method !== B.method) out.push({ what: 'Method', a: ma.name, b: mb.name });
-    if (!!A.align !== !!B.align) out.push({ what: 'Neuron alignment', a: A.align ? 'on' : 'off', b: B.align ? 'on' : 'off' });
+    if (A.method !== B.method) out.push({ what: 'Method', a: ma.name, b: mb.name, apply: (r) => ({ method: B.method, align: !!r.align, params: JSON.parse(JSON.stringify(B.params)) }) });
+    if (!!A.align !== !!B.align) out.push({ what: 'Neuron alignment', a: A.align ? 'on' : 'off', b: B.align ? 'on' : 'off', apply: (r) => Object.assign(clone(r), { align: !!B.align }) });
     if (A.method !== B.method) return out;
     const m = ma, pa = A.params, pb = B.params;
     const g = m.gradient && !(m.gradient.k2 && K !== 2) ? m.gradient : null;
@@ -2834,26 +2847,51 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
       const perLayer = g && (d.key === g.key || (g.key === 'balance' && d.type === 'weights'));
       if (perLayer && (lwA || lwB)) continue; // shown as per-layer values below
       if (d.type === 'range') {
-        if (Math.abs(+pa[d.key] - +pb[d.key]) > 1e-9) out.push({ what: name(d), a: num(pa[d.key], d.step), b: num(pb[d.key], d.step) });
+        if (Math.abs(+pa[d.key] - +pb[d.key]) > 1e-9) out.push({ what: name(d), a: num(pa[d.key], d.step), b: num(pb[d.key], d.step), apply: setP((p) => { p[d.key] = pb[d.key]; }) });
       } else if (d.type === 'select') {
         const lbl = (v) => { const o = d.options.find(([k]) => k === String(v)); return o ? o[1] : String(v); };
-        if (String(pa[d.key]) !== String(pb[d.key])) out.push({ what: name(d), a: lbl(pa[d.key]), b: lbl(pb[d.key]) });
+        if (String(pa[d.key]) !== String(pb[d.key])) out.push({ what: name(d), a: lbl(pa[d.key]), b: lbl(pb[d.key]), apply: setP((p) => { p[d.key] = pb[d.key]; }) });
       } else if (d.type === 'weights') {
         const wa = pa.weights.slice(0, K), wb = pb.weights.slice(0, K);
-        if (wa.some((x, i) => Math.abs(x - wb[i]) > 1e-9)) out.push({ what: 'Expert weights', a: wa.map((x) => (+x).toFixed(2)).join(' / '), b: wb.map((x) => (+x).toFixed(2)).join(' / ') });
+        if (wa.some((x, i) => Math.abs(x - wb[i]) > 1e-9)) out.push({ what: 'Expert weights', a: wa.map((x) => (+x).toFixed(2)).join(' / '), b: wb.map((x) => (+x).toFixed(2)).join(' / '), apply: setP((p) => { p.weights = pb.weights.slice(); }) });
       } else if (d.type === 'layers') {
         (MM.LAYER_NAMES || ['Hidden 1', 'Hidden 2', 'Output']).forEach((ln, l) => {
-          if (+pa.layers[l] !== +pb.layers[l]) out.push({ what: `${ln} from`, a: 'ABC'[pa.layers[l]], b: 'ABC'[pb.layers[l]] });
+          if (+pa.layers[l] !== +pb.layers[l]) out.push({ what: `${ln} from`, a: 'ABC'[pa.layers[l]], b: 'ABC'[pb.layers[l]], apply: setP((p) => { p.layers[l] = pb.layers[l]; }) });
         });
       }
     }
     if (g) {
       const gl = g.label;
       const gv = (p) => p.grad.map((v) => (+v).toFixed(2)).join(' → ');
-      if (lwA !== lwB) out.push({ what: `${gl} per layer`, a: lwA ? gv(pa) : 'off', b: lwB ? gv(pb) : 'off' });
-      else if (lwA && pa.grad.some((v, i) => Math.abs(v - pb.grad[i]) > 1e-9)) out.push({ what: `${gl} per layer`, a: gv(pa), b: gv(pb) });
+      // the per-layer change also carries B's scalar knob, which the per-layer values replace
+      const takeLayers = setP((p) => {
+        p.layerwise = pb.layerwise; p.grad = pb.grad.slice();
+        if (g.key in pb) p[g.key] = pb[g.key];
+        if (g.key === 'balance' && pb.weights) p.weights = pb.weights.slice();
+      });
+      if (lwA !== lwB) out.push({ what: `${gl} per layer`, a: lwA ? gv(pa) : 'off', b: lwB ? gv(pb) : 'off', apply: takeLayers });
+      else if (lwA && pa.grad.some((v, i) => Math.abs(v - pb.grad[i]) > 1e-9)) out.push({ what: `${gl} per layer`, a: gv(pa), b: gv(pb), apply: takeLayers });
     }
     return out;
+  }
+
+  /**
+   * Which change mattered? Starting from A, apply each change in recipeDiff(A, B) on its own and score it.
+   * score(recipe) -> average accuracy (or null if the recipe can't run). Returns
+   * { a, b, total, parts: [{ what, a, b, delta }], interaction } where interaction = total − Σ deltas
+   * (what the changes do together beyond their separate effects). null if fewer than 2 changes.
+   */
+  function attributeChanges(A, B, K, score) {
+    const diff = recipeDiff(A, B, K);
+    if (diff.length < 2) return null;
+    const sa = score(A), sb = score(B);
+    if (sa == null || sb == null) return null;
+    const parts = diff.map((x) => {
+      const s1 = score(x.apply(A));
+      return { what: x.what, a: x.a, b: x.b, delta: s1 == null ? null : s1 - sa };
+    });
+    const known = parts.filter((p) => p.delta != null).reduce((t, p) => t + p.delta, 0);
+    return { a: sa, b: sb, total: sb - sa, parts, interaction: (sb - sa) - known };
   }
 
   function recipeLabel(id, params, align, K) {
@@ -3153,7 +3191,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     };
   }
 
-  Object.assign(MM, { recipeDiff, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { recipeDiff, attributeChanges, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();
 
 </script>
@@ -3729,11 +3767,14 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
    *   recipe: { method, family, label, scenario, experts:[...], lineage, aligned, width, ftSteps, seed },
    *   result: { tasks:[{ name, merged, expert, base }], avg, retention, cost, storage, warnings:[] }, mapPng,
    *   sensitivity?, layerMap?, robust?: { seeds, rows:[{ name, mean, sd, worst, stability, current }], verdict, h2h },
-   *   compare?: { pinned, now, changes?: [{ what, a, b }], summary, edge },
+   *   compare?: { pinned, now, changes?: [{ what, a, b, delta? }], attribution?: { total, interaction, seed }, summary, edge },
    *   saliency?: { tasks:[{ name, match, merged, expert, expertPng?, mergedPng?, seeds? }], mean, router? },
    *     (seeds = a saliencySeedSummary entry, present only if the multi-seed check was run) method: { tagline, how:[], pros:[], cons:[], realWorld, paper, oss:[{name,url}] },
    *   export: { file, yaml, cmd, note } }
    */
+  const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
+  const attrTxt = (x) => (x.delta === undefined ? '' : x.delta === null ? ' (can’t run alone)' : ` (alone: ${pts(x.delta)})`);
+  const attrFoot = (a) => `"Alone" is A with only that change, on seed ${a.seed}. Together: ${pts(a.total)}; ${Math.abs(a.interaction) < 0.005 ? 'the changes roughly add up (within half a point).' : `${pts(a.interaction)} comes from the changes interacting.`}`;
   function buildReport(d) {
     const r = d.recipe, res = d.result, m = d.method;
     // ---------- Markdown ----------
@@ -3777,7 +3818,10 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     }
     if (d.compare) {
       md.push('## Compared with the pinned recipe', '', `A (pinned): \`${d.compare.pinned}\` · B (this recipe): \`${d.compare.now}\``, '');
-      if ((d.compare.changes || []).length) md.push('**What changed (A → B)**', '', ...d.compare.changes.map((x) => `- ${x.what}: \`${x.a}\` → \`${x.b}\``), '');
+      if ((d.compare.changes || []).length) {
+        md.push('**What changed (A → B)**', '', ...d.compare.changes.map((x) => `- ${x.what}: \`${x.a}\` → \`${x.b}\`${attrTxt(x)}`), '');
+        if (d.compare.attribution) md.push(attrFoot(d.compare.attribution), '');
+      }
       if (d.compare.summary) md.push(d.compare.summary, '');
       if (d.compare.edge) md.push(`Paired check: ${d.compare.edge}`, '');
     }
@@ -3818,7 +3862,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     if (d.robust) parts.push(sec(`Is the winner real? (${d.robust.seeds} seeds)`, `<table>${row(['Method', 'Mean ± sd', 'Worst task', 'Stability'], 'th')}${d.robust.rows.map((x) => `<tr class="${x.current ? 'cur' : ''}"><td>${esc(x.name)}${x.current ? ' <span class="tag">this recipe</span>' : ''}</td><td>${pct(x.mean)} ± ${(x.sd * 100).toFixed(1)}</td><td>${pct(x.worst)}</td><td>${esc(x.stability)}</td></tr>`).join('')}</table>
       ${d.robust.verdict ? `<p>${esc(d.robust.verdict)}</p>` : ''}${d.robust.h2h ? `<p><b>Head-to-head:</b> ${esc(d.robust.h2h)}</p>` : ''}`));
     if (d.compare) parts.push(sec('Compared with the pinned recipe', `<p>A (pinned): <code>${esc(d.compare.pinned)}</code><br/>B (this recipe): <code>${esc(d.compare.now)}</code></p>
-      ${(d.compare.changes || []).length ? `<p><b>What changed (A → B):</b></p><ul>${d.compare.changes.map((x) => `<li>${esc(x.what)}: <code>${esc(x.a)}</code> → <code>${esc(x.b)}</code></li>`).join('')}</ul>` : ''}
+      ${(d.compare.changes || []).length ? `<p><b>What changed (A → B):</b></p><ul>${d.compare.changes.map((x) => `<li>${esc(x.what)}: <code>${esc(x.a)}</code> → <code>${esc(x.b)}</code>${esc(attrTxt(x))}</li>`).join('')}</ul>${d.compare.attribution ? `<p class="muted">${esc(attrFoot(d.compare.attribution))}</p>` : ''}` : ''}
       ${d.compare.summary ? `<p>${esc(d.compare.summary)}</p>` : ''}${d.compare.edge ? `<p><b>Paired check:</b> ${esc(d.compare.edge)}</p>` : ''}`));
     parts.push(sec(`About ${r.method}`, `<p>${esc(m.tagline || '')}</p><ol>${(m.how || []).map((h) => `<li>${esc(h)}</li>`).join('')}</ol>
       <div class="two"><div><h3>Strengths</h3><ul>${(m.pros || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></div>
@@ -5374,8 +5418,31 @@ ${parts.join('\n')}
   function changesHTML() {
     const diff = MM.recipeDiff(S.pin, nowRecipe(), T.K);
     if (!diff.length) return '<div class="cmp-changes"><b>What changed:</b> nothing yet. Change the method or a knob to compare.</div>';
-    return `<div class="cmp-changes"><b>What changed</b><ul>${diff.map((x) => `<li><span>${esc(x.what)}</span> <code>${esc(x.a)}</code> → <code>${esc(x.b)}</code></li>`).join('')}</ul></div>`;
+    const at = attrCache.get(edgeKey());
+    const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}`;
+    const scale = at ? Math.max(0.005, ...at.parts.map((p) => Math.abs(p.delta || 0)), Math.abs(at.interaction)) : 1;
+    const bar = (d) => `<span class="attr-bar"><i style="${d >= 0 ? 'left:50%' : `right:50%`};width:${Math.min(50, (Math.abs(d) / scale) * 50).toFixed(1)}%" class="${d >= 0 ? 'up' : 'down'}"></i></span>`;
+    const delta = (i) => { const p = at && at.parts[i]; return !p ? '' : p.delta == null ? '<span class="muted">can’t run alone</span>' : `${bar(p.delta)}<b class="attr-pts">${pts(p.delta)}</b>`; };
+    const items = diff.map((x, i) => `<li><span>${esc(x.what)}</span> <code>${esc(x.a)}</code> → <code>${esc(x.b)}</code>${at ? `<span class="attr">${delta(i)}</span>` : ''}</li>`).join('');
+    const tail = diff.length < 2 ? '' : at
+      ? `<div class="attr-foot">Each line is A with only that change, in pts of average accuracy (seed ${S.seed}). Together: ${pts(at.total)} pts; ${Math.abs(at.interaction) < 0.005 ? 'the changes roughly add up (within half a point).' : `${pts(at.interaction)} pts comes from changes interacting, not from any one alone.`}</div>`
+      : '<button class="btn sm ghost" id="attrBtn">Which change mattered?</button>';
+    return `<div class="cmp-changes"><b>What changed</b><ul>${items}</ul>${tail}</div>`;
   }
+  // "Which change mattered?": A with one change from B at a time, scored on the lab's experts
+  const attrCache = new Map();
+  async function runAttribution() {
+    const key = edgeKey(), A = S.pin, B = nowRecipe(), K = T.K, Tnow = T;
+    const btn = $('#attrBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Scoring each change…'; }
+    await frame();
+    const score = (r) => { const res = MM.scoreMethod(Tnow, MM.bundleCtx(Tnow, r.align), r.method, r.params); return res.blocked ? null : res.avg; };
+    const at = MM.attributeChanges(A, B, K, score);
+    if (!at || T !== Tnow) return;
+    attrCache.set(key, at);
+    if (edgeKey() === key) refresh();
+  }
+  $('#metrics').addEventListener('click', (ev) => { if (ev.target.closest('#attrBtn')) runAttribution(); });
   function compareBox(r, pin) {
     const sgn = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
     const mult = (x) => (x > 1.05 ? `${x.toFixed(1)}×` : '1×');
@@ -6347,7 +6414,9 @@ dtype: bfloat16
         verdict: text('#robust .verdict'), h2h: text('#h2h .verdict'),
       };
     }
-    const compare = S.pin ? { pinned: labelOf(S.pin), now: labelOf(nowRecipe()), changes: MM.recipeDiff(S.pin, nowRecipe(), T.K), summary: text('.cmp-box > div:nth-child(2)'), edge: text('#edge .verdict') } : null;
+    const at = S.pin ? attrCache.get(edgeKey()) : null;
+    const compare = S.pin ? { pinned: labelOf(S.pin), now: labelOf(nowRecipe()), changes: MM.recipeDiff(S.pin, nowRecipe(), T.K).map((x, i) => ({ what: x.what, a: x.a, b: x.b, delta: at && at.parts[i] ? at.parts[i].delta : undefined })),
+      attribution: at ? { total: at.total, interaction: at.interaction, seed: S.seed } : null, summary: text('.cmp-box > div:nth-child(2)'), edge: text('#edge .verdict') } : null;
     let mapPng = null;
     try {
       const cv = $('#mainCanvas'), c2 = document.createElement('canvas');

@@ -430,6 +430,26 @@ parameters:
       for (let k = 0; k < T.K; k++) for (let i = 0; i < T.experts[k].length; i++) assert(T.experts[k][i] === T2.experts[k][i], `expert ${k} differs at ${i}`);
     });
 
+    test('attributeChanges: one change at a time from A, deltas plus interaction add up to the total', () => {
+      const P = (id, over) => Object.assign(params(id, 2), over || {});
+      const A = { method: 'ties', params: P('ties', { density: 0.2, lambda: 1 }), align: false };
+      const B = { method: 'ties', params: P('ties', { density: 0.4, lambda: 1.4 }), align: false };
+      // a fake score: density helps +10 pts per 0.2, λ hurts 5 pts per 0.4, plus an interaction term
+      const fake = (r) => 0.5 + (r.params.density - 0.2) * 0.5 - (r.params.lambda - 1) * 0.125 + (r.params.density > 0.3 && r.params.lambda > 1.2 ? 0.02 : 0);
+      const at = MM.attributeChanges(A, B, 2, fake);
+      assert(at.parts.length === 2 && at.parts[0].what === 'Density k' && Math.abs(at.parts[0].delta - 0.1) < 1e-9 && Math.abs(at.parts[1].delta + 0.05) < 1e-9, JSON.stringify(at.parts));
+      assert(Math.abs(at.interaction - 0.02) < 1e-9 && Math.abs(at.parts[0].delta + at.parts[1].delta + at.interaction - at.total) < 1e-12, 'interaction closes the sum');
+      assert(MM.attributeChanges(A, { ...A, params: P('ties', { density: 0.4, lambda: 1 }) }, 2, fake) === null, 'a single change needs no attribution');
+      // real scores on the trained toy: method + alignment
+      const real = (r) => { const x = MM.scoreMethod(T, MM.bundleCtx(T, r.align), r.method, r.params); return x.blocked ? null : x.avg; };
+      const rt = MM.attributeChanges({ method: 'linear', params: P('linear'), align: false }, { method: 'ties', params: P('ties'), align: true }, 2, real);
+      assert(rt && rt.parts.length === 2 && rt.parts.every((p) => Number.isFinite(p.delta)), JSON.stringify(rt));
+      // the per-layer change carries the scalar knob too, so it isn't lost to "interaction"
+      const lwB = { method: 'ties', params: P('ties', { lambda: 1.5, layerwise: true, grad: [0.5, 1, 1.5] }), align: true };
+      const step = MM.recipeDiff(A, lwB, 2).find((x) => x.what === 'λ per layer').apply(A);
+      assert(step.params.layerwise === true && step.params.lambda === 1.5 && step.params.grad.join() === '0.5,1,1.5' && step.align === false, JSON.stringify(step));
+      return `Linear → TIES+aligned: method ${(rt.parts[0].delta * 100).toFixed(1)}, alignment ${(rt.parts[1].delta * 100).toFixed(1)}, interaction ${(rt.interaction * 100).toFixed(1)} pts`;
+    });
     test('Two skills: each expert masters its own task, base does not', () => {
       T.expertAccs.forEach((a, i) => assert(a[i] > 0.9, `expert ${i} only ${pct(a[i])} on own task`));
       const baseAvg = T.baseAccs.reduce((a, b) => a + b, 0) / T.K;
