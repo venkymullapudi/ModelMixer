@@ -1129,6 +1129,7 @@
       ${diag ? `<div class="section"><div class="sec-title">${r.kind === 'weights' ? 'Weight provenance' : 'Where the mixing happens'}</div>${diag}</div>` : ''}
       ${!r.blocked && ctx.tasks[0].kind === 'digits' ? `<div class="section"><div class="sec-title">Where the merge looks <span class="hint">pixel saliency</span></div>
         <div class="sal-grid" id="salGrid"><div class="muted small">Measuring…</div></div>
+        <div class="sal-seeds" id="salSeeds">${salSeedsHTML()}</div>
         <p class="tiny muted">Which pixels move the prediction, for the expert and for the merge (each map scaled to its own peak). The match compares the patterns (80% or more counts as the same); each task's line reads it together with accuracy.</p></div>` : ''}
       <div class="section"><div class="sec-title">${hasBase ? 'Task-vector geometry' : 'Raw weight similarity <span class="hint">(no base)</span>'}</div>${geoHtml}
         <p class="tiny muted">${hasBase ? 'Low cosine + high sign conflict = skills that fight when added together. That is what TIES and DARE are built for.' : 'Independently trained experts look unrelated in weight space. Turn on neuron alignment and watch the similarity jump — same functions, re-ordered neurons.'}</p></div>
@@ -1155,6 +1156,44 @@
   // the frame so dragging a knob stays smooth.
   const salCache = new WeakMap();
   let salTimer = null;
+  // Is the reading a one-seed artifact? Re-measure it on the shared seed bundles (seed cache), in-page.
+  const SAL_SEEDS = 5;
+  const salSeedCache = new Map();
+  let salSeedToken = 0;
+  const salSeedKey = () => JSON.stringify([trainKey(S), nowRecipe()]);
+  const KIND_LABEL = { same: 'same pixels, skill kept', other: 'different pixels, skill kept', conflict: 'conflict signature', lost: 'skill lost' };
+  function salSeedsHTML() {
+    const d = salSeedCache.get(salSeedKey());
+    if (!d) return `<button class="btn sm" id="salSeedBtn">Is this reading stable? Check on ${SAL_SEEDS} seeds</button><span class="muted small" id="salSeedMsg" aria-live="polite"></span>`;
+    const lines = d.map((t, k) => {
+      const tone = t.agree === 1 ? 'good' : t.agree >= 0.8 ? 'mid' : 'bad';
+      const kinds = Object.entries(t.counts).sort((a, b) => b[1] - a[1]).map(([kd, c]) => `${KIND_LABEL[kd]} ${c}/${t.n}`).join(', ');
+      const verdict = t.agree === 1 ? `the same reading on all ${t.n} seeds` : t.agree >= 0.8 ? `mostly stable (${kinds})` : `unstable (${kinds}), so treat the one-seed reading above as a guess`;
+      return `<li class="${tone}"><b>${LETTERS[k]}</b> ${verdict}. Pattern match ${Math.round(t.mean * 100)}% ± ${Math.round(t.sd * 100)} (range ${Math.round(t.min * 100)}–${Math.round(t.max * 100)}%).</li>`;
+    }).join('');
+    return `<div class="sal-seed-title">Across ${d[0] ? d[0].n : SAL_SEEDS} seeds</div><ul class="sal-seed-list">${lines}</ul>`;
+  }
+  async function checkSalSeeds() {
+    const token = ++salSeedToken, key = salSeedKey(), rec = nowRecipe();
+    const cancelled = () => token !== salSeedToken;
+    const msg = (t) => { const el = $('#salSeedMsg'); if (el && !cancelled()) el.textContent = t; };
+    const btn = $('#salSeedBtn');
+    if (btn) btn.disabled = true;
+    const bundles = await seedBundles(SAL_SEEDS, cancelled, msg);
+    if (!bundles) return;
+    const runs = [];
+    for (let i = 0; i < bundles.length; i++) {
+      msg(`Measuring saliency on seed ${i + 1}/${bundles.length}…`);
+      await frame();
+      if (cancelled()) return;
+      runs.push(MM.saliencyRun(bundles[i], rec.method, rec.params, rec.align));
+    }
+    salSeedCache.set(key, MM.saliencySeedSummary(runs));
+    const el = $('#salSeeds');
+    if (el && salSeedKey() === key) el.innerHTML = salSeedsHTML();
+  }
+  $('#insight').addEventListener('click', (ev) => { if (ev.target.closest('#salSeedBtn')) checkSalSeeds(); });
+
   /** One-line verdict for a task: pattern match × accuracy (the same rule the recipe report uses). */
   function salReading(match, merged, expert, router) {
     const rd = MM.saliencyReading(match, merged, expert, { router });

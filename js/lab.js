@@ -352,6 +352,32 @@
     return { maps, match, mean: match.reduce((a, b) => a + b, 0) / match.length };
   }
 
+  /** One seed: score a recipe on bundle T and measure its saliency match per task. null if the method is blocked. */
+  function saliencyRun(T, method, params, align) {
+    const ctx = MM.bundleCtx(T, align);
+    const r = MM.scoreMethod(T, ctx, method, params);
+    if (r.blocked) return null;
+    const row = saliencyRow(ctx, r.predict, expertSaliency(ctx));
+    return { match: row.match, merged: r.accs.slice(), expert: T.expertAccs.map((e, i) => e[i]), router: !!r.router };
+  }
+  /**
+   * Summarise saliency over seeds. runs = [{ match:[K], merged:[K], expert:[K], router }].
+   * Per task: match mean / sd / min / max, how many seeds give each reading kind, the most common kind and its share.
+   */
+  function saliencySeedSummary(runs) {
+    runs = runs.filter(Boolean);
+    const n = runs.length, K = n ? runs[0].match.length : 0;
+    return Array.from({ length: K }, (_, k) => {
+      const ms = runs.map((r) => r.match[k]);
+      const mean = ms.reduce((a, b) => a + b, 0) / n;
+      const sd = n > 1 ? Math.sqrt(ms.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0;
+      const counts = {};
+      runs.forEach((r) => { const kind = MM.saliencyReading(r.match[k], r.merged[k], r.expert[k], { router: r.router }).kind; counts[kind] = (counts[kind] || 0) + 1; });
+      const top = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+      return { n, mean, sd, min: Math.min(...ms), max: Math.max(...ms), counts, top, agree: counts[top] / n };
+    });
+  }
+
   // ---------- undo / redo ----------
   /**
    * Snapshot history. record(snap, t, key) adds a snapshot (strings compared for equality); if the previous
@@ -392,5 +418,5 @@
     };
   }
 
-  Object.assign(MM, { makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

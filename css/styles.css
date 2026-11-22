@@ -717,3 +717,10 @@ select:focus-visible, input[type='text']:focus-visible, input[type='number']:foc
 .sal-row .sal-read { grid-column: 1 / -1; margin: -2px 0 2px; font-size: 11.5px; line-height: 1.45; color: #cdd3e3; padding: 5px 8px; border-radius: 8px; border-left: 3px solid; background: rgba(255, 255, 255, 0.03); }
 .sal-row .sal-read.good { border-color: #34d399; } .sal-row .sal-read.mid { border-color: #fbbf24; } .sal-row .sal-read.bad { border-color: #f87171; }
 .sal-row .sal-read .muted { white-space: nowrap; }
+
+/* ---------- saliency across seeds ---------- */
+.sal-seeds { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sal-seed-title { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--dim); width: 100%; }
+.sal-seed-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.sal-seed-list li { font-size: 11.5px; line-height: 1.45; color: #cdd3e3; padding: 4px 8px; border-radius: 8px; border-left: 3px solid; background: rgba(255, 255, 255, 0.03); }
+.sal-seed-list li.good { border-color: #34d399; } .sal-seed-list li.mid { border-color: #fbbf24; } .sal-seed-list li.bad { border-color: #f87171; }

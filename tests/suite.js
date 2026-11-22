@@ -704,6 +704,18 @@ parameters:
       }
       return out.join(', ');
     });
+    test('Saliency over seeds: one run per seed, and a summary that flags unstable readings', () => {
+      const run = MM.saliencyRun(Td, 'moe', params('moe', 2), false);
+      assert(run && run.match.length === Td.K && run.router === true && run.merged.length === Td.K, 'one seed run');
+      const steady = MM.saliencySeedSummary([run, run, run]);
+      assert(steady.every((t) => t.agree === 1 && t.n === 3 && t.sd === 0), 'identical seeds agree with no spread');
+      const mk = (m) => ({ match: [m, 0.9], merged: [0.98, 0.5], expert: [1, 1], router: false });
+      const mixed = MM.saliencySeedSummary([mk(0.95), mk(0.6), mk(0.62), null]);
+      assert(mixed[0].n === 3 && mixed[0].top === 'other' && Math.abs(mixed[0].agree - 2 / 3) < 1e-9, `task A: ${JSON.stringify(mixed[0].counts)}`);
+      assert(mixed[0].min === 0.6 && mixed[0].max === 0.95 && mixed[0].sd > 0.15, 'range and spread');
+      assert(mixed[1].top === 'conflict' && mixed[1].agree === 1, 'task B: conflict on every seed');
+      return `MoE seed-7 matches ${run.match.map((m) => Math.round(m * 100) + '%').join(' / ')}`;
+    });
     test('Digits: links round-trip and mixed kinds are rejected', () => {
       const base = { init: 'shared', hidden: 32, ftSteps: 250, seed: 7, align: false, method: 'ties', params: params('ties', 2), pin: null };
       const d = MM.decodeRecipe(MM.encodeRecipe(Object.assign({ experts: [{ task: 'd01' }, { task: 'd45', flip: true }] }, base)));

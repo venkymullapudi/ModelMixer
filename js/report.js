@@ -16,11 +16,11 @@
   function saliencyReading(match, merged, expert, opts) {
     const router = !!(opts && opts.router);
     const kept = merged >= expert - 0.1, same = match >= 0.8;
-    if (kept && same) return { tone: 'good', text: 'keeps the skill and reads the same pixels as the expert' };
-    if (kept) return { tone: 'mid', text: router ? 'keeps the skill but reads different pixels: its router sends each input to the right expert, so it solves the task another way'
+    if (kept && same) return { kind: 'same', tone: 'good', text: 'keeps the skill and reads the same pixels as the expert' };
+    if (kept) return { kind: 'other', tone: 'mid', text: router ? 'keeps the skill but reads different pixels: its router sends each input to the right expert, so it solves the task another way'
       : 'keeps the skill but reads different pixels, so it solves the task another way (often fine, but check it on inputs unlike the test set)' };
-    if (same) return { tone: 'bad', text: 'looks at the right pixels but answers wrongly: the conflict signature, so a better merge is unlikely to fix it (it needs a task signal or retraining)' };
-    return { tone: 'bad', text: 'has lost both the skill and the expert’s pixel pattern' };
+    if (same) return { kind: 'conflict', tone: 'bad', text: 'looks at the right pixels but answers wrongly: the conflict signature, so a better merge is unlikely to fix it (it needs a task signal or retraining)' };
+    return { kind: 'lost', tone: 'bad', text: 'has lost both the skill and the expert’s pixel pattern' };
   }
 
   /**
