@@ -1867,6 +1867,47 @@ dtype: bfloat16
   });
   $('#mkOut').addEventListener('click', (ev) => { if (ev.target.closest('#mkOpen')) setTab('lab'); });
 
+  // ---------------- KEYBOARD SHORTCUTS SHEET ----------------
+  const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || '');
+  const MOD = MAC ? '⌘' : 'Ctrl';
+  const KEY_GROUPS = [
+    ['Recipe', [
+      [[`${MOD} Z`], 'Undo the last recipe change (method, knobs, alignment, pin)'],
+      [[MAC ? '⇧⌘ Z' : 'Ctrl Y', MAC ? '' : 'Ctrl ⇧ Z'].filter(Boolean), 'Redo'],
+      [['← →', '↑ ↓'], 'Move a focused knob (slider) one step'],
+      [['Home', 'End'], 'Jump a focused knob to its minimum / maximum'],
+    ]],
+    ['Moving around', [
+      [['Tab'], 'First stops are skip links: methods, recipe knobs, results'],
+      [['← →'], 'In the method picker: move between methods (it is one Tab stop)'],
+      [['Enter', 'Space'], 'Pick the focused method, press the focused button'],
+      [['← →'], 'In the view tabs: switch between Mix Lab, Arena, Atlas and Export'],
+    ]],
+    ['Dialogs and tour', [
+      [['Esc'], 'Close the advisor, the report, this list or the tour'],
+      [['← →'], 'Previous / next tour step'],
+      [['?'], 'Open this list'],
+    ]],
+  ];
+  const keysDlg = $('#keysDlg');
+  $('#keysBody').innerHTML = KEY_GROUPS.map(([title, rows]) => `<section><h3>${title}</h3><dl>${rows.map(([keys, what]) =>
+    `<dt>${keys.map((k) => k.split(' ').map((x) => `<kbd>${esc(x)}</kbd>`).join(' ')).join(' <span class="muted">or</span> ')}</dt><dd>${esc(what)}</dd>`).join('')}</dl></section>`).join('');
+  function openKeys() {
+    if (keysDlg.open) return;
+    if (typeof keysDlg.showModal === 'function') keysDlg.showModal(); else keysDlg.setAttribute('open', '');
+  }
+  $('#closeKeys').addEventListener('click', () => keysDlg.close());
+  keysDlg.addEventListener('click', (ev) => { if (ev.target === keysDlg) keysDlg.close(); });
+  document.querySelector('[data-keys]').addEventListener('click', (ev) => { ev.preventDefault(); openKeys(); });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key !== '?' || ev.metaKey || ev.ctrlKey || ev.altKey || ev.defaultPrevented) return;
+    const t = ev.target;
+    if (t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !/^(range|checkbox|radio|button)$/i.test(t.type)) || t.isContentEditable)) return;
+    if (document.querySelector('dialog[open]') || tourIdx >= 0) return; // one dialog at a time
+    ev.preventDefault();
+    openKeys();
+  });
+
   // ---------------- FIRST-RUN TOUR ----------------
   const TOUR_KEY = 'modelmixer:tour';
   const TOUR = [
@@ -1874,7 +1915,7 @@ dtype: bfloat16
     { sel: '#picker', title: 'Choose how to mix them', text: '18 merging methods in six families, from plain weight averaging to TIES, DARE, RegMean, Mixture of Experts and distillation. A lock means the method needs something this scenario lacks.' },
     { sel: '#controls', title: 'Tune the recipe', text: 'Every knob updates the merge live. ⌘Z / Ctrl+Z undoes. The sensitivity panel below shows how forgiving each knob is, and the best and safest settings.' },
     { sel: '.stage', title: 'See what the mix keeps and loses', text: 'The map shows what the merged model predicts. The scorecard compares it with each expert alone. Pin a recipe to compare two side by side, with a paired check of whether one is really better.' },
-    { sel: '#openAdvisor', title: 'Not sure where to start?', text: 'Describe your real models to the Recipe advisor for ranked picks backed by toy measurements. The Arena runs every method, Report gives you one shareable page, and Export writes the mergekit config.' },
+    { sel: '#openAdvisor', title: 'Not sure where to start?', text: 'Describe your real models to the Recipe advisor for ranked picks backed by toy measurements. The Arena runs every method, Report gives you one shareable page, and Export writes the mergekit config. Press ? any time for keyboard shortcuts.' },
   ];
   let tourIdx = -1;
   const tourSeen = () => { try { return localStorage.getItem(TOUR_KEY) === 'done'; } catch (e) { return true; } };

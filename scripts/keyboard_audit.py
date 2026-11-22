@@ -137,6 +137,22 @@ def run(pg):
         step('Esc closes the advisor', not pg.evaluate("() => document.querySelector('#advisor').open"))
         step('focus returns to the opener', pg.evaluate("() => document.activeElement && document.activeElement.id === 'openAdvisor'"))
 
+    # 8. shortcuts sheet: "?" opens it from anywhere (not while typing), Esc closes it, focus comes back
+    pg.keyboard.press('Shift+Slash'); pg.wait_for_timeout(300)
+    step('? opens the keyboard shortcuts', pg.evaluate("() => document.querySelector('#keysDlg').open"))
+    step('focus moves into the shortcuts', pg.evaluate("() => document.querySelector('#keysDlg').contains(document.activeElement)"))
+    rows = pg.evaluate("() => document.querySelectorAll('#keysDlg dt').length")
+    step('the shortcuts list is filled', rows >= 8, f'{rows} shortcuts')
+    pg.keyboard.press('Escape'); pg.wait_for_timeout(300)
+    step('Esc closes the shortcuts', not pg.evaluate("() => document.querySelector('#keysDlg').open"))
+    step('focus returns after the shortcuts', pg.evaluate("() => document.activeElement && document.activeElement.id === 'openAdvisor'"))
+    # typing "?" into a text field must not open it
+    pg.click('[data-tab="export"]'); pg.wait_for_timeout(300)
+    if pg.locator('#exBase').count():
+        pg.focus('#exBase'); pg.keyboard.press('Shift+Slash'); pg.wait_for_timeout(200)
+        step('? in a text field just types', not pg.evaluate("() => document.querySelector('#keysDlg').open") and pg.evaluate("() => document.querySelector('#exBase').value.includes('?')"))
+        pg.keyboard.press('Backspace')
+
 
 with sync_playwright() as p:
     b = p.chromium.launch(channel=CHANNEL, headless=True)

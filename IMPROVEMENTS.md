@@ -17,10 +17,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Keyboard shortcuts sheet:** a `?`-style shortcuts list (Shift+/ or in the tour) covering ⌘Z / ⇧⌘Z, arrow keys in the picker and tabs, Esc in dialogs, and the skip links, so keyboard users can discover them.
+1. **Recipe diff in the compare box:** when A and B differ, list exactly which settings changed (method, each knob, alignment) next to the accuracy deltas, so a practitioner can see what caused the gap without reading two recipe labels.
 2. **Seed stability for the gallery lessons:** the "Conflicting skills have a ceiling" card is already checked on seeds by a test; add a Digits-conflict card only if its saliency reading holds on most seeds (today it does not: TIES flips between "conflict" and "lost").
 
 ## Done
+
+- 2026-11-23: **Keyboard shortcuts sheet.** Press `?` anywhere, or use the fourth skip link (first Tab stops), to open a "Keyboard shortcuts" dialog. It lists undo / redo (⌘ or Ctrl shown per platform), knob keys, skip links, the one-stop method picker, view tabs, Esc for dialogs, and tour keys. `?` is ignored while typing in a text field and while another dialog or the tour is open, and the tour's last step mentions it. Keyboard audit +6 steps: opens on `?`, focus moves in, 11 rows, Esc closes, focus returns, and `?` in the Export base-model field just types (the first version of this check expected the `?` at the end of the field, but `focus()` puts the caret at the start; the app was right). axe 0, phone gate passes, 68 tests.
 
 - 2026-11-23: **Seed stability in the report.** If the Lab's 5-seed saliency check has run for exactly this recipe, the report's saliency section adds, per task, "the same reading on all 5 seeds", "mostly stable" (4/5) or "unstable", with the reading counts and the match mean ± sd and range. The Markdown export gets an "Across seeds" column. An unstable reading is reworded from a claim about the method ("This merge looks at the right pixels…") to "On this seed, the merge …, but treat that as a guess". If the check hasn't run, the report says readings near the 80% line can change with the seed and points to the check. A knob change makes the cached result stale, and the report drops it (verified). The Lab and the report share one wording function (`seedStability` in `js/report.js`), so they can't disagree. Report test extended: unchecked, unstable softened, stable stated plainly, 4/5 vs 3/5 (68 tests). axe 0, keyboard and phone gates pass.
 

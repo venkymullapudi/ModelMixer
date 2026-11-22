@@ -724,3 +724,13 @@ select:focus-visible, input[type='text']:focus-visible, input[type='number']:foc
 .sal-seed-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; width: 100%; }
 .sal-seed-list li { font-size: 11.5px; line-height: 1.45; color: #cdd3e3; padding: 4px 8px; border-radius: 8px; border-left: 3px solid; background: rgba(255, 255, 255, 0.03); }
 .sal-seed-list li.good { border-color: #34d399; } .sal-seed-list li.mid { border-color: #fbbf24; } .sal-seed-list li.bad { border-color: #f87171; }
+
+/* ---------- keyboard shortcuts sheet ---------- */
+dialog.keys-dlg { width: min(640px, calc(100vw - 32px)); }
+.keys-body { overflow: auto; padding: 8px 20px 18px; display: flex; flex-direction: column; gap: 6px; }
+.keys-body h3 { margin: 10px 0 6px; font-size: 11.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--dim); }
+.keys-body dl { display: grid; grid-template-columns: minmax(130px, auto) 1fr; gap: 7px 16px; margin: 0; align-items: baseline; }
+.keys-body dt { white-space: nowrap; font-size: 12px; }
+.keys-body dd { margin: 0; font-size: 13px; color: #cdd3e3; }
+kbd { display: inline-block; min-width: 22px; text-align: center; font-family: var(--mono); font-size: 11.5px; line-height: 1; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line2); border-bottom-width: 2px; background: rgba(255, 255, 255, 0.05); color: var(--text); }
+@media (max-width: 560px) { .keys-body dl { grid-template-columns: 1fr; gap: 2px; } .keys-body dd { margin-bottom: 8px; } }

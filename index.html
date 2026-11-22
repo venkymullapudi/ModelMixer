@@ -16,6 +16,7 @@
     <a class="skip-link" href="#picker" data-skip="picker">Skip to methods</a>
     <a class="skip-link" href="#controls" data-skip="controls">Skip to recipe knobs</a>
     <a class="skip-link" href="#metrics" data-skip="metrics">Skip to results</a>
+    <a class="skip-link" href="#keysDlg" data-keys>Keyboard shortcuts (?)</a>
   </nav>
   <header class="topbar">
     <div class="brand">
@@ -212,6 +213,17 @@
       <div class="adv-qs" id="advQs"></div>
       <div class="adv-recs" id="advRecs"></div>
     </div>
+  </dialog>
+
+  <dialog class="advisor keys-dlg" id="keysDlg" aria-labelledby="keysTitle">
+    <div class="adv-head">
+      <div>
+        <h2 id="keysTitle">Keyboard shortcuts</h2>
+        <p class="muted">Everything in ModelMixer works from the keyboard. Press <kbd>?</kbd> anywhere to see this list.</p>
+      </div>
+      <button class="btn ghost sm" id="closeKeys" aria-label="Close">✕</button>
+    </div>
+    <div class="keys-body" id="keysBody"></div>
   </dialog>
 
   <dialog class="advisor report-dlg" id="reportDlg" aria-labelledby="repTitle">
