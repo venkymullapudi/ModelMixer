@@ -70,7 +70,8 @@ python3 scripts/bundle.py
 - **Overlapping skills**: two skills in the same place that disagree. No mix can satisfy both, and a router can't tell them apart.
 - **Strangers**: experts trained from different random inits. Task-vector methods are unavailable and plain averaging breaks until you turn on neuron alignment.
 - **Hard + easy**: a hard spiral next to easy blobs, which shows how merges wash out large updates.
-- **Digits**: image-like inputs. Experts tell 0 from 1 and 2 from 3 on noisy 8×8 digits, with 64 pixels in instead of 2 coordinates. The map becomes a gallery of test digits, and the method ranking changes noticeably from the plane toys.
+- **Digits**: image-like inputs. Experts tell 0 from 1 and 2 from 3 on noisy 8×8 digits, with 64 pixels in instead of 2 coordinates. The map becomes a gallery of test digits, and the method ranking changes noticeably from the plane toys. The insight panel adds **pixel saliency**: which pixels each merge reads, compared with the expert.
+- **Digits conflict**: A tells 0 from 1 and B tells 1 from 7. Both see 1s and disagree on them, so even the best merges reach only about 73%.
 
 You can also change any expert's skill, region, label inversion, network width and fine-tuning length. Digit skills come in six digit pairs.
 

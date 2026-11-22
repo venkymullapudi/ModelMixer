@@ -236,6 +236,11 @@
       desc: 'Image-like inputs: Expert A tells 0 from 1, Expert B tells 2 from 3, on noisy 8×8 digits (64 pixels in, not 2 coordinates). The map becomes a gallery of test digits: tint = predicted class, red ring = mistake.',
       experts: [{ task: 'd01' }, { task: 'd23' }], init: 'shared',
     },
+    {
+      id: 'digits-conflict', name: 'Digits conflict', tag: 'both see 1s',
+      desc: 'Expert A tells 0 from 1; Expert B tells 1 from 7. Both see 1s and label them oppositely, the image-world version of Overlapping skills: no single model can satisfy both on the 1s, and a router can’t tell whose 1 it is.',
+      experts: [{ task: 'd01' }, { task: 'd17' }], init: 'shared',
+    },
   ];
   // register the digit tasks after the plane tasks so menus list them last
   Object.assign(TASKS, DIGIT_TASKS);

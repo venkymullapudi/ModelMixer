@@ -377,5 +377,19 @@
     el('path', { d, fill: 'none', stroke: color, 'stroke-width': 1.5 }, svg);
   }
 
-  Object.assign(MM, { drawMap, drawDigits, drawBoundary, drawProvenance, lineChart, sparkline, MODEL_COLORS, BASE_COLOR, CLASS });
+  // 8×8 saliency heat map; `maxV` lets expert and merged maps share one colour scale.
+  function drawSaliency(cv, sal, maxV) {
+    const { ctx, w: W, h: H } = setup(cv);
+    const stops = [[12, 15, 28], [124, 58, 237], [251, 191, 36], [255, 255, 255]];
+    const cell = W / 8;
+    for (let q = 0; q < 64; q++) {
+      const t = Math.min(1, sal[q] / (maxV || 1e-9)) * (stops.length - 1);
+      const k = Math.min(stops.length - 2, Math.floor(t)), u = t - k;
+      const c = stops[k].map((a, i) => Math.round(a + (stops[k + 1][i] - a) * u));
+      ctx.fillStyle = `rgb(${c.join(',')})`;
+      ctx.fillRect((q % 8) * cell, Math.floor(q / 8) * (H / 8), cell + 0.5, H / 8 + 0.5);
+    }
+  }
+
+  Object.assign(MM, { drawSaliency, drawMap, drawDigits, drawBoundary, drawProvenance, lineChart, sparkline, MODEL_COLORS, BASE_COLOR, CLASS });
 })();

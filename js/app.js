@@ -1064,6 +1064,9 @@
       </div>
       ${info ? `<div class="section"><div class="sec-title">This mix, measured</div>${info}</div>` : ''}
       ${diag ? `<div class="section"><div class="sec-title">${r.kind === 'weights' ? 'Weight provenance' : 'Where the mixing happens'}</div>${diag}</div>` : ''}
+      ${!r.blocked && ctx.tasks[0].kind === 'digits' ? `<div class="section"><div class="sec-title">Where the merge looks <span class="hint">pixel saliency</span></div>
+        <div class="sal-grid" id="salGrid"><div class="muted small">Measuring…</div></div>
+        <p class="tiny muted">Which pixels move the prediction, for the expert and for the merge (each map scaled to its own peak). The match compares the patterns: high means the merge reads the digit the way the expert did. A high match with low accuracy means it looks at the right pixels but answers differently, which is the signature of a conflict.</p></div>` : ''}
       <div class="section"><div class="sec-title">${hasBase ? 'Task-vector geometry' : 'Raw weight similarity <span class="hint">(no base)</span>'}</div>${geoHtml}
         <p class="tiny muted">${hasBase ? 'Low cosine + high sign conflict = skills that fight when added together. That is what TIES and DARE are built for.' : 'Independently trained experts look unrelated in weight space. Turn on neuron alignment and watch the similarity jump — same functions, re-ordered neurons.'}</p></div>
       <div class="section oss">
@@ -1082,6 +1085,37 @@
       labels.push(['Blended', '#a884ff']);
       $('#provLegend').innerHTML = labels.map(([l, c], i) => `<div class="pl"><i style="background:${c}"></i>${l}<b>${pct(counts[i])}</b></div>`).join('');
     }
+    if (!r.blocked && ctx.tasks[0].kind === 'digits') renderSaliency(r, ctx);
+  }
+
+  // Pixel saliency (digit tasks): expert maps are cached per trained bundle; the merged map is computed after
+  // the frame so dragging a knob stays smooth.
+  const salCache = new WeakMap();
+  let salTimer = null;
+  function renderSaliency(r, ctx) {
+    clearTimeout(salTimer);
+    const Tnow = T;
+    salTimer = setTimeout(() => {
+      const el = $('#salGrid');
+      if (!el || T !== Tnow || r !== current) return;
+      let ex = salCache.get(Tnow);
+      if (!ex) { ex = ctx.tasks.map((t, k) => MM.digitSaliency((X, n) => MM.predictProb(ctx.layout, ctx.experts[k], X, n), t)); salCache.set(Tnow, ex); }
+      const mg = ctx.tasks.map((t) => MM.digitSaliency(r.predict, t));
+      el.innerHTML = ctx.tasks.map((t, k) => {
+        const cos = MM.mapCosine(ex[k], mg[k]);
+        return `<div class="sal-row" style="--c:${MM.MODEL_COLORS[k]}">
+          <div class="sal-lbl"><i class="dot"></i>${LETTERS[k]} · ${esc(MM.TASKS[t.spec.task].name)}</div>
+          <figure><canvas class="sal" id="salE${k}" role="img" aria-label="Expert ${LETTERS[k]} pixel saliency"></canvas><figcaption>expert</figcaption></figure>
+          <figure><canvas class="sal" id="salM${k}" role="img" aria-label="Merged model pixel saliency on task ${LETTERS[k]}"></canvas><figcaption>merged</figcaption></figure>
+          <div class="sal-score ${cos > 0.9 ? 'good' : cos > 0.7 ? 'mid' : 'bad'}"><b>${Math.round(cos * 100)}%</b><small>pattern match</small></div></div>`;
+      }).join('');
+      // each map is scaled to its own peak: confident experts barely move p, so a shared scale would hide them;
+      // the match score compares patterns (cosine), not magnitudes
+      ctx.tasks.forEach((t, k) => {
+        MM.drawSaliency($(`#salE${k}`), ex[k], Math.max(...ex[k]));
+        MM.drawSaliency($(`#salM${k}`), mg[k], Math.max(...mg[k]));
+      });
+    }, 120);
   }
 
   // ---------------- ARENA ----------------

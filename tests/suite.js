@@ -572,6 +572,20 @@ parameters:
       assert(MM.getRouter(c).acc > 0.95, 'router should tell 0/1 digits from 2/3 digits');
       return `RegMean ${pct(got.regmean)}, TIES ${pct(got.ties)}, Linear ${pct(got.linear)}`;
     });
+    test('Digit saliency: non-negative, matches itself, zero for a constant model; conflict scenario defined', () => {
+      const t = Td.tasks[0];
+      const ex = MM.digitSaliency((X, n) => MM.predictProb(Td.layout, Td.experts[0], X, n), t);
+      assert(ex.length === 64 && ex.every((v) => v >= 0) && ex.reduce((a, b) => a + b, 0) > 0, 'expert saliency');
+      assert(Math.abs(MM.mapCosine(ex, ex) - 1) < 1e-9, 'self match should be 1');
+      const flat = MM.digitSaliency((X, n) => new Float32Array(n).fill(0.7), t);
+      assert(flat.every((v) => v === 0), 'a constant model has zero saliency');
+      const sc = MM.SCENARIOS.find((s) => s.id === 'digits-conflict');
+      assert(sc && sc.experts.map((e) => e.task).join() === 'd01,d17', 'digits-conflict scenario');
+      // the conflict is real: "1" is class 1 for A (0 vs 1) and class 0 for B (1 vs 7)
+      assert(MM.TASKS.d01.pair[1] === 1 && MM.TASKS.d17.pair[0] === 1, 'both tasks contain the digit 1 on opposite sides');
+      const mg = MM.digitSaliency(MM.scoreMethod(Td, MM.bundleCtx(Td, false), 'linear', params('linear', 2)).predict, t);
+      return `Linear keeps ${Math.round(MM.mapCosine(ex, mg) * 100)}% of expert A's pixel pattern`;
+    });
     test('Digits: links round-trip and mixed kinds are rejected', () => {
       const base = { init: 'shared', hidden: 32, ftSteps: 250, seed: 7, align: false, method: 'ties', params: params('ties', 2), pin: null };
       const d = MM.decodeRecipe(MM.encodeRecipe(Object.assign({ experts: [{ task: 'd01' }, { task: 'd45', flip: true }] }, base)));

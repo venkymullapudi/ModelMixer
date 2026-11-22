@@ -627,3 +627,16 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
   table.board.robust th:first-child, table.board.robust td.rank { display: none; }
   .sweep-head .pill-mini, .robust-head .pill-mini { display: none; }
 }
+
+/* ---------- pixel saliency (digit tasks) ---------- */
+.sal-grid { display: flex; flex-direction: column; gap: 10px; }
+.sal-row { display: grid; grid-template-columns: minmax(0, 1fr) 64px 64px 60px; gap: 8px; align-items: center; }
+.sal-row .sal-lbl { font-size: 12px; color: #cdd3e3; display: flex; align-items: center; gap: 6px; }
+.sal-row .sal-lbl .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); display: inline-block; }
+.sal-row figure { margin: 0; text-align: center; }
+.sal-row canvas.sal { width: 64px; height: 64px; display: block; border-radius: 6px; image-rendering: pixelated; border: 1px solid var(--line); }
+.sal-row figcaption { font-size: 10.5px; color: var(--dim); margin-top: 2px; }
+.sal-score { text-align: center; }
+.sal-score b { display: block; font-family: var(--mono); font-size: 14px; }
+.sal-score small { font-size: 10px; color: var(--dim); }
+.sal-score.good b { color: #34d399; } .sal-score.mid b { color: #fbbf24; } .sal-score.bad b { color: #f87171; }

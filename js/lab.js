@@ -318,5 +318,28 @@
     return { best, safe, near: cnt ? near / cnt : 0, sensA: sensA / C, sensB: sensB / R };
   }
 
-  Object.assign(MM, { layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  // ---------- pixel saliency for digit tasks ----------
+  /** Mean |Δp| / δ when each of the 64 pixels is nudged by δ, over the first m test digits of a task. */
+  function digitSaliency(predict, task, m, delta) {
+    const D = MM.DIGIT_D;
+    m = Math.min(m || 80, task.test.n); delta = delta || 0.25;
+    const X = task.test.X.slice(0, m * D), X2 = new Float32Array(X);
+    const p0 = predict(X, m), sal = new Float32Array(D);
+    for (let q = 0; q < D; q++) {
+      for (let s = 0; s < m; s++) X2[s * D + q] = X[s * D + q] + delta;
+      const p = predict(X2, m);
+      let a = 0;
+      for (let s = 0; s < m; s++) a += Math.abs(p[s] - p0[s]);
+      sal[q] = a / (m * delta);
+      for (let s = 0; s < m; s++) X2[s * D + q] = X[s * D + q];
+    }
+    return sal;
+  }
+  function mapCosine(a, b) {
+    let d = 0, na = 0, nb = 0;
+    for (let i = 0; i < a.length; i++) { d += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+    return na > 0 && nb > 0 ? d / Math.sqrt(na * nb) : 0;
+  }
+
+  Object.assign(MM, { digitSaliency, mapCosine, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();
