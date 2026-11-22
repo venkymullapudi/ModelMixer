@@ -267,6 +267,19 @@ parameters:
         compare: { pinned: 'DARE · p 0.50', now: 'TIES · k 0.20', summary: 'B is better.', edge: 'No reliable difference.' },
       }));
       for (const t of ['How forgiving', 'Which layer', 'Is the winner real? (5 seeds)', 'Compared with the pinned', 'this recipe', '91.3% ± 3.2']) assert(b.html.includes(t), `missing "${t}"`);
+      assert(!a.html.includes('pixel saliency') && !a.markdown.includes('pixel saliency'), 'no saliency section for plane toys');
+      const c = MM.buildReport(Object.assign({}, base, { saliency: { mean: 0.6, tasks: [
+        { name: 'A · Digits 0 vs 1', match: 0.35, merged: 0.98, expert: 1, expertPng: 'data:image/png;base64,AAAA', mergedPng: 'data:image/png;base64,BBBB' },
+        { name: 'B · Digits 1 vs 7', match: 0.93, merged: 0.52, expert: 1 }] } }));
+      assert(c.html.includes('Where the merge looks') && c.html.includes('35% match') && c.html.includes('base64,BBBB'), 'saliency section in html');
+      assert(c.markdown.includes('| A · Digits 0 vs 1 | 35% |') && c.markdown.includes('conflict signature'), 'saliency table in markdown');
+    });
+    test('saliencyReading: the four match × accuracy cases', () => {
+      const r = (m, a) => MM.saliencyReading(m, a, 1).tone + ':' + MM.saliencyReading(m, a, 1).text.split(' ').slice(0, 3).join(' ');
+      assert(MM.saliencyReading(0.95, 0.97, 1).tone === 'good', r(0.95, 0.97));
+      assert(/another way/.test(MM.saliencyReading(0.35, 0.98, 1).text), r(0.35, 0.98));
+      assert(/conflict signature/.test(MM.saliencyReading(0.93, 0.52, 1).text), r(0.93, 0.52));
+      assert(/lost both/.test(MM.saliencyReading(0.4, 0.5, 1).text), r(0.4, 0.5));
     });
 
     // ---------- recipe advisor ----------

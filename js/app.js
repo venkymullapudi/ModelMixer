@@ -1922,6 +1922,23 @@ dtype: bfloat16
       c2.getContext('2d').drawImage(cv, 0, 0, 440, 440);
       mapPng = c2.toDataURL('image/png');
     } catch (e) { /* tainted or unavailable canvas: report without the image */ }
+    let saliency = null;
+    const ctx = getCtx();
+    if (ctx && ctx.tasks[0].kind === 'digits') {
+      const ex = expertMaps(ctx), row = MM.saliencyRow(ctx, r.predict, ex);
+      const png = (map) => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = c.height = 96;
+          MM.drawSaliency(c, map, Math.max(...map));
+          return c.toDataURL('image/png');
+        } catch (e) { return null; }
+      };
+      saliency = {
+        mean: row.mean,
+        tasks: T.tasks.map((t, i) => ({ name: `${LETTERS[i]} · ${taskName(t)}`, match: row.match[i], merged: r.accs[i], expert: T.expertAccs[i][i], expertPng: png(ex[i]), mergedPng: png(row.maps[i]) })),
+      };
+    }
     return {
       title: `${m.name} recipe report`, date: new Date().toISOString().slice(0, 10), link: recipeLink(),
       recipe: {
@@ -1936,7 +1953,7 @@ dtype: bfloat16
       mapPng,
       sensitivity: !$('#sweepPanel').hidden ? text('#sweepSum p') : null,
       layerMap: !$('#layerPanel').hidden ? text('#heatSum p') : null,
-      robust, compare,
+      robust, compare, saliency,
       method: { tagline: m.tagline, how: m.how, pros: m.pros, cons: m.cons, realWorld: m.realWorld || '', paper: m.paper, oss: m.oss },
       export: exp,
     };
