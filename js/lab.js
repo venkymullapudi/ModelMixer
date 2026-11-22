@@ -341,5 +341,31 @@
     return na > 0 && nb > 0 ? d / Math.sqrt(na * nb) : 0;
   }
 
-  Object.assign(MM, { digitSaliency, mapCosine, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  // ---------- undo / redo ----------
+  /**
+   * Snapshot history. record(snap, t, key) adds a snapshot (strings compared for equality); if the previous
+   * record had the same coalescing key and came within `windowMs`, it replaces the top instead (one undo step
+   * per slider drag). undo()/redo() return the snapshot to restore, or null.
+   */
+  function makeHistory(limit, windowMs) {
+    limit = limit || 100; windowMs = windowMs == null ? 700 : windowMs;
+    const past = [], future = [];
+    let lastT = -Infinity, lastKey = null;
+    return {
+      record(snap, t, key) {
+        if (past.length && past[past.length - 1] === snap) return false;
+        if (past.length > 1 && key != null && key === lastKey && t - lastT < windowMs) past[past.length - 1] = snap;
+        else { past.push(snap); if (past.length > limit) past.shift(); }
+        future.length = 0; lastT = t; lastKey = key;
+        return true;
+      },
+      undo() { if (past.length < 2) return null; future.push(past.pop()); lastKey = null; return past[past.length - 1]; },
+      redo() { if (!future.length) return null; past.push(future.pop()); lastKey = null; return past[past.length - 1]; },
+      canUndo: () => past.length > 1,
+      canRedo: () => future.length > 0,
+      size: () => past.length,
+    };
+  }
+
+  Object.assign(MM, { makeHistory, digitSaliency, mapCosine, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

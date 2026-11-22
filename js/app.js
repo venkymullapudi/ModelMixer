@@ -153,12 +153,55 @@
     }
   } catch (e) { /* storage unavailable */ }
   function persist() {
+    recordHistory();
     try {
       const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds, gridPair } = S;
       localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, paramsV: PARAMS_V, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds, gridPair }));
     } catch (e) { /* ignore */ }
     syncHash();
   }
+
+  // ---------------- undo / redo (recipe state: method, knobs, per-layer values, alignment, pin) ----------------
+  // Training settings are not recorded, so undo never triggers retraining.
+  const undoHistory = MM.makeHistory(100, 700); // not `history`: that would shadow window.history (share-link sync)
+  let restoring = false;
+  const recipeSnap = () => JSON.stringify({ method: S.method, params: S.params, align: S.align, pin: S.pin });
+  function recordHistory() {
+    if (restoring || !undoHistory) return;
+    // coalesce rapid edits to the same method (a slider drag) into one step
+    if (undoHistory.record(recipeSnap(), performance.now(), `${S.method}`)) updateUndoButtons();
+  }
+  function updateUndoButtons() {
+    const u = document.getElementById('undoBtn'), r = document.getElementById('redoBtn');
+    if (u) u.disabled = !undoHistory.canUndo();
+    if (r) r.disabled = !undoHistory.canRedo();
+  }
+  function restoreSnap(snap, verb) {
+    if (!snap) { toast(verb === 'Undo' ? 'Nothing to undo' : 'Nothing to redo'); return; }
+    const o = JSON.parse(snap);
+    const alignChanged = S.align !== o.align;
+    restoring = true;
+    S.method = o.method; S.params = o.params; S.align = o.align; S.pin = o.pin;
+    persist();
+    restoring = false;
+    arenaStale = robustStale = true;
+    renderPicker();
+    if (alignChanged) renderIngredients();
+    refresh();
+    updateUndoButtons();
+    toast(`${verb}: ${MM.recipeLabel(S.method, S.params[S.method], S.align, S.experts.length)}`);
+  }
+  const undo = () => restoreSnap(undoHistory.undo(), 'Undo');
+  const redo = () => restoreSnap(undoHistory.redo(), 'Redo');
+  document.addEventListener('keydown', (ev) => {
+    if (!(ev.metaKey || ev.ctrlKey) || ev.altKey) return;
+    const t = ev.target;
+    // leave text editing alone (textareas, text fields, contenteditable)
+    if (t && (t.tagName === 'TEXTAREA' || (t.tagName === 'INPUT' && !/^(range|checkbox|radio|button)$/i.test(t.type)) || t.isContentEditable)) return;
+    const k = ev.key.toLowerCase();
+    if (k === 'z' && !ev.shiftKey) { ev.preventDefault(); undo(); }
+    else if ((k === 'z' && ev.shiftKey) || k === 'y') { ev.preventDefault(); redo(); }
+  });
 
   // ---------------- shareable recipe links (#r=…) ----------------
   let hashTimer;
@@ -495,7 +538,10 @@
             <input type="range" aria-label="${nm} ${esc(g.label)}" data-grad="${l}" min="${g.min}" max="${g.max}" step="${g.step}" value="${p.grad[l]}" /><b data-gout="${l}">${gfmt(p.grad[l])}</b></div>`).join('')}
           <div class="gpresets"><span class="tiny muted">Presets</span>${[['flat', 'Flat'], ['up', 'Ramp ↑'], ['down', 'Ramp ↓'], ['mid', 'Middle-heavy']].map(([k, l]) => `<button class="tg" data-gpreset="${k}">${l}</button>`).join('')}</div>` : ''}
       </div>` : '';
-    $('#controls').innerHTML = `<div class="block-title">Recipe</div>${rows.join('') || (grad ? '' : '<p class="muted small">No knobs — this method decides everything from the weights themselves.</p>')}${grad}
+    const mac = /Mac|iP(hone|ad)/.test(navigator.platform || navigator.userAgent);
+    $('#controls').innerHTML = `<div class="block-title recipe-title">Recipe<span class="undo-row">
+        <button class="btn ghost sm icon" id="undoBtn" title="Undo (${mac ? '⌘Z' : 'Ctrl+Z'})" aria-label="Undo">⟲</button>
+        <button class="btn ghost sm icon" id="redoBtn" title="Redo (${mac ? '⇧⌘Z' : 'Ctrl+Y'})" aria-label="Redo">⟳</button></span></div>${rows.join('') || (grad ? '' : '<p class="muted small">No knobs — this method decides everything from the weights themselves.</p>')}${grad}
       <button class="btn ghost sm reset" id="resetParams">Reset to defaults</button>`;
   }
   const fmt = (v, step) => (step >= 1 ? String(v) : (+v).toFixed(step < 0.01 ? 3 : 2));
@@ -534,6 +580,8 @@
   $('#controls').addEventListener('click', (ev) => {
     const b = ev.target.closest('button');
     if (!b) return;
+    if (b.id === 'undoBtn') { undo(); return; }
+    if (b.id === 'redoBtn') { redo(); return; }
     const p = S.params[S.method];
     if (b.dataset.gpreset) {
       const g = MM.METHOD_BY_ID[S.method].gradient;
@@ -614,7 +662,7 @@
     refresh();
   });
   function refresh(light) {
-    if (!light) renderControls();
+    if (!light) { renderControls(); updateUndoButtons(); }
     const ctx = getCtx();
     const m = MM.METHOD_BY_ID[S.method];
     renderStageHead(m, null);
@@ -2019,6 +2067,8 @@ dtype: bfloat16
   renderIngredients();
   renderPicker();
   renderControls();
+  recordHistory(); // the starting point you can undo back to
+  updateUndoButtons();
   renderStageHead(MM.METHOD_BY_ID[S.method], null);
   setTab(S.tab === 'lab' || S.tab === 'atlas' || S.tab === 'export' || S.tab === 'arena' ? S.tab : 'lab');
   train();

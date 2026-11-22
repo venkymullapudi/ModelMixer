@@ -218,6 +218,22 @@ parameters:
       assert(big.ok && big.params.lambda === 2 && big.warnings.some((w) => /clamped/.test(w)), `λ should clamp to the lab range: ${JSON.stringify(big.params)}`);
     });
 
+    // ---------- undo / redo ----------
+    test('makeHistory: push, coalesce drags, undo/redo, redo cleared by a new change, limit', () => {
+      const h = MM.makeHistory(4, 500);
+      h.record('a', 0, null);
+      assert(!h.canUndo() && !h.record('a', 10, null), 'initial state; identical snapshot ignored');
+      h.record('b1', 1000, 'k'); h.record('b2', 1200, 'k'); h.record('b3', 1400, 'k'); // one drag → one step
+      assert(h.size() === 2, `drag should coalesce: size ${h.size()}`);
+      h.record('c', 3000, 'k'); // same key but later → new step
+      assert(h.undo() === 'b3' && h.undo() === 'a' && h.undo() === null, 'undo walks back');
+      assert(h.redo() === 'b3' && h.canRedo(), 'redo walks forward');
+      h.record('d', 5000, 'x');
+      assert(!h.canRedo(), 'a new change clears redo');
+      for (const s of ['e', 'f', 'g', 'h']) h.record(s, 9000 + s.charCodeAt(0) * 1000, s);
+      assert(h.size() === 4, `limit: ${h.size()}`);
+    });
+
     // ---------- recipe report ----------
     test('buildReport: sections, escaping, and nothing invented for checks that were not run', () => {
       const base = {

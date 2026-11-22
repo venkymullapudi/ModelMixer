@@ -651,3 +651,9 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
 .report-dlg .rep-actions { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; justify-content: flex-end; }
 .report-dlg iframe { width: 100%; height: min(72vh, 900px); border: 0; background: #fff; display: block; }
 @media (max-width: 820px) { .report-dlg .adv-head { flex-direction: column; } .report-dlg .rep-actions { justify-content: flex-start; } }
+
+/* undo / redo */
+.block-title.recipe-title { display: flex; align-items: center; justify-content: space-between; }
+.undo-row { display: inline-flex; gap: 4px; }
+.btn.icon { padding: 2px 8px; font-size: 14px; line-height: 1.2; }
+.btn.icon:disabled { opacity: 0.35; cursor: default; }

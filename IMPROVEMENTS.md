@@ -17,11 +17,11 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 ## Next up (highest value first)
 
 1. **First-run tour:** a skippable 5-step guided tour (scenario → method → knobs → compare / Arena → Export) for first-time visitors, keyboard-accessible, shown once.
-2. **Undo / redo:** ⌘Z / ⇧⌘Z (and buttons) for recipe changes in the Lab (method, knobs, per-layer values, pin), so exploring is safe.
-3. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
+2. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
 
 ## Done
 
+- 2026-11-22: **Undo / redo.** ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y) and ⟲ ⟳ buttons in the Recipe header undo and redo recipe changes: method, every knob and per-layer value, alignment and the pin. Training settings aren't recorded, so undo never retrains. History is recorded at the app's single `persist()` point, and rapid edits to one method (a slider drag) coalesce into one step (`makeHistory` in `js/lab.js`, limit 100). The shortcuts are ignored while typing in text fields, and a toast names the restored recipe. A bug was caught before shipping: naming the stack `history` would have shadowed `window.history` and silently broken the share-link hash sync. Verified with real key presses (drag coalescing, redo, buttons, hash sync, text-box ⌘Z). 1 test (63 total). axe 0, phone ✓.
 - 2026-11-22: **Recipe report.** A 📄 Report button in the top bar turns the current recipe into one page you can print or save as PDF, download as self-contained HTML, or copy as Markdown. It contains:
   - the recipe (method, settings label, scenario and experts, lineage and alignment, training);
   - the result on the toy (decision-map snapshot, per-task merged / expert / base, average, retention, cost);
