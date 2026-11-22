@@ -50,7 +50,7 @@ python3 scripts/bundle.py
 | **Report** | 📄 in the top bar turns the current recipe into one printable page (PDF, HTML or Markdown): settings, results with the decision map, any checks you ran (sensitivity, multi-seed, comparison), method notes and the mergekit config. Hand it to a teammate before the real merge. |
 | **Share** | 🔗 in the top bar copies a link (`…/modelmixer.html#r=…`) that reopens the exact recipe: experts, training settings, method, knobs, alignment and any pinned comparison. The address bar stays in sync too. |
 | **Recipe advisor** | ✨ in the top bar: answer 7 questions about your real models (shared base? data? training budget? how you serve?) and get ranked recipes with reasons, caveats and ruled-out methods. Each pick is also measured over 3 seeds on the closest toy scenario: points on a plane, 8×8 digits, or both, and with both the advisor flags when the two kinds of data disagree. If a lower pick beats the rules' #1 on the paired test, it is re-ranked to #1, and the verdict says why. Open a pick in the Lab on the closest scenario, or jump to Export. |
-| **Atlas** | A capability matrix (needs base? data? training? single-model inference? tolerates different inits? handles interference?), a "which mix should I reach for" guide, method families and a glossary. |
+| **Atlas** | A **recipe gallery** of one-click A-vs-B lessons (each test-guarded), a capability matrix (needs base? data? training? single-model inference? tolerates different inits? handles interference?), a "which mix should I reach for" guide, method families and a glossary. |
 | **Export / Import** | Generates the matching mergekit (`mergekit-yaml` / `mergekit-moe`) config from your lab recipe, plus pointers to open-source implementations for methods mergekit doesn't cover. **Import** goes the other way: paste a mergekit YAML (including gradient lists, passthrough slices and mergekit-moe) to load it as a Lab recipe, with anything approximated spelled out. |
 
 ### Mixing methods
@@ -119,6 +119,7 @@ js/advisor.js       recipe advisor rules (situation → ranked methods)
 js/share.js         recipe ⇄ URL-safe link encoding with strict validation
 js/mkimport.js      mergekit YAML → lab recipe (YAML-subset parser + method mapper)
 js/report.js        recipe report builder (self-contained HTML + Markdown)
+js/gallery.js       curated A-vs-B example recipes with test-guarded lessons
 js/viz.js           decision-boundary canvases, provenance maps, SVG charts
 js/app.js           state, training loop, Lab / Arena / Atlas / Export views
 scripts/bundle.py   inlines everything into dist/modelmixer.html (--tests: browser test page)

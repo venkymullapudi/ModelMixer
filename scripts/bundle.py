@@ -21,7 +21,7 @@ print(f"wrote {out} ({len(html)/1024:.0f} KB)")
 # runs tests/suite.js in a browser (handy where Node isn't installed). It is git-ignored.
 import sys
 if "--tests" in sys.argv:
-    eng = "".join("<script>\n" + (root / f"js/{f}.js").read_text() + "\n</script>\n" for f in ["nn", "data", "methods", "merge", "lab", "advisor", "share", "mkimport", "report"])
+    eng = "".join("<script>\n" + (root / f"js/{f}.js").read_text() + "\n</script>\n" for f in ["nn", "data", "methods", "merge", "lab", "advisor", "share", "mkimport", "report", "gallery"])
     eng += "<script>\n" + (root / "tests/suite.js").read_text() + "\n</script>\n"
     eng += """<script>
 setTimeout(() => { const t0 = performance.now(); const res = MMTests.run(MM); window.RES = res;

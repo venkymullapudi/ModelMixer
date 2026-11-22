@@ -668,3 +668,13 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
 .tour-nav .tour-gap { flex: 1; }
 .tour-btn { min-width: 34px; justify-content: center; font-weight: 800; }
 @media (prefers-reduced-motion: reduce) { .tour-spot { transition: none; } }
+
+/* ---------- recipe gallery ---------- */
+.section-sub { margin: -6px 0 12px; font-size: 13px; }
+.gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-bottom: 8px; }
+.gal-card { display: flex; flex-direction: column; gap: 8px; }
+.gal-card h3 { margin: 0; font-size: 14.5px; }
+.gal-card p { margin: 0; font-size: 12.5px; line-height: 1.55; color: #cdd3e3; flex: 1; }
+.gal-meta { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; }
+.gal-vs b { color: #a78bfa; }
+.gal-card .btn { align-self: flex-start; }

@@ -16,12 +16,19 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Recipe gallery:** a handful of curated, one-click example recipes with a one-line lesson each (e.g. the classic mergekit SLERP gradient; TIES vs DARE on a conflict; why averaging strangers needs alignment; RegMean when you have data), loaded through share links.
-2. **Browser checks in CI:** run the axe audit and `scripts/phone_audit.py` in GitHub Actions (Playwright plus Chromium), so accessibility and phone layout can't silently regress.
-3. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
+1. **Browser checks in CI:** run the axe audit and `scripts/phone_audit.py` in GitHub Actions (Playwright plus Chromium), so accessibility and phone layout can't silently regress.
+2. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
 
 ## Done
 
+- 2026-11-22: **Recipe gallery** (Atlas → "Learn by example"). Five cards, each opening A (pinned) vs B (live) in the Lab through a share link, with a one-line lesson:
+  - per-layer SLERP beats a flat t (85.8 → 93.1);
+  - a little data → RegMean (89.0 → 100);
+  - align before averaging strangers (75.4 → 80.1);
+  - AdaMerging on image inputs (86.8 → 95.3);
+  - conflicting skills have a ceiling (TIES 77.9, MoE 84.4, experts ~100).
+
+  Each lesson was measured on 3 seeds before writing it. Two "Hard + easy" lessons flipped across seeds and were left out. Every card carries an `expect` that a test checks on seed 7 (`MM.checkLesson`), so a lesson can't silently become false if a default or the engine changes. `js/gallery.js`, 1 test (64 total). axe 0, phone ✓.
 - 2026-11-22: **First-run tour.** Five steps (scenario, methods, recipe knobs, results and compare, advisor / Arena / Report / Export) with a spotlight and a popover that stays on screen. It shows once, after the first training finishes, and is remembered in `localStorage`; the **?** button in the top bar restarts it. Keyboard: ← → Enter, Esc to skip, focus on Next. The screenshot and phone-audit scripts mark it as seen so it never appears in captures. Verified on desktop and at 375 px: every step on screen with the spotlight on its target, Done and reload behave, the restart button works, and axe reports 0 with the tour open.
 - 2026-11-22: **Undo / redo.** ⌘Z / ⇧⌘Z (Ctrl+Z / Ctrl+Y) and ⟲ ⟳ buttons in the Recipe header undo and redo recipe changes: method, every knob and per-layer value, alignment and the pin. Training settings aren't recorded, so undo never retrains. History is recorded at the app's single `persist()` point, and rapid edits to one method (a slider drag) coalesce into one step (`makeHistory` in `js/lab.js`, limit 100). The shortcuts are ignored while typing in text fields, and a toast names the restored recipe. A bug was caught before shipping: naming the stack `history` would have shadowed `window.history` and silently broken the share-link hash sync. Verified with real key presses (drag coalescing, redo, buttons, hash sync, text-box ⌘Z). 1 test (63 total). axe 0, phone ✓.
 - 2026-11-22: **Recipe report.** A 📄 Report button in the top bar turns the current recipe into one page you can print or save as PDF, download as self-contained HTML, or copy as Markdown. It contains:

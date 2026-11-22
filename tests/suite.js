@@ -684,6 +684,21 @@ parameters:
       return `${pct(raw.avg)} → ${pct(al.avg)}`;
     });
 
+    // ---------- recipe gallery: every lesson must still be true ----------
+    test('Gallery: every card encodes to a valid link, and its lesson holds on seed 7', () => {
+      const bundles = { two: T, strangers: Ts, digits: Td };
+      const out = [];
+      for (const g of MM.GALLERY) {
+        const d = MM.decodeRecipe(MM.encodeRecipe(MM.galleryRecipe(g)));
+        assert(d.ok && d.recipe.method === g.B.method && d.recipe.pin && d.recipe.pin.method === g.A.method, `${g.id}: link round-trip`);
+        if (!bundles[g.scenario]) bundles[g.scenario] = MM.trainBundleSync(scenario(g.scenario));
+        const c = MM.checkLesson(g, bundles[g.scenario]);
+        assert(c.ok, `${g.id}: lesson no longer holds (A ${pct(c.a)}, B ${pct(c.b)}, experts ${pct(c.experts)})`);
+        out.push(`${g.id} A ${pct(c.a)} → B ${pct(c.b)}`);
+      }
+      return out.join('; ');
+    });
+
     return results;
   }
 
