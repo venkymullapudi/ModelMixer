@@ -17,10 +17,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Skip link and landmarks:** a "Skip to recipe" link and named regions, so keyboard and screen-reader users don't tab through all 18 method chips (the keyboard audit needs 24 Tab presses to reach the picker and about 60 to reach the edge check).
-2. **Saliency reading in the Lab:** reuse the report's four-way reading (keeps the skill / solves it another way / conflict signature / lost) as a one-line verdict under the Lab's saliency maps, so the interpretation isn't only in the report.
+1. **Saliency reading in the Lab:** reuse the report's four-way reading (keeps the skill / solves it another way / conflict signature / lost) as a one-line verdict under the Lab's saliency maps, so the interpretation isn't only in the report.
+2. **Keyboard shortcuts sheet:** a `?`-style shortcuts list (Shift+/ or in the tour) covering ⌘Z / ⇧⌘Z, arrow keys in the picker and tabs, Esc in dialogs, and the skip links, so keyboard users can discover them.
 
 ## Done
+
+- 2026-11-22: **Skip links, a one-stop method picker, and named regions.** Three hidden-until-focused skip links (methods, recipe knobs, results) are the first Tab stops. They move focus with script instead of `#anchor` navigation, because the URL hash holds the shareable recipe; the keyboard audit checks the hash is unchanged. The 18-chip method picker is now a `role="toolbar"` with a roving tab stop: one Tab stop, arrows move, Enter picks, and leaving resets the stop to the chosen method. The recipe column, knobs and scorecard are named regions. Measured with the keyboard audit: from the picker to Pin went from 13 Tab presses to 1, and the compare edge check from 62 to 46. The skip links first tripped the phone audit (positioned 9,999 px off-screen); they now use the clip technique. Keyboard audit +4 steps (skip link first, visible, lands in the knobs, keeps the hash). axe 0, phone 18/18, 67 tests.
 
 - 2026-11-22: **Saliency in the recipe report.** On a digit scenario the report gains a "Where the merge looks" section. For each task it shows the expert's and the merge's 8×8 saliency maps (embedded PNGs in the HTML), the pattern match (pill coloured like the app: >90% green, >70% amber), merged vs expert accuracy, and a one-line reading. The Markdown export gets the same as a table without images. The reading comes from a pure `saliencyReading(match, merged, expert)` in `js/report.js`, with four cases: keeps the skill with the same pixels; keeps it but reads different pixels (solves it another way, e.g. MoE: 35% match at 98.9%); right pixels but wrong answers (the conflict signature, e.g. TIES on Digits conflict: 87% match at 81.7% / 61.7%); or lost both. Plane reports are unchanged. 1 new test plus report-test assertions (67 total). axe 0 and keyboard flow pass.
 

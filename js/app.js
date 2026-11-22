@@ -493,7 +493,7 @@
         <div class="fam-name"><i></i>${f.name}</div>
         <div class="chips">${ms.map((m) => {
           const locked = m.req.base && !hasBase;
-          return `<button class="chip ${m.id === S.method ? 'active' : ''} ${locked ? 'locked' : ''}" data-method="${m.id}" title="${esc(m.tagline)}${locked ? ' — needs a shared base' : ''}">${locked ? '<span class="lock">🔒</span>' : ''}${m.short}</button>`;
+          return `<button class="chip ${m.id === S.method ? 'active' : ''} ${locked ? 'locked' : ''}" data-method="${m.id}" tabindex="${m.id === S.method ? 0 : -1}" title="${esc(m.tagline)}${locked ? ' — needs a shared base' : ''}">${locked ? '<span class="lock">🔒</span>' : ''}${m.short}</button>`;
         }).join('')}</div>
       </div>`;
     });
@@ -2154,7 +2154,29 @@ dtype: bfloat16
     const j = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: chips.length - 1 }[ev.key];
     if (j === undefined) return;
     ev.preventDefault();
-    chips[(j + chips.length) % chips.length].focus();
+    // roving tab stop: the picker is one Tab stop, arrows move inside it
+    const next = chips[(j + chips.length) % chips.length];
+    chips.forEach((c) => { c.tabIndex = c === next ? 0 : -1; });
+    next.focus();
+  });
+  // leaving the picker resets its tab stop to the chosen method
+  $('#picker').addEventListener('focusout', (ev) => {
+    if ($('#picker').contains(ev.relatedTarget)) return;
+    $$('#picker button.chip').forEach((c) => { c.tabIndex = c.dataset.method === S.method ? 0 : -1; });
+  });
+
+  // Skip links move focus without touching location.hash (the hash holds the shareable recipe)
+  document.querySelector('.skip-links').addEventListener('click', (ev) => {
+    const a = ev.target.closest('[data-skip]');
+    if (!a) return;
+    ev.preventDefault();
+    if (S.tab !== 'lab') setTab('lab');
+    const box = document.getElementById(a.dataset.skip);
+    const first = a.dataset.skip === 'picker' ? box.querySelector('button.chip.active') || box.querySelector('button')
+      : a.dataset.skip === 'controls' ? box.querySelector('input, select, button:not([disabled])') : null;
+    const target = first || box;
+    target.scrollIntoView({ block: 'center' });
+    target.focus({ preventScroll: true });
   });
 
   // Keep aria-pressed in step with the visual "on"/"active" state of every toggle-like button.

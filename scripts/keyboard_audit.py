@@ -57,8 +57,19 @@ def run(pg):
     pg.goto((ROOT / 'dist/modelmixer.html').as_uri())
     pg.wait_for_function(READY, timeout=120000)
 
+    # 0. skip links: the very first Tab lands on one; Enter jumps to the knobs without touching the recipe hash
+    pg.keyboard.press('Tab')
+    step('first Tab focuses a skip link', pg.evaluate("() => document.activeElement.classList.contains('skip-link')"),
+         pg.evaluate("() => document.activeElement.textContent.trim()"))
+    step('a focused skip link is visible', pg.evaluate("() => { const r = document.activeElement.getBoundingClientRect(); return r.width > 20 && r.left >= 0 && r.top >= 0; }"))
+    if tab_to(pg, '[data-skip="controls"]', 'Skip to recipe knobs'):
+        hash0 = pg.evaluate("() => location.hash")
+        pg.keyboard.press('Enter'); pg.wait_for_timeout(200)
+        step('Enter on the skip link lands in the knobs', pg.evaluate("() => document.querySelector('#controls').contains(document.activeElement)"))
+        step('skip link keeps the recipe link', pg.evaluate("() => location.hash") == hash0)
+
     # 1. scenario: Tab to "Conflicting skills" (overlap) and press Enter → retrains
-    if tab_to(pg, '[data-scenario="overlap"]', 'the Overlap scenario'):
+    if tab_to(pg, '[data-scenario="overlap"]', 'the Overlap scenario', back=True):
         pg.keyboard.press('Enter')
         pg.wait_for_timeout(300); pg.wait_for_function(READY, timeout=120000)
         step('Enter picks the scenario', pg.evaluate("() => document.querySelector('[data-scenario=\"overlap\"]').classList.contains('active')"))

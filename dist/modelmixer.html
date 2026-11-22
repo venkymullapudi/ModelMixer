@@ -721,9 +721,20 @@ button.asal-row:hover { border-color: var(--line); background: var(--panel); }
 /* text fields and selects suppress the default outline above; give keyboard users the same ring as everything else */
 select:focus-visible, input[type='text']:focus-visible, input[type='number']:focus-visible, .field input:focus-visible, textarea:focus-visible { outline: 2px solid #a78bfa; outline-offset: 1px; }
 
+/* ---------- skip links: hidden until focused ---------- */
+.skip-links { position: absolute; left: 8px; top: 8px; z-index: 100; display: flex; gap: 8px; }
+.skip-link { padding: 8px 14px; border-radius: 10px; background: var(--panel-solid); color: #fff; border: 1px solid #a78bfa; font-weight: 600; font-size: 13px; text-decoration: none; white-space: nowrap; }
+.skip-link:not(:focus) { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
+#controls:focus-visible, #metrics:focus-visible, #picker:focus-visible { outline-offset: 4px; }
+
 </style>
 </head>
 <body>
+  <nav class="skip-links" aria-label="Skip links">
+    <a class="skip-link" href="#picker" data-skip="picker">Skip to methods</a>
+    <a class="skip-link" href="#controls" data-skip="controls">Skip to recipe knobs</a>
+    <a class="skip-link" href="#metrics" data-skip="metrics">Skip to results</a>
+  </nav>
   <header class="topbar">
     <div class="brand">
       <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
@@ -753,8 +764,8 @@ select:focus-visible, input[type='text']:focus-visible, input[type='number']:foc
       <div class="lab">
         <aside class="panel ingredients" id="ingredients" aria-label="Ingredients: the experts you mix"></aside>
 
-        <section class="center">
-          <div class="panel picker" id="picker"></div>
+        <section class="center" aria-label="Recipe and results">
+          <div class="panel picker" id="picker" role="toolbar" aria-label="Merging method (arrow keys move, Enter picks)" tabindex="-1"></div>
           <div class="panel stage">
             <div class="stage-head" id="stageHead"></div>
             <div class="stage-body">
@@ -786,8 +797,8 @@ select:focus-visible, input[type='text']:focus-visible, input[type='number']:foc
                 </div>
               </div>
               <div class="side">
-                <div class="block" id="controls"></div>
-                <div class="block" id="metrics"></div>
+                <div class="block" id="controls" role="region" aria-label="Recipe knobs" tabindex="-1"></div>
+                <div class="block" id="metrics" role="region" aria-label="Scorecard" tabindex="-1"></div>
               </div>
             </div>
           </div>
@@ -4689,7 +4700,7 @@ ${parts.join('\n')}
         <div class="fam-name"><i></i>${f.name}</div>
         <div class="chips">${ms.map((m) => {
           const locked = m.req.base && !hasBase;
-          return `<button class="chip ${m.id === S.method ? 'active' : ''} ${locked ? 'locked' : ''}" data-method="${m.id}" title="${esc(m.tagline)}${locked ? ' — needs a shared base' : ''}">${locked ? '<span class="lock">🔒</span>' : ''}${m.short}</button>`;
+          return `<button class="chip ${m.id === S.method ? 'active' : ''} ${locked ? 'locked' : ''}" data-method="${m.id}" tabindex="${m.id === S.method ? 0 : -1}" title="${esc(m.tagline)}${locked ? ' — needs a shared base' : ''}">${locked ? '<span class="lock">🔒</span>' : ''}${m.short}</button>`;
         }).join('')}</div>
       </div>`;
     });
@@ -6350,7 +6361,29 @@ dtype: bfloat16
     const j = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: chips.length - 1 }[ev.key];
     if (j === undefined) return;
     ev.preventDefault();
-    chips[(j + chips.length) % chips.length].focus();
+    // roving tab stop: the picker is one Tab stop, arrows move inside it
+    const next = chips[(j + chips.length) % chips.length];
+    chips.forEach((c) => { c.tabIndex = c === next ? 0 : -1; });
+    next.focus();
+  });
+  // leaving the picker resets its tab stop to the chosen method
+  $('#picker').addEventListener('focusout', (ev) => {
+    if ($('#picker').contains(ev.relatedTarget)) return;
+    $$('#picker button.chip').forEach((c) => { c.tabIndex = c.dataset.method === S.method ? 0 : -1; });
+  });
+
+  // Skip links move focus without touching location.hash (the hash holds the shareable recipe)
+  document.querySelector('.skip-links').addEventListener('click', (ev) => {
+    const a = ev.target.closest('[data-skip]');
+    if (!a) return;
+    ev.preventDefault();
+    if (S.tab !== 'lab') setTab('lab');
+    const box = document.getElementById(a.dataset.skip);
+    const first = a.dataset.skip === 'picker' ? box.querySelector('button.chip.active') || box.querySelector('button')
+      : a.dataset.skip === 'controls' ? box.querySelector('input, select, button:not([disabled])') : null;
+    const target = first || box;
+    target.scrollIntoView({ block: 'center' });
+    target.focus({ preventScroll: true });
   });
 
   // Keep aria-pressed in step with the visual "on"/"active" state of every toggle-like button.

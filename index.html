@@ -12,6 +12,11 @@
   <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
+  <nav class="skip-links" aria-label="Skip links">
+    <a class="skip-link" href="#picker" data-skip="picker">Skip to methods</a>
+    <a class="skip-link" href="#controls" data-skip="controls">Skip to recipe knobs</a>
+    <a class="skip-link" href="#metrics" data-skip="metrics">Skip to results</a>
+  </nav>
   <header class="topbar">
     <div class="brand">
       <svg viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">
@@ -41,8 +46,8 @@
       <div class="lab">
         <aside class="panel ingredients" id="ingredients" aria-label="Ingredients: the experts you mix"></aside>
 
-        <section class="center">
-          <div class="panel picker" id="picker"></div>
+        <section class="center" aria-label="Recipe and results">
+          <div class="panel picker" id="picker" role="toolbar" aria-label="Merging method (arrow keys move, Enter picks)" tabindex="-1"></div>
           <div class="panel stage">
             <div class="stage-head" id="stageHead"></div>
             <div class="stage-body">
@@ -74,8 +79,8 @@
                 </div>
               </div>
               <div class="side">
-                <div class="block" id="controls"></div>
-                <div class="block" id="metrics"></div>
+                <div class="block" id="controls" role="region" aria-label="Recipe knobs" tabindex="-1"></div>
+                <div class="block" id="metrics" role="region" aria-label="Scorecard" tabindex="-1"></div>
               </div>
             </div>
           </div>
