@@ -27,6 +27,8 @@
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
     const ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // canvas state persists between draws (e.g. region labels leave textAlign = 'center'), so start clean
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.setLineDash([]); ctx.globalAlpha = 1;
     return { ctx, w, h };
   }
 

@@ -620,3 +620,10 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
 .mk-list { margin: 6px 0 0; padding-left: 18px; font-size: 12.5px; line-height: 1.5; }
 .mk-warn { margin-top: 8px; color: #fbbf24; }
 .mk-warn .mk-list { color: var(--text); }
+
+/* ---------- phone tweaks ---------- */
+@media (max-width: 560px) {
+  .rtrack { min-width: 120px; }
+  table.board.robust th:first-child, table.board.robust td.rank { display: none; }
+  .sweep-head .pill-mini, .robust-head .pill-mini { display: none; }
+}

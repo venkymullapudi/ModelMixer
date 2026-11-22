@@ -633,6 +633,13 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
 .mk-warn { margin-top: 8px; color: #fbbf24; }
 .mk-warn .mk-list { color: var(--text); }
 
+/* ---------- phone tweaks ---------- */
+@media (max-width: 560px) {
+  .rtrack { min-width: 120px; }
+  table.board.robust th:first-child, table.board.robust td.rank { display: none; }
+  .sweep-head .pill-mini, .robust-head .pill-mini { display: none; }
+}
+
 </style>
 </head>
 <body>
@@ -3251,6 +3258,8 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
     const ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // canvas state persists between draws (e.g. region labels leave textAlign = 'center'), so start clean
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.setLineDash([]); ctx.globalAlpha = 1;
     return { ctx, w, h };
   }
 
