@@ -48,6 +48,8 @@ with sync_playwright() as p:
     pg.click('[data-tab="arena"]'); pg.wait_for_function("() => /methods compared/.test(document.querySelector('#statusText').textContent)", timeout=120000)
     pg.click('#runArenaSal'); pg.wait_for_function("() => /saliency for \\d+ methods/.test(document.querySelector('#statusText').textContent)", timeout=120000)
     out.append(audit(pg, "digits arena + saliency", "#tab-arena"))
+    pg.click('[data-tab="lab"]'); pg.wait_for_function("() => !!document.querySelector('#salGrid .sal-read')", timeout=30000)
+    out.append(audit(pg, "digits lab saliency + readings", "#insight"))
     b.close()
 
 seen = {}

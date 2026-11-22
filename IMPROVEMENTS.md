@@ -17,10 +17,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Saliency reading in the Lab:** reuse the report's four-way reading (keeps the skill / solves it another way / conflict signature / lost) as a one-line verdict under the Lab's saliency maps, so the interpretation isn't only in the report.
-2. **Keyboard shortcuts sheet:** a `?`-style shortcuts list (Shift+/ or in the tour) covering ⌘Z / ⇧⌘Z, arrow keys in the picker and tabs, Esc in dialogs, and the skip links, so keyboard users can discover them.
+1. **Keyboard shortcuts sheet:** a `?`-style shortcuts list (Shift+/ or in the tour) covering ⌘Z / ⇧⌘Z, arrow keys in the picker and tabs, Esc in dialogs, and the skip links, so keyboard users can discover them.
+2. **Saliency across seeds:** the pattern match moves with the seed. Show its spread over the Arena's multi-seed bundles (already cached) so "reads different pixels" isn't a one-seed artifact.
 
 ## Done
+
+- 2026-11-22: **Saliency reading in the Lab.** Under each task's expert and merged maps, the Lab's insight panel now shows a one-line verdict (✓ / ↻ / ⚠) from the same `saliencyReading` rule the report uses, with merged vs expert accuracy. Examples: RegMean on Digits, task A: "keeps the skill and reads the same pixels"; TIES on Digits conflict, task B: "looks at the right pixels but answers wrongly: the conflict signature". Verifying it caught a wording over-claim: "solves it another way" used to say "e.g. through a router" even for RegMean, which has none. The rule now names the router only when the merge has one (MoE), and otherwise suggests checking on inputs unlike the test set; the report uses the same wording, and there is a test for it (67 total). The axe audit now also covers the Lab insight panel on Digits (0 violations). Keyboard and phone gates pass (18/18).
 
 - 2026-11-22: **Skip links, a one-stop method picker, and named regions.** Three hidden-until-focused skip links (methods, recipe knobs, results) are the first Tab stops. They move focus with script instead of `#anchor` navigation, because the URL hash holds the shareable recipe; the keyboard audit checks the hash is unchanged. The 18-chip method picker is now a `role="toolbar"` with a roving tab stop: one Tab stop, arrows move, Enter picks, and leaving resets the stop to the chosen method. The recipe column, knobs and scorecard are named regions. Measured with the keyboard audit: from the picker to Pin went from 13 Tab presses to 1, and the compare edge check from 62 to 46. The skip links first tripped the phone audit (positioned 9,999 px off-screen); they now use the clip technique. Keyboard audit +4 steps (skip link first, visible, lands in the knobs, keeps the hash). axe 0, phone 18/18, 67 tests.
 

@@ -726,6 +726,9 @@ select:focus-visible, input[type='text']:focus-visible, input[type='number']:foc
 .skip-link { padding: 8px 14px; border-radius: 10px; background: var(--panel-solid); color: #fff; border: 1px solid #a78bfa; font-weight: 600; font-size: 13px; text-decoration: none; white-space: nowrap; }
 .skip-link:not(:focus) { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }
 #controls:focus-visible, #metrics:focus-visible, #picker:focus-visible { outline-offset: 4px; }
+.sal-row .sal-read { grid-column: 1 / -1; margin: -2px 0 2px; font-size: 11.5px; line-height: 1.45; color: #cdd3e3; padding: 5px 8px; border-radius: 8px; border-left: 3px solid; background: rgba(255, 255, 255, 0.03); }
+.sal-row .sal-read.good { border-color: #34d399; } .sal-row .sal-read.mid { border-color: #fbbf24; } .sal-row .sal-read.bad { border-color: #f87171; }
+.sal-row .sal-read .muted { white-space: nowrap; }
 
 </style>
 </head>
@@ -3594,10 +3597,12 @@ select:focus-visible, input[type='text']:focus-visible, input[type='number']:foc
    * merged / expert = accuracies. A match of 80% or more counts as the same pixel pattern, and a drop of more
    * than 10 pts from the expert counts as a lost skill.
    */
-  function saliencyReading(match, merged, expert) {
+  function saliencyReading(match, merged, expert, opts) {
+    const router = !!(opts && opts.router);
     const kept = merged >= expert - 0.1, same = match >= 0.8;
     if (kept && same) return { tone: 'good', text: 'keeps the skill and reads the same pixels as the expert' };
-    if (kept) return { tone: 'mid', text: 'keeps the skill but reads different pixels (it solves the task another way, e.g. through a router)' };
+    if (kept) return { tone: 'mid', text: router ? 'keeps the skill but reads different pixels: its router sends each input to the right expert, so it solves the task another way'
+      : 'keeps the skill but reads different pixels, so it solves the task another way (often fine, but check it on inputs unlike the test set)' };
     if (same) return { tone: 'bad', text: 'looks at the right pixels but answers wrongly: the conflict signature, so a better merge is unlikely to fix it (it needs a task signal or retraining)' };
     return { tone: 'bad', text: 'has lost both the skill and the expert’s pixel pattern' };
   }
@@ -3608,7 +3613,7 @@ select:focus-visible, input[type='text']:focus-visible, input[type='number']:foc
    *   result: { tasks:[{ name, merged, expert, base }], avg, retention, cost, storage, warnings:[] }, mapPng,
    *   sensitivity?, layerMap?, robust?: { seeds, rows:[{ name, mean, sd, worst, stability, current }], verdict, h2h },
    *   compare?: { pinned, now, summary, edge },
-   *   saliency?: { tasks:[{ name, match, merged, expert, expertPng?, mergedPng? }], mean }, method: { tagline, how:[], pros:[], cons:[], realWorld, paper, oss:[{name,url}] },
+   *   saliency?: { tasks:[{ name, match, merged, expert, expertPng?, mergedPng? }], mean, router? }, method: { tagline, how:[], pros:[], cons:[], realWorld, paper, oss:[{name,url}] },
    *   export: { file, yaml, cmd, note } }
    */
   function buildReport(d) {
@@ -3630,7 +3635,7 @@ select:focus-visible, input[type='text']:focus-visible, input[type='number']:foc
     md.push('');
     if (d.sensitivity) md.push('## How forgiving is it?', '', d.sensitivity, '');
     if (d.layerMap) md.push('## Which layer matters?', '', d.layerMap, '');
-    const sal = d.saliency ? d.saliency.tasks.map((t) => Object.assign({}, t, { reading: saliencyReading(t.match, t.merged, t.expert) })) : null;
+    const sal = d.saliency ? d.saliency.tasks.map((t) => Object.assign({}, t, { reading: saliencyReading(t.match, t.merged, t.expert, { router: d.saliency.router }) })) : null;
     if (sal) {
       md.push('## Where the merge looks (pixel saliency)', '');
       md.push('| Task | Pattern match with expert | Merged | Expert | Reading |', '| --- | --- | --- | --- | --- |');
@@ -5336,7 +5341,7 @@ ${parts.join('\n')}
       ${diag ? `<div class="section"><div class="sec-title">${r.kind === 'weights' ? 'Weight provenance' : 'Where the mixing happens'}</div>${diag}</div>` : ''}
       ${!r.blocked && ctx.tasks[0].kind === 'digits' ? `<div class="section"><div class="sec-title">Where the merge looks <span class="hint">pixel saliency</span></div>
         <div class="sal-grid" id="salGrid"><div class="muted small">Measuring…</div></div>
-        <p class="tiny muted">Which pixels move the prediction, for the expert and for the merge (each map scaled to its own peak). The match compares the patterns: high means the merge reads the digit the way the expert did. A high match with low accuracy means it looks at the right pixels but answers differently, which is the signature of a conflict.</p></div>` : ''}
+        <p class="tiny muted">Which pixels move the prediction, for the expert and for the merge (each map scaled to its own peak). The match compares the patterns (80% or more counts as the same); each task's line reads it together with accuracy.</p></div>` : ''}
       <div class="section"><div class="sec-title">${hasBase ? 'Task-vector geometry' : 'Raw weight similarity <span class="hint">(no base)</span>'}</div>${geoHtml}
         <p class="tiny muted">${hasBase ? 'Low cosine + high sign conflict = skills that fight when added together. That is what TIES and DARE are built for.' : 'Independently trained experts look unrelated in weight space. Turn on neuron alignment and watch the similarity jump — same functions, re-ordered neurons.'}</p></div>
       <div class="section oss">
@@ -5362,6 +5367,12 @@ ${parts.join('\n')}
   // the frame so dragging a knob stays smooth.
   const salCache = new WeakMap();
   let salTimer = null;
+  /** One-line verdict for a task: pattern match × accuracy (the same rule the recipe report uses). */
+  function salReading(match, merged, expert, router) {
+    const rd = MM.saliencyReading(match, merged, expert, { router });
+    const icon = { good: '✓', mid: '↻', bad: '⚠' }[rd.tone];
+    return `<p class="sal-read ${rd.tone}"><span aria-hidden="true">${icon}</span> ${esc(rd.text.charAt(0).toUpperCase() + rd.text.slice(1))} <span class="muted">(${pct(merged)} vs expert ${pct(expert)})</span></p>`;
+  }
   function renderSaliency(r, ctx) {
     clearTimeout(salTimer);
     const Tnow = T;
@@ -5376,7 +5387,8 @@ ${parts.join('\n')}
           <div class="sal-lbl"><i class="dot"></i>${LETTERS[k]} · ${esc(MM.TASKS[t.spec.task].name)}</div>
           <figure><canvas class="sal" id="salE${k}" role="img" aria-label="Expert ${LETTERS[k]} pixel saliency"></canvas><figcaption>expert</figcaption></figure>
           <figure><canvas class="sal" id="salM${k}" role="img" aria-label="Merged model pixel saliency on task ${LETTERS[k]}"></canvas><figcaption>merged</figcaption></figure>
-          <div class="sal-score ${cos > 0.9 ? 'good' : cos > 0.7 ? 'mid' : 'bad'}"><b>${Math.round(cos * 100)}%</b><small>pattern match</small></div></div>`;
+          <div class="sal-score ${cos > 0.9 ? 'good' : cos > 0.7 ? 'mid' : 'bad'}"><b>${Math.round(cos * 100)}%</b><small>pattern match</small></div>
+          ${salReading(cos, r.accs[k], T.expertAccs[k][k], !!r.router)}</div>`;
       }).join('');
       // each map is scaled to its own peak: confident experts barely move p, so a shared scale would hide them;
       // the match score compares patterns (cosine), not magnitudes
@@ -6142,7 +6154,7 @@ dtype: bfloat16
         } catch (e) { return null; }
       };
       saliency = {
-        mean: row.mean,
+        mean: row.mean, router: !!r.router,
         tasks: T.tasks.map((t, i) => ({ name: `${LETTERS[i]} · ${taskName(t)}`, match: row.match[i], merged: r.accs[i], expert: T.expertAccs[i][i], expertPng: png(ex[i]), mergedPng: png(row.maps[i]) })),
       };
     }

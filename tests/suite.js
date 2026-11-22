@@ -280,6 +280,7 @@ parameters:
       assert(/another way/.test(MM.saliencyReading(0.35, 0.98, 1).text), r(0.35, 0.98));
       assert(/conflict signature/.test(MM.saliencyReading(0.93, 0.52, 1).text), r(0.93, 0.52));
       assert(/lost both/.test(MM.saliencyReading(0.4, 0.5, 1).text), r(0.4, 0.5));
+      assert(/router/.test(MM.saliencyReading(0.35, 0.98, 1, { router: true }).text) && !/router/.test(MM.saliencyReading(0.35, 0.98, 1).text), 'router named only when the merge has one');
     });
 
     // ---------- recipe advisor ----------

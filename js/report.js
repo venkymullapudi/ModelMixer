@@ -13,10 +13,12 @@
    * merged / expert = accuracies. A match of 80% or more counts as the same pixel pattern, and a drop of more
    * than 10 pts from the expert counts as a lost skill.
    */
-  function saliencyReading(match, merged, expert) {
+  function saliencyReading(match, merged, expert, opts) {
+    const router = !!(opts && opts.router);
     const kept = merged >= expert - 0.1, same = match >= 0.8;
     if (kept && same) return { tone: 'good', text: 'keeps the skill and reads the same pixels as the expert' };
-    if (kept) return { tone: 'mid', text: 'keeps the skill but reads different pixels (it solves the task another way, e.g. through a router)' };
+    if (kept) return { tone: 'mid', text: router ? 'keeps the skill but reads different pixels: its router sends each input to the right expert, so it solves the task another way'
+      : 'keeps the skill but reads different pixels, so it solves the task another way (often fine, but check it on inputs unlike the test set)' };
     if (same) return { tone: 'bad', text: 'looks at the right pixels but answers wrongly: the conflict signature, so a better merge is unlikely to fix it (it needs a task signal or retraining)' };
     return { tone: 'bad', text: 'has lost both the skill and the expert’s pixel pattern' };
   }
@@ -27,7 +29,7 @@
    *   result: { tasks:[{ name, merged, expert, base }], avg, retention, cost, storage, warnings:[] }, mapPng,
    *   sensitivity?, layerMap?, robust?: { seeds, rows:[{ name, mean, sd, worst, stability, current }], verdict, h2h },
    *   compare?: { pinned, now, summary, edge },
-   *   saliency?: { tasks:[{ name, match, merged, expert, expertPng?, mergedPng? }], mean }, method: { tagline, how:[], pros:[], cons:[], realWorld, paper, oss:[{name,url}] },
+   *   saliency?: { tasks:[{ name, match, merged, expert, expertPng?, mergedPng? }], mean, router? }, method: { tagline, how:[], pros:[], cons:[], realWorld, paper, oss:[{name,url}] },
    *   export: { file, yaml, cmd, note } }
    */
   function buildReport(d) {
@@ -49,7 +51,7 @@
     md.push('');
     if (d.sensitivity) md.push('## How forgiving is it?', '', d.sensitivity, '');
     if (d.layerMap) md.push('## Which layer matters?', '', d.layerMap, '');
-    const sal = d.saliency ? d.saliency.tasks.map((t) => Object.assign({}, t, { reading: saliencyReading(t.match, t.merged, t.expert) })) : null;
+    const sal = d.saliency ? d.saliency.tasks.map((t) => Object.assign({}, t, { reading: saliencyReading(t.match, t.merged, t.expert, { router: d.saliency.router }) })) : null;
     if (sal) {
       md.push('## Where the merge looks (pixel saliency)', '');
       md.push('| Task | Pattern match with expert | Merged | Expert | Reading |', '| --- | --- | --- | --- | --- |');
