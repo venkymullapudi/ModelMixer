@@ -16,7 +16,10 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
+1. **Recipe report:** one click turns the current recipe into a printable, shareable page: method and knobs, scorecard, knob sensitivity, multi-seed robustness / head-to-head (if run), advisor evidence on both toys, the mergekit YAML and the share link. It's what a practitioner hands to a teammate before running the real merge.
+2. **First-run tour:** a skippable 5-step guided tour (scenario → method → knobs → compare / Arena → Export) for first-time visitors, keyboard-accessible, shown once.
+3. **Undo / redo:** ⌘Z / ⇧⌘Z (and buttons) for recipe changes in the Lab (method, knobs, per-layer values, pin), so exploring is safe.
+4. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
 
 ## Done
 
