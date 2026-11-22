@@ -418,7 +418,8 @@
     // unlabeled inputs (test-time adaptation; no labels). θ = θ_base + Σ_k λ_k(,l) · τ_k
     adamerging(ctx, p) {
       const mode = p.mode === 'task' ? 'task' : 'layer';
-      const key = `ada:${mode}`;
+      const objective = p.objective === 'pseudo' ? 'pseudo' : 'entropy';
+      const key = `ada:${mode}:${objective}`;
       const taus = taskVectors(ctx), K = ctx.K, layout = ctx.layout, base = ctx.base;
       const nL = mode === 'layer' ? layout.nLayers : 1;
       const layerOf = new Int8Array(base.length);
@@ -439,10 +440,24 @@
         const X = new Float32Array(m * d);
         for (let i = 0; i < m; i++) { const s = Math.floor(i * stride); X.set(all.X.subarray(s * d, s * d + d), i * d); }
         const P = new Float32Array(base.length);
+        // objective: prediction entropy (paper), or cross-entropy to pseudo-labels from the most confident expert
+        let target = null;
+        if (objective === 'pseudo') {
+          const probs = ctx.experts.map((e) => MM.predictProb(layout, e, X, m));
+          target = new Float32Array(m);
+          for (let i = 0; i < m; i++) {
+            let best = 0;
+            for (let k = 1; k < K; k++) if (Math.abs(probs[k][i] - 0.5) > Math.abs(probs[best][i] - 0.5)) best = k;
+            target[i] = probs[best][i];
+          }
+        }
         const entropy = (lm) => {
           const out = MM.forward(layout, build(lm, P), X, m, false).out;
           let e = 0;
-          for (let i = 0; i < m; i++) { const q = 1 / (1 + Math.exp(-out[i])); e -= q * Math.log(q + 1e-9) + (1 - q) * Math.log(1 - q + 1e-9); }
+          for (let i = 0; i < m; i++) {
+            const q = 1 / (1 + Math.exp(-out[i])), y = target ? target[i] : q;
+            e -= y * Math.log(q + 1e-9) + (1 - y) * Math.log(1 - q + 1e-9);
+          }
           return e / m;
         };
         const lam = new Float64Array(K * nL).fill(0.3); // the paper's initial coefficient
@@ -472,12 +487,73 @@
       const c = ctx.cache[key];
       const P = build(c.lam, new Float32Array(base.length));
       const fmt = (v) => (+v).toFixed(2);
-      const info = [{ label: 'Prediction entropy (unlabeled)', value: `${c.e0.toFixed(3)} → ${c.e1.toFixed(3)}` }];
+      const info = [{ label: objective === 'pseudo' ? 'Loss vs pseudo-labels (unlabeled)' : 'Prediction entropy (unlabeled)', value: `${c.e0.toFixed(3)} → ${c.e1.toFixed(3)}` }];
       for (let k = 0; k < K; k++) {
         const row = c.lam.slice(k * c.nL, (k + 1) * c.nL);
         info.push({ label: `λ ${'ABC'[k]}${c.nL > 1 ? ' per layer' : ''}`, value: row.map(fmt).join(' / ') });
       }
       return weightResult(ctx, P, { info, ada: { lam: c.lam, nL: c.nL, K } });
+    },
+
+    // Localize-and-Stitch: a sparse mask per task (learned on that task's data, or top-|τ| when dataless),
+    // then add the masked task vectors to the base, averaging wherever masks overlap.
+    localize_stitch(ctx, p) {
+      const taus = taskVectors(ctx), K = ctx.K, dens = +p.density, mode = p.mode === 'dataless' ? 'dataless' : 'data';
+      const layout = ctx.layout, base = ctx.base, n = base.length;
+      const key = `ls:${mode}:${dens}`;
+      if (!ctx.cache[key]) {
+        const masks = taus.map((t, i) => {
+          const thr0 = topThreshold(t, 0, n, dens);
+          const init = new Uint8Array(n);
+          for (let j = 0; j < n; j++) init[j] = t[j] !== 0 && Math.abs(t[j]) >= thr0 ? 1 : 0;
+          if (mode === 'dataless') return init;
+          // learn mask logits s on task i's labelled data: θ = θ_base + σ(s) ⊙ τ_i, BCE loss, Adam on s
+          const d = ctx.tasks[i].train, dd = d.d || 2, m = Math.min(200, d.n), stride = d.n / m;
+          const X = new Float32Array(m * dd), Y = new Float32Array(m);
+          for (let a = 0; a < m; a++) { const sIdx = Math.floor(a * stride); X.set(d.X.subarray(sIdx * dd, sIdx * dd + dd), a * dd); Y[a] = d.Y[sIdx]; }
+          const s = new Float32Array(n), P = new Float32Array(n);
+          for (let j = 0; j < n; j++) s[j] = init[j] ? 3 : -3;
+          const mA = new Float32Array(n), vA = new Float32Array(n), lr = 0.1, STEPS = 30;
+          for (let step = 1; step <= STEPS; step++) {
+            for (let j = 0; j < n; j++) P[j] = base[j] + t[j] / (1 + Math.exp(-s[j]));
+            const { grad } = MM.bceGrad(layout, P, X, Y, m);
+            for (let j = 0; j < n; j++) {
+              const sg = 1 / (1 + Math.exp(-s[j]));
+              const g = grad[j] * t[j] * sg * (1 - sg);
+              mA[j] = 0.9 * mA[j] + 0.1 * g;
+              vA[j] = 0.999 * vA[j] + 0.001 * g * g;
+              s[j] -= (lr * (mA[j] / (1 - 0.9 ** step))) / (Math.sqrt(vA[j] / (1 - 0.999 ** step)) + 1e-8);
+            }
+          }
+          // binarise: keep the top `density` fraction by learned logit (sparsity is enforced here)
+          const thr = topThreshold(s.map((x, j) => (t[j] !== 0 ? x + 10 : 0)), 0, n, dens);
+          const mask = new Uint8Array(n);
+          for (let j = 0; j < n; j++) mask[j] = t[j] !== 0 && s[j] + 10 >= thr ? 1 : 0;
+          return mask;
+        });
+        // how much of each skill survives on its own (base + its masked vector)
+        const own = masks.map((mk, i) => {
+          const P = new Float32Array(base);
+          for (let j = 0; j < n; j++) if (mk[j]) P[j] += taus[i][j];
+          return MM.evaluate((X, nn) => MM.predictProb(layout, P, X, nn), [ctx.tasks[i]])[0];
+        });
+        ctx.cache[key] = { masks, own };
+      }
+      const { masks, own } = ctx.cache[key];
+      const P = new Float32Array(base);
+      let overlap = 0, any = 0;
+      for (let j = 0; j < n; j++) {
+        let cnt = 0, acc = 0;
+        for (let i = 0; i < K; i++) if (masks[i][j]) { cnt++; acc += taus[i][j]; }
+        if (cnt) { any++; if (cnt > 1) overlap++; P[j] += acc / cnt; }
+      }
+      return weightResult(ctx, P, {
+        info: [
+          { label: `Mask density (${mode === 'data' ? 'learned' : 'by |τ|'})`, value: pct(masks[0].reduce((a, b) => a + b, 0) / n) },
+          { label: 'Masked entries that overlap', value: any ? pct(overlap / any) : '—' },
+          ...own.map((a, i) => ({ label: `Localized ${'ABC'[i]} alone`, value: pct(a) })),
+        ],
+      });
     },
 
     // DELLA: magnitude-ranked drop probabilities (MagPrune), rescale, then TIES-style sign election.

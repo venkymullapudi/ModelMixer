@@ -3,7 +3,7 @@
 [![CI](https://github.com/venkymullapudi/ModelMixer/actions/workflows/ci.yml/badge.svg)](https://github.com/venkymullapudi/ModelMixer/actions/workflows/ci.yml) [![Deploy to GitHub Pages](https://github.com/venkymullapudi/ModelMixer/actions/workflows/pages.yml/badge.svg)](https://github.com/venkymullapudi/ModelMixer/actions/workflows/pages.yml)
 
 **An interactive lab for model merging.** Train a few small expert networks in your browser, mix them
-with 17 different techniques, and *see* what each mix keeps, loses and needs — then export the same
+with 18 different techniques, and *see* what each mix keeps, loses and needs — then export the same
 recipe as a [mergekit](https://github.com/arcee-ai/mergekit) config for real Hugging Face models.
 
 **▶ Live demo: <https://venkymullapudi.github.io/ModelMixer/>**
@@ -58,7 +58,7 @@ python3 scripts/bundle.py
 | --- | --- |
 | Weight averaging | Linear / Model Soup, SLERP, Karcher mean (multi-model SLERP), Model Stock |
 | Task vectors | Task Arithmetic, TIES-Merging, DARE (TIES / Linear), DELLA, SCE, Model Breadcrumbs |
-| Data-informed | Fisher merging, RegMean, AdaMerging (entropy-tuned λ on unlabeled inputs) |
+| Data-informed | Fisher merging, RegMean, AdaMerging (entropy-tuned λ on unlabeled inputs), Localize-and-Stitch (sparse per-task masks) |
 | Layer surgery | Layer Stitch (Frankenmerge / passthrough) |
 | Output mixing | Ensemble, Mixture of Experts (learned router, top-1 or soft) |
 | Distillation | Student distilled from an MoE or ensemble teacher |
@@ -130,6 +130,7 @@ IMPROVEMENTS.md     prioritised backlog
 - [FusionBench](https://github.com/tanganke/fusion_bench): benchmark suite including Fisher, RegMean and AdaMerging
 - [git-re-basin](https://github.com/samuela/git-re-basin): permutation alignment
 - [dataless-model-merging](https://github.com/bloomberg/dataless-model-merging): RegMean
+- [Localize-and-Stitch](https://github.com/uiuctml/Localize-and-Stitch): sparse task-vector localization
 - [DistillKit](https://github.com/arcee-ai/DistillKit), [TRL](https://github.com/huggingface/trl): distillation
 
 ## License

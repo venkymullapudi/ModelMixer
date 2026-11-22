@@ -619,7 +619,7 @@
     const m = MM.METHOD_BY_ID[S.method];
     renderStageHead(m, null);
     if (!ctx) return;
-    const heavy = m.id === 'distill' || (m.id === 'moe' && !ctx.cache.router) || (m.id === 'fisher' && !ctx.cache.fisher) || (m.id === 'regmean' && !ctx.cache.grams) || (m.id === 'adamerging' && !ctx.cache[`ada:${S.params.adamerging.mode === 'task' ? 'task' : 'layer'}`]);
+    const heavy = m.id === 'distill' || (m.id === 'moe' && !ctx.cache.router) || (m.id === 'fisher' && !ctx.cache.fisher) || (m.id === 'regmean' && !ctx.cache.grams) || (m.id === 'adamerging' && !ctx.cache[`ada:${S.params.adamerging.mode === 'task' ? 'task' : 'layer'}:${S.params.adamerging.objective === 'pseudo' ? 'pseudo' : 'entropy'}`]) || (m.id === 'localize_stitch' && S.params.localize_stitch.mode !== 'dataless' && !ctx.cache[`ls:data:${S.params.localize_stitch.density}`]);
     const go = () => {
       const t0 = performance.now();
       const r = compute(m.id, ctx);
@@ -637,7 +637,7 @@
       if (!training) status(`${m.name} · mixed in ${ms.toFixed(0)} ms`);
     };
     if (heavy) {
-      $('#busyText').textContent = m.id === 'distill' ? 'Distilling student…' : m.id === 'moe' ? 'Training router…' : m.id === 'adamerging' ? 'Learning coefficients…' : 'Measuring importance…';
+      $('#busyText').textContent = m.id === 'distill' ? 'Distilling student…' : m.id === 'moe' ? 'Training router…' : m.id === 'adamerging' ? 'Learning coefficients…' : m.id === 'localize_stitch' ? 'Localizing skills…' : 'Measuring importance…';
       $('#busy').hidden = false;
       setTimeout(go, 30);
     } else go();
@@ -1529,6 +1529,7 @@
     fisher: { title: 'Fisher merging isn’t in mergekit', body: 'It needs per-parameter Fisher information computed from data. FusionBench implements Fisher merging for Hugging Face models.' },
     regmean: { title: 'RegMean isn’t in mergekit', body: 'It needs layer-input Gram matrices from each task’s data. Use the reference implementation (dataless-model-merging) or FusionBench.' },
     ensemble: { title: 'Ensembles aren’t merges', body: 'Load each model and average their next-token probabilities at inference time:', code: `import torch\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\nnames = ${JSON.stringify(S.exp.models.slice(0, 2))}\ntok = AutoTokenizer.from_pretrained(names[0])\nmodels = [AutoModelForCausalLM.from_pretrained(n, torch_dtype=torch.bfloat16) for n in names]\n\ndef next_token_probs(prompt):\n    ids = tok(prompt, return_tensors="pt").input_ids\n    probs = [m(ids).logits[:, -1].softmax(-1) for m in models]\n    return torch.stack(probs).mean(0)   # equal-weight ensemble` },
+    localize_stitch: { title: 'Localize-and-Stitch isn’t in mergekit', body: 'It needs per-task sparse masks, learned on a little data or taken from the largest task-vector entries. Use the authors’ reference implementation.' },
     adamerging: { title: 'AdaMerging needs a shared base', body: 'It learns how much of each task vector to add back to the base, so it can’t run without one. FusionBench implements AdaMerging for real models.' },
     distill: { title: 'Distillation is training, not merging', body: 'Train a student on the teacher mixture’s outputs. DistillKit (arcee-ai) and TRL’s GKD trainer both support logit-based distillation from Hugging Face teachers.' },
   };

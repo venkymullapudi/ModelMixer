@@ -1552,7 +1552,24 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
       cons: ['Needs the base model and a sample of inputs', 'Entropy can reward confidently wrong predictions', 'Not in mergekit: export the learned λs as gradients'],
       req: { base: true, data: true, training: false }, multiInit: false, interference: 'yes',
       mergekit: null, oss: [OSS.fusion], paper: 'Yang et al., 2024 — AdaMerging (ICLR)',
-      params: [{ key: 'mode', type: 'select', label: 'Coefficients', options: [['layer', 'Layer-wise (K×L)'], ['task', 'Task-wise (K)']], default: 'layer' }],
+      params: [
+        { key: 'mode', type: 'select', label: 'Coefficients', options: [['layer', 'Layer-wise (K×L)'], ['task', 'Task-wise (K)']], default: 'layer' },
+        { key: 'objective', type: 'select', label: 'Objective', options: [['entropy', 'Entropy (paper)'], ['pseudo', 'Most-confident-expert labels']], default: 'entropy' },
+      ],
+    },
+    {
+      id: 'localize_stitch', name: 'Localize-and-Stitch', short: 'L&S', family: 'data',
+      tagline: 'Keep only the few weights each skill needs, then stitch them into the base.',
+      how: ['Localize: for each task, find a sparse mask of the task vector that keeps the skill, by learning it on a little labelled data or, dataless, by taking the largest |τ|.', 'Stitch: add every masked task vector to the base.', 'Where masks overlap, average the updates; everywhere else the base is untouched.'],
+      formula: 'θ = θ_base + Σᵢ mᵢ⊙τᵢ / Σᵢ mᵢ,   mᵢ = sparse mask for task i',
+      pros: ['Tiny masks rarely collide, so skills interfere less', 'Most of the base is left exactly as it was', 'Masks are interpretable: you see where each skill lives'],
+      cons: ['The learned variant needs labelled examples per task', 'Too sparse a mask drops part of the skill', 'Needs the base model'],
+      req: { base: true, data: true, training: false }, multiInit: false, interference: 'yes',
+      mergekit: null, oss: [{ name: 'Localize-and-Stitch', url: 'https://github.com/uiuctml/Localize-and-Stitch' }], paper: 'He et al., 2024 — Localize-and-Stitch: Efficient Model Merging via Sparse Task Arithmetic',
+      params: [
+        { key: 'density', type: 'range', label: 'Mask density (fraction kept)', min: 0.01, max: 0.5, step: 0.01, default: 0.3 },
+        { key: 'mode', type: 'select', label: 'Localize', options: [['data', 'Learned on data'], ['dataless', 'Dataless (top |τ|)']], default: 'data' },
+      ],
     },
     {
       id: 'stitch', name: 'Layer Stitch', short: 'Stitch', family: 'surgery',
@@ -1625,6 +1642,7 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     karcher: 'Typically used to blend several fine-tunes of one model, where SLERP would need to be chained pairwise.',
     sce: 'Used to fuse chat models in FuseChat. Lowering top-k concentrates the merge on the entries where experts disagree; keep λ near 1 to start.',
     adamerging: 'Run a few hundred unlabeled inputs per task through the merge. The paper reports clear gains over task arithmetic on vision models, where layer-wise coefficients helped most.',
+    localize_stitch: 'The paper localizes with a few labelled examples per task and finds masks around 1% of parameters are enough on large models. These tiny toys need far denser masks (0.3), and learned masks barely beat the dataless largest-|τ| ones.',
     regmean: 'Collect layer-input Gram matrices from a few hundred examples per task. α a little below 1 is the usual stabiliser.',
   };
   for (const id in REAL_WORLD) METHOD_BY_ID[id].realWorld = REAL_WORLD[id];
@@ -2079,7 +2097,8 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     // unlabeled inputs (test-time adaptation; no labels). θ = θ_base + Σ_k λ_k(,l) · τ_k
     adamerging(ctx, p) {
       const mode = p.mode === 'task' ? 'task' : 'layer';
-      const key = `ada:${mode}`;
+      const objective = p.objective === 'pseudo' ? 'pseudo' : 'entropy';
+      const key = `ada:${mode}:${objective}`;
       const taus = taskVectors(ctx), K = ctx.K, layout = ctx.layout, base = ctx.base;
       const nL = mode === 'layer' ? layout.nLayers : 1;
       const layerOf = new Int8Array(base.length);
@@ -2100,10 +2119,24 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
         const X = new Float32Array(m * d);
         for (let i = 0; i < m; i++) { const s = Math.floor(i * stride); X.set(all.X.subarray(s * d, s * d + d), i * d); }
         const P = new Float32Array(base.length);
+        // objective: prediction entropy (paper), or cross-entropy to pseudo-labels from the most confident expert
+        let target = null;
+        if (objective === 'pseudo') {
+          const probs = ctx.experts.map((e) => MM.predictProb(layout, e, X, m));
+          target = new Float32Array(m);
+          for (let i = 0; i < m; i++) {
+            let best = 0;
+            for (let k = 1; k < K; k++) if (Math.abs(probs[k][i] - 0.5) > Math.abs(probs[best][i] - 0.5)) best = k;
+            target[i] = probs[best][i];
+          }
+        }
         const entropy = (lm) => {
           const out = MM.forward(layout, build(lm, P), X, m, false).out;
           let e = 0;
-          for (let i = 0; i < m; i++) { const q = 1 / (1 + Math.exp(-out[i])); e -= q * Math.log(q + 1e-9) + (1 - q) * Math.log(1 - q + 1e-9); }
+          for (let i = 0; i < m; i++) {
+            const q = 1 / (1 + Math.exp(-out[i])), y = target ? target[i] : q;
+            e -= y * Math.log(q + 1e-9) + (1 - y) * Math.log(1 - q + 1e-9);
+          }
           return e / m;
         };
         const lam = new Float64Array(K * nL).fill(0.3); // the paper's initial coefficient
@@ -2133,12 +2166,73 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
       const c = ctx.cache[key];
       const P = build(c.lam, new Float32Array(base.length));
       const fmt = (v) => (+v).toFixed(2);
-      const info = [{ label: 'Prediction entropy (unlabeled)', value: `${c.e0.toFixed(3)} → ${c.e1.toFixed(3)}` }];
+      const info = [{ label: objective === 'pseudo' ? 'Loss vs pseudo-labels (unlabeled)' : 'Prediction entropy (unlabeled)', value: `${c.e0.toFixed(3)} → ${c.e1.toFixed(3)}` }];
       for (let k = 0; k < K; k++) {
         const row = c.lam.slice(k * c.nL, (k + 1) * c.nL);
         info.push({ label: `λ ${'ABC'[k]}${c.nL > 1 ? ' per layer' : ''}`, value: row.map(fmt).join(' / ') });
       }
       return weightResult(ctx, P, { info, ada: { lam: c.lam, nL: c.nL, K } });
+    },
+
+    // Localize-and-Stitch: a sparse mask per task (learned on that task's data, or top-|τ| when dataless),
+    // then add the masked task vectors to the base, averaging wherever masks overlap.
+    localize_stitch(ctx, p) {
+      const taus = taskVectors(ctx), K = ctx.K, dens = +p.density, mode = p.mode === 'dataless' ? 'dataless' : 'data';
+      const layout = ctx.layout, base = ctx.base, n = base.length;
+      const key = `ls:${mode}:${dens}`;
+      if (!ctx.cache[key]) {
+        const masks = taus.map((t, i) => {
+          const thr0 = topThreshold(t, 0, n, dens);
+          const init = new Uint8Array(n);
+          for (let j = 0; j < n; j++) init[j] = t[j] !== 0 && Math.abs(t[j]) >= thr0 ? 1 : 0;
+          if (mode === 'dataless') return init;
+          // learn mask logits s on task i's labelled data: θ = θ_base + σ(s) ⊙ τ_i, BCE loss, Adam on s
+          const d = ctx.tasks[i].train, dd = d.d || 2, m = Math.min(200, d.n), stride = d.n / m;
+          const X = new Float32Array(m * dd), Y = new Float32Array(m);
+          for (let a = 0; a < m; a++) { const sIdx = Math.floor(a * stride); X.set(d.X.subarray(sIdx * dd, sIdx * dd + dd), a * dd); Y[a] = d.Y[sIdx]; }
+          const s = new Float32Array(n), P = new Float32Array(n);
+          for (let j = 0; j < n; j++) s[j] = init[j] ? 3 : -3;
+          const mA = new Float32Array(n), vA = new Float32Array(n), lr = 0.1, STEPS = 30;
+          for (let step = 1; step <= STEPS; step++) {
+            for (let j = 0; j < n; j++) P[j] = base[j] + t[j] / (1 + Math.exp(-s[j]));
+            const { grad } = MM.bceGrad(layout, P, X, Y, m);
+            for (let j = 0; j < n; j++) {
+              const sg = 1 / (1 + Math.exp(-s[j]));
+              const g = grad[j] * t[j] * sg * (1 - sg);
+              mA[j] = 0.9 * mA[j] + 0.1 * g;
+              vA[j] = 0.999 * vA[j] + 0.001 * g * g;
+              s[j] -= (lr * (mA[j] / (1 - 0.9 ** step))) / (Math.sqrt(vA[j] / (1 - 0.999 ** step)) + 1e-8);
+            }
+          }
+          // binarise: keep the top `density` fraction by learned logit (sparsity is enforced here)
+          const thr = topThreshold(s.map((x, j) => (t[j] !== 0 ? x + 10 : 0)), 0, n, dens);
+          const mask = new Uint8Array(n);
+          for (let j = 0; j < n; j++) mask[j] = t[j] !== 0 && s[j] + 10 >= thr ? 1 : 0;
+          return mask;
+        });
+        // how much of each skill survives on its own (base + its masked vector)
+        const own = masks.map((mk, i) => {
+          const P = new Float32Array(base);
+          for (let j = 0; j < n; j++) if (mk[j]) P[j] += taus[i][j];
+          return MM.evaluate((X, nn) => MM.predictProb(layout, P, X, nn), [ctx.tasks[i]])[0];
+        });
+        ctx.cache[key] = { masks, own };
+      }
+      const { masks, own } = ctx.cache[key];
+      const P = new Float32Array(base);
+      let overlap = 0, any = 0;
+      for (let j = 0; j < n; j++) {
+        let cnt = 0, acc = 0;
+        for (let i = 0; i < K; i++) if (masks[i][j]) { cnt++; acc += taus[i][j]; }
+        if (cnt) { any++; if (cnt > 1) overlap++; P[j] += acc / cnt; }
+      }
+      return weightResult(ctx, P, {
+        info: [
+          { label: `Mask density (${mode === 'data' ? 'learned' : 'by |τ|'})`, value: pct(masks[0].reduce((a, b) => a + b, 0) / n) },
+          { label: 'Masked entries that overlap', value: any ? pct(overlap / any) : '—' },
+          ...own.map((a, i) => ({ label: `Localized ${'ABC'[i]} alone`, value: pct(a) })),
+        ],
+      });
     },
 
     // DELLA: magnitude-ranked drop probabilities (MagPrune), rescale, then TIES-style sign election.
@@ -2764,7 +2858,7 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
   const ADVISOR_DEFAULTS = { base: 'yes', goal: 'skills', count: '2', conflict: 'no', data: 'no', train: 'no', deploy: 'single' };
 
   // Rough prior for "a good default in practice" before situation-specific adjustments.
-  const PRIOR = { ties: 7, dare: 7, della: 7, karcher: 5, sce: 6, adamerging: 7, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
+  const PRIOR = { ties: 7, dare: 7, della: 7, karcher: 5, sce: 6, adamerging: 7, localize_stitch: 7, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
   const WEIGHT_SPACE = ['linear', 'slerp', 'karcher', 'model_stock', 'fisher', 'regmean', 'stitch'];
 
   function adviseRecipe(answers) {
@@ -2798,6 +2892,7 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
       bump('regmean', 2, 'Closed-form, using each layer’s input statistics; strong on interfering skills');
       bump('fisher', 1, 'Weighs each parameter by how much each task relies on it');
       bump('adamerging', 1, 'Learns per-layer coefficients from unlabeled inputs alone');
+      bump('localize_stitch', 1, 'Tiny per-task masks learned on a little data rarely collide');
     }
     if (a.train === 'yes') bump('distill', 1, 'Training budget lets one student absorb every expert');
 
@@ -4234,7 +4329,7 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     const m = MM.METHOD_BY_ID[S.method];
     renderStageHead(m, null);
     if (!ctx) return;
-    const heavy = m.id === 'distill' || (m.id === 'moe' && !ctx.cache.router) || (m.id === 'fisher' && !ctx.cache.fisher) || (m.id === 'regmean' && !ctx.cache.grams) || (m.id === 'adamerging' && !ctx.cache[`ada:${S.params.adamerging.mode === 'task' ? 'task' : 'layer'}`]);
+    const heavy = m.id === 'distill' || (m.id === 'moe' && !ctx.cache.router) || (m.id === 'fisher' && !ctx.cache.fisher) || (m.id === 'regmean' && !ctx.cache.grams) || (m.id === 'adamerging' && !ctx.cache[`ada:${S.params.adamerging.mode === 'task' ? 'task' : 'layer'}:${S.params.adamerging.objective === 'pseudo' ? 'pseudo' : 'entropy'}`]) || (m.id === 'localize_stitch' && S.params.localize_stitch.mode !== 'dataless' && !ctx.cache[`ls:data:${S.params.localize_stitch.density}`]);
     const go = () => {
       const t0 = performance.now();
       const r = compute(m.id, ctx);
@@ -4252,7 +4347,7 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
       if (!training) status(`${m.name} · mixed in ${ms.toFixed(0)} ms`);
     };
     if (heavy) {
-      $('#busyText').textContent = m.id === 'distill' ? 'Distilling student…' : m.id === 'moe' ? 'Training router…' : m.id === 'adamerging' ? 'Learning coefficients…' : 'Measuring importance…';
+      $('#busyText').textContent = m.id === 'distill' ? 'Distilling student…' : m.id === 'moe' ? 'Training router…' : m.id === 'adamerging' ? 'Learning coefficients…' : m.id === 'localize_stitch' ? 'Localizing skills…' : 'Measuring importance…';
       $('#busy').hidden = false;
       setTimeout(go, 30);
     } else go();
@@ -5144,6 +5239,7 @@ input[type="range"]:focus-visible { outline-offset: 4px; }
     fisher: { title: 'Fisher merging isn’t in mergekit', body: 'It needs per-parameter Fisher information computed from data. FusionBench implements Fisher merging for Hugging Face models.' },
     regmean: { title: 'RegMean isn’t in mergekit', body: 'It needs layer-input Gram matrices from each task’s data. Use the reference implementation (dataless-model-merging) or FusionBench.' },
     ensemble: { title: 'Ensembles aren’t merges', body: 'Load each model and average their next-token probabilities at inference time:', code: `import torch\nfrom transformers import AutoModelForCausalLM, AutoTokenizer\n\nnames = ${JSON.stringify(S.exp.models.slice(0, 2))}\ntok = AutoTokenizer.from_pretrained(names[0])\nmodels = [AutoModelForCausalLM.from_pretrained(n, torch_dtype=torch.bfloat16) for n in names]\n\ndef next_token_probs(prompt):\n    ids = tok(prompt, return_tensors="pt").input_ids\n    probs = [m(ids).logits[:, -1].softmax(-1) for m in models]\n    return torch.stack(probs).mean(0)   # equal-weight ensemble` },
+    localize_stitch: { title: 'Localize-and-Stitch isn’t in mergekit', body: 'It needs per-task sparse masks, learned on a little data or taken from the largest task-vector entries. Use the authors’ reference implementation.' },
     adamerging: { title: 'AdaMerging needs a shared base', body: 'It learns how much of each task vector to add back to the base, so it can’t run without one. FusionBench implements AdaMerging for real models.' },
     distill: { title: 'Distillation is training, not merging', body: 'Train a student on the teacher mixture’s outputs. DistillKit (arcee-ai) and TRL’s GKD trainer both support logit-based distillation from Hugging Face teachers.' },
   };

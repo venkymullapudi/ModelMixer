@@ -440,15 +440,38 @@ parameters:
 
     test('AdaMerging lowers prediction entropy; task-wise result = Task Arithmetic with the learned λs', () => {
       const rl = MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'layer' }));
-      const cl = ctx.cache['ada:layer'];
+      const cl = ctx.cache['ada:layer:entropy'];
       assert(cl.e1 < cl.e0 && cl.lam.length === 2 * T.layout.nLayers, `layer-wise entropy ${cl.e0} → ${cl.e1}`);
       assert(cl.lam.every((v) => v >= 0 && v <= 1.5), 'λ out of bounds');
       const rt = MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'task' }));
-      const ct = ctx.cache['ada:task'];
+      const ct = ctx.cache['ada:task:entropy'];
       assert(ct.e1 < ct.e0 && ct.lam.length === 2, `task-wise entropy ${ct.e0} → ${ct.e1}`);
       const ta = MM.runMethod('task_arithmetic', ctx, Object.assign(params('task_arithmetic', 2), { lambda: 1, weights: [ct.lam[0], ct.lam[1], 1] })).params;
       for (let i = 0; i < ta.length; i++) assert(Math.abs(ta[i] - rt.params[i]) < 1e-5, `differs from task arithmetic at ${i}`);
       return `entropy ${cl.e0.toFixed(3)} → ${cl.e1.toFixed(3)}; λ ${cl.lam.map((v) => v.toFixed(2)).join(' ')}; ${pct(MM.scoreMethod(T, ctx, 'adamerging', params('adamerging', 2)).avg)}`;
+    });
+
+    test('AdaMerging pseudo-label objective lowers its loss', () => {
+      MM.runMethod('adamerging', ctx, Object.assign(params('adamerging', 2), { mode: 'layer', objective: 'pseudo' }));
+      const c = ctx.cache['ada:layer:pseudo'];
+      assert(c && c.e1 < c.e0 && c.lam.every((v) => v >= 0 && v <= 1.5), JSON.stringify(c && { e0: c.e0, e1: c.e1, lam: c.lam }));
+      return `loss ${c.e0.toFixed(3)} → ${c.e1.toFixed(3)}; ${pct(MM.scoreMethod(T, ctx, 'adamerging', Object.assign(params('adamerging', 2), { objective: 'pseudo' })).avg)}`;
+    });
+
+    test('Localize-and-Stitch: masks keep the requested fraction; outside them θ = base; overlaps are averaged', () => {
+      for (const mode of ['dataless', 'data']) {
+        const pp = Object.assign(params('localize_stitch', 2), { density: 0.1, mode });
+        const r = MM.runMethod('localize_stitch', ctx, pp);
+        const { masks } = ctx.cache[`ls:${mode}:0.1`];
+        const taus = T.experts.map((e) => e.map((v, i) => v - T.base[i]));
+        masks.forEach((mk) => { const f = mk.reduce((a, b) => a + b, 0) / mk.length; assert(Math.abs(f - 0.1) < 0.01, `${mode} mask density ${f}`); });
+        for (let j = 0; j < T.base.length; j++) {
+          const inA = masks[0][j], inB = masks[1][j];
+          const want = T.base[j] + (inA && inB ? (taus[0][j] + taus[1][j]) / 2 : inA ? taus[0][j] : inB ? taus[1][j] : 0);
+          assert(Math.abs(r.params[j] - want) < 1e-5, `${mode}: entry ${j} is ${r.params[j]}, expected ${want}`);
+        }
+      }
+      return ['data', 'dataless'].map((mode) => `${mode} ${pct(MM.scoreMethod(T, ctx, 'localize_stitch', Object.assign(params('localize_stitch', 2), { mode })).avg)}`).join(', ');
     });
 
     test('SCE selects the requested fraction of entries', () => {

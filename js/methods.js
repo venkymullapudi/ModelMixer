@@ -187,7 +187,24 @@
       cons: ['Needs the base model and a sample of inputs', 'Entropy can reward confidently wrong predictions', 'Not in mergekit: export the learned λs as gradients'],
       req: { base: true, data: true, training: false }, multiInit: false, interference: 'yes',
       mergekit: null, oss: [OSS.fusion], paper: 'Yang et al., 2024 — AdaMerging (ICLR)',
-      params: [{ key: 'mode', type: 'select', label: 'Coefficients', options: [['layer', 'Layer-wise (K×L)'], ['task', 'Task-wise (K)']], default: 'layer' }],
+      params: [
+        { key: 'mode', type: 'select', label: 'Coefficients', options: [['layer', 'Layer-wise (K×L)'], ['task', 'Task-wise (K)']], default: 'layer' },
+        { key: 'objective', type: 'select', label: 'Objective', options: [['entropy', 'Entropy (paper)'], ['pseudo', 'Most-confident-expert labels']], default: 'entropy' },
+      ],
+    },
+    {
+      id: 'localize_stitch', name: 'Localize-and-Stitch', short: 'L&S', family: 'data',
+      tagline: 'Keep only the few weights each skill needs, then stitch them into the base.',
+      how: ['Localize: for each task, find a sparse mask of the task vector that keeps the skill, by learning it on a little labelled data or, dataless, by taking the largest |τ|.', 'Stitch: add every masked task vector to the base.', 'Where masks overlap, average the updates; everywhere else the base is untouched.'],
+      formula: 'θ = θ_base + Σᵢ mᵢ⊙τᵢ / Σᵢ mᵢ,   mᵢ = sparse mask for task i',
+      pros: ['Tiny masks rarely collide, so skills interfere less', 'Most of the base is left exactly as it was', 'Masks are interpretable: you see where each skill lives'],
+      cons: ['The learned variant needs labelled examples per task', 'Too sparse a mask drops part of the skill', 'Needs the base model'],
+      req: { base: true, data: true, training: false }, multiInit: false, interference: 'yes',
+      mergekit: null, oss: [{ name: 'Localize-and-Stitch', url: 'https://github.com/uiuctml/Localize-and-Stitch' }], paper: 'He et al., 2024 — Localize-and-Stitch: Efficient Model Merging via Sparse Task Arithmetic',
+      params: [
+        { key: 'density', type: 'range', label: 'Mask density (fraction kept)', min: 0.01, max: 0.5, step: 0.01, default: 0.3 },
+        { key: 'mode', type: 'select', label: 'Localize', options: [['data', 'Learned on data'], ['dataless', 'Dataless (top |τ|)']], default: 'data' },
+      ],
     },
     {
       id: 'stitch', name: 'Layer Stitch', short: 'Stitch', family: 'surgery',
@@ -260,6 +277,7 @@
     karcher: 'Typically used to blend several fine-tunes of one model, where SLERP would need to be chained pairwise.',
     sce: 'Used to fuse chat models in FuseChat. Lowering top-k concentrates the merge on the entries where experts disagree; keep λ near 1 to start.',
     adamerging: 'Run a few hundred unlabeled inputs per task through the merge. The paper reports clear gains over task arithmetic on vision models, where layer-wise coefficients helped most.',
+    localize_stitch: 'The paper localizes with a few labelled examples per task and finds masks around 1% of parameters are enough on large models. These tiny toys need far denser masks (0.3), and learned masks barely beat the dataless largest-|τ| ones.',
     regmean: 'Collect layer-input Gram matrices from a few hundred examples per task. α a little below 1 is the usual stabiliser.',
   };
   for (const id in REAL_WORLD) METHOD_BY_ID[id].realWorld = REAL_WORLD[id];

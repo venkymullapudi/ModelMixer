@@ -22,7 +22,7 @@
   const ADVISOR_DEFAULTS = { base: 'yes', goal: 'skills', count: '2', conflict: 'no', data: 'no', train: 'no', deploy: 'single' };
 
   // Rough prior for "a good default in practice" before situation-specific adjustments.
-  const PRIOR = { ties: 7, dare: 7, della: 7, karcher: 5, sce: 6, adamerging: 7, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
+  const PRIOR = { ties: 7, dare: 7, della: 7, karcher: 5, sce: 6, adamerging: 7, localize_stitch: 7, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
   const WEIGHT_SPACE = ['linear', 'slerp', 'karcher', 'model_stock', 'fisher', 'regmean', 'stitch'];
 
   function adviseRecipe(answers) {
@@ -56,6 +56,7 @@
       bump('regmean', 2, 'Closed-form, using each layer’s input statistics; strong on interfering skills');
       bump('fisher', 1, 'Weighs each parameter by how much each task relies on it');
       bump('adamerging', 1, 'Learns per-layer coefficients from unlabeled inputs alone');
+      bump('localize_stitch', 1, 'Tiny per-task masks learned on a little data rarely collide');
     }
     if (a.train === 'yes') bump('distill', 1, 'Training budget lets one student absorb every expert');
 
