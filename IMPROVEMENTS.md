@@ -16,9 +16,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
+1. **Keyboard-only flow check in CI:** a Playwright script that does a full recipe (scenario → method → knob → pin → compare → export) using only Tab / arrows / Enter, so keyboard reachability is guarded like axe and phone layout.
+2. **Saliency in the report:** on a digit scenario, include the expert vs merged saliency maps and pattern matches in the recipe report (HTML and Markdown).
 
 ## Done
+
+- 2026-11-22: **Arena saliency strip for digits.** On a Digits scenario the Arena shows "Where each mix looks": an on-demand button computes pixel saliency for every unblocked method on every task (one method per tick, about 1.7 s for 18), with the experts' maps as a reference row, a pattern match per task, and the mean. Rows are sorted by accuracy and open the method in the Lab. It is hidden for plane scenarios. Finding: on Digits 0 vs 1 / 2 vs 3, MoE has 98% accuracy but only a 35% match on task A, because its router reads different pixels from the expert. The caption now explains that "low match, high accuracy" means the mix solves the task another way, and "high match, low accuracy" is the conflict signature. Helpers `expertSaliency` and `saliencyRow` in `js/lab.js` (the Lab's insight panel now shares the expert-map cache), 1 test (65 total). Both CI browser gates now cover the strip: axe 0 on the digits Arena, and no overflow at 375 px (18 views).
 
 - 2026-11-22: **Browser checks in CI.** A new `browser` job in `.github/workflows/ci.yml` installs Playwright with its bundled Chromium, builds the app, and runs two gates: `scripts/axe_audit.py` (axe-core 4.9.1 on Lab, Arena, Atlas, Export, the advisor and the report dialog) and `scripts/phone_audit.py` (17 views and states at 375 px). Both scripts now exit 1 on any violation, overflow or page error, and `PW_CHANNEL` picks the browser (Google Chrome locally by default, Chromium in CI). If the phone audit fails, CI uploads its screenshots. Proved the gate works by planting an unlabelled input and a 600 px-wide element: axe reported 2 rules and the phone audit failed 13 views with exit 1; both pass again after reverting.
 
