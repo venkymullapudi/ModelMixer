@@ -297,6 +297,27 @@ parameters:
       assert(advise({ toy: 'digits' }).recs.map((x) => x.id).join() === p.recs.map((x) => x.id).join(), 'toy must not change the rule ranking');
     });
 
+    test('Advisor "both toys": two toys, and promotion only when both toys agree', () => {
+      const b = advise({ toy: 'both' });
+      assert(b.toys.length === 2 && b.toys[0].scenario === 'two' && b.toys[1].scenario === 'digits' && b.scenario === 'two', JSON.stringify(b.toys));
+      const nb = advise({ toy: 'both', base: 'no' });
+      assert(nb.toys.map((t) => `${t.scenario}:${t.init}`).join() === 'strangers:independent,digits:independent', JSON.stringify(nb.toys));
+      const r = (xs) => xs.map((avg) => ({ avg }));
+      const ids = ['a', 'b', 'c'];
+      const promoteB = MM.blendRanking(ids, { a: r([0.8, 0.8, 0.8]), b: r([0.9, 0.9, 0.9]), c: r([0.7, 0.7, 0.7]) });
+      const keepA = MM.blendRanking(ids, { a: r([0.9, 0.9, 0.9]), b: r([0.8, 0.8, 0.8]), c: r([0.7, 0.7, 0.7]) });
+      const both = MM.combineToyBlends(ids, [promoteB, promoteB]);
+      assert(both.order.join() === 'b,a,c' && both.promoted.id === 'b' && both.agree, JSON.stringify(both));
+      const split = MM.combineToyBlends(ids, [promoteB, keepA]);
+      assert(split.order.join() === 'a,b,c' && !split.promoted && !split.agree && split.best.join() === 'b,a', JSON.stringify(split));
+      // a near-tie on one toy is not a disagreement: a is best on toy 1 and within noise of b on toy 2
+      const noisyB = MM.blendRanking(ids, { a: r([0.80, 0.90, 0.85]), b: r([0.88, 0.86, 0.87]), c: r([0.5, 0.5, 0.5]) });
+      const tie = MM.combineToyBlends(ids, [keepA, noisyB]);
+      assert(tie.agree && tie.common === 'a' && tie.order.join() === 'a,b,c', JSON.stringify(tie));
+      const one = MM.combineToyBlends(ids, [keepA]);
+      assert(one.order.join() === 'a,b,c' && one.agree, 'single toy passes through');
+    });
+
     test('blendRanking: promotes a pick that beats the rules\' #1 on every seed, otherwise keeps rule order', () => {
       const r = (xs) => xs.map((avg) => ({ avg }));
       const win = MM.blendRanking(['a', 'b', 'c'], { a: r([0.80, 0.82, 0.81]), b: r([0.86, 0.88, 0.85]), c: r([0.79, 0.90, 0.70]) });

@@ -19,7 +19,7 @@
     { key: 'deploy', q: 'What can you serve?',
       options: [['single', 'One model, 1× cost'], ['router', 'Experts behind a router'], ['any', 'Every model, per request']] },
     { key: 'toy', q: 'Check the picks on which toy?', hint: 'Evidence only: the rules above don’t change. Digits have 64-pixel inputs, closer to real high-dimensional models.',
-      options: [['plane', 'Points on a plane (2-D)'], ['digits', '8×8 digits (images)']] },
+      options: [['plane', 'Points on a plane (2-D)'], ['digits', '8×8 digits (images)'], ['both', 'Both, and flag disagreements']] },
   ];
   const ADVISOR_DEFAULTS = { base: 'yes', goal: 'skills', count: '2', conflict: 'no', data: 'no', train: 'no', deploy: 'single', toy: 'plane' };
 
@@ -113,13 +113,13 @@
     const all = Object.values(st);
     const recs = all.filter((s) => !s.out).sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
     const excluded = all.filter((s) => s.out).map((s) => ({ id: s.id, why: s.out }));
-    // closest toy for the measured evidence: plane scenarios, or the digit (image) scenarios
-    const digits = a.toy === 'digits';
-    const scenario = digits ? (a.conflict === 'yes' ? 'digits-conflict' : 'digits')
-      : a.base === 'no' ? 'strangers' : a.conflict === 'yes' ? 'overlap' : a.count === '3+' ? 'three' : 'two';
+    // closest toy(s) for the measured evidence: plane scenarios and/or the digit (image) scenarios
     const init = a.base === 'no' ? 'independent' : 'shared'; // the digit toys default to a shared base, so override
-    if (digits && a.count === '3+') notes.push('The digit toys use two experts, so the measurements compare pairs.');
-    return { answers: a, recs, excluded, notes, scenario, init, align: a.base === 'no' };
+    const plane = { scenario: a.base === 'no' ? 'strangers' : a.conflict === 'yes' ? 'overlap' : a.count === '3+' ? 'three' : 'two', init };
+    const digit = { scenario: a.conflict === 'yes' ? 'digits-conflict' : 'digits', init };
+    const toys = a.toy === 'digits' ? [digit] : a.toy === 'both' ? [plane, digit] : [plane];
+    if (a.toy !== 'plane' && a.count === '3+') notes.push('The digit toys use two experts, so the measurements compare pairs.');
+    return { answers: a, recs, excluded, notes, toys, scenario: toys[0].scenario, init, align: a.base === 'no' };
   }
 
   /**
@@ -143,5 +143,36 @@
     };
   }
 
-  Object.assign(MM, { ADVISOR_QUESTIONS, ADVISOR_DEFAULTS, adviseRecipe, blendRanking });
+  /**
+   * Combine per-toy blends (each from blendRanking on the same rule-ordered ids). A pick is promoted only
+   * when every toy promotes the same one; otherwise the rule order stands. `agree` says whether the toys
+   * pick the same best-measured method.
+   */
+  function combineToyBlends(ids, blends) {
+    if (blends.length === 1) return Object.assign({ agree: true }, blends[0]);
+    const pro = blends.map((b) => (b.promoted ? b.promoted.id : null));
+    const same = pro[0] && pro.every((x) => x === pro[0]);
+    // per toy: the best method and every method within noise of it (mean gap ≤ the larger of the two sds)
+    const stats = (b) => ids.map((id) => {
+      const v = b.runs.map((r) => r[id]).filter((x) => x && !x.blocked).map((x) => x.avg);
+      if (!v.length) return null;
+      const m = v.reduce((a, x) => a + x, 0) / v.length;
+      return { id, m, sd: v.length > 1 ? Math.sqrt(v.reduce((a, x) => a + (x - m) ** 2, 0) / (v.length - 1)) : 0 };
+    }).filter(Boolean);
+    const near = blends.map((b) => {
+      const st = stats(b), top = st.reduce((a, x) => (x.m > a.m ? x : a));
+      return { best: top.id, set: st.filter((x) => top.m - x.m <= Math.max(top.sd, x.sd) + 1e-12).map((x) => x.id) };
+    });
+    // a method that is best-or-within-noise on every toy; prefer the rules' order
+    const common = ids.find((id) => near.every((n) => n.set.includes(id))) || null;
+    return {
+      order: same ? [pro[0], ...ids.filter((x) => x !== pro[0])] : ids.slice(),
+      promoted: same ? Object.assign({}, blends[0].promoted, { perToy: blends.map((b) => b.promoted) }) : null,
+      agree: !!common,
+      common,
+      best: near.map((n) => n.best),
+    };
+  }
+
+  Object.assign(MM, { ADVISOR_QUESTIONS, ADVISOR_DEFAULTS, adviseRecipe, blendRanking, combineToyBlends });
 })();
