@@ -1705,6 +1705,79 @@ dtype: bfloat16
   });
   $('#mkOut').addEventListener('click', (ev) => { if (ev.target.closest('#mkOpen')) setTab('lab'); });
 
+  // ---------------- RECIPE REPORT ----------------
+  /** Gather everything known about the current recipe. Only checks that were actually run are included. */
+  function collectReport() {
+    const m = MM.METHOD_BY_ID[S.method], r = current;
+    if (!T || !T.experts || !r || r.blocked) return null;
+    const sc = MM.SCENARIOS.find((x) => x.id === S.scenario);
+    const taskName = (t) => `${MM.TASKS[t.spec.task].name}${t.spec.flip ? ' (inv)' : ''}${t.kind === 'plane' ? ` · ${MM.REGIONS[t.spec.region].name}` : ''}`;
+    const y = yamlFor(S.method), nm = NOT_MK[S.method];
+    const exp = y
+      ? { file: y.file || 'config.yml', yaml: y.yaml, cmd: `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`, note: y.note || '' }
+      : { file: 'notes', yaml: nm ? nm.code || `# ${nm.title}\n# ${nm.body}` : '', cmd: 'See the linked open-source implementations.', note: nm ? `${nm.title}. ${nm.body}` : '' };
+    const text = (sel) => { const el = $(sel); return el ? el.innerText.trim() || null : null; };
+    let robust = null;
+    if (robustData && !robustStale) {
+      const sum = MM.summarizeSeeds(robustData.runs, robustData.ids).filter((x) => !x.blocked).sort((a, b) => b.mean - a.mean);
+      const rows = sum.slice(0, 5);
+      const cur = sum.find((x) => x.id === S.method);
+      if (cur && !rows.includes(cur)) rows.push(cur);
+      robust = {
+        seeds: robustData.seeds.length,
+        rows: rows.map((x) => ({ name: MM.METHOD_BY_ID[x.id].name, mean: x.mean, sd: x.sd, worst: x.worstTask, stability: x.sd < 0.02 ? 'stable' : x.sd < 0.05 ? 'some spread' : 'noisy', current: x.id === S.method })),
+        verdict: text('#robust .verdict'), h2h: text('#h2h .verdict'),
+      };
+    }
+    const compare = S.pin ? { pinned: labelOf(S.pin), now: labelOf(nowRecipe()), summary: text('.cmp-box > div:nth-child(2)'), edge: text('#edge .verdict') } : null;
+    let mapPng = null;
+    try {
+      const cv = $('#mainCanvas'), c2 = document.createElement('canvas');
+      c2.width = c2.height = 440;
+      c2.getContext('2d').drawImage(cv, 0, 0, 440, 440);
+      mapPng = c2.toDataURL('image/png');
+    } catch (e) { /* tainted or unavailable canvas: report without the image */ }
+    return {
+      title: `${m.name} recipe report`, date: new Date().toISOString().slice(0, 10), link: recipeLink(),
+      recipe: {
+        method: m.name, family: MM.FAMILIES[m.family].name, label: MM.recipeLabel(S.method, S.params[S.method], S.align, T.K),
+        scenario: sc ? sc.name : 'Custom', experts: T.tasks.map((t, i) => `${LETTERS[i]}: ${taskName(t)}`),
+        lineage: S.init === 'shared' ? 'shared base' : 'independent inits', aligned: S.align, width: S.hidden, ftSteps: S.ftSteps, seed: S.seed,
+      },
+      result: {
+        tasks: T.tasks.map((t, i) => ({ name: `${LETTERS[i]} · ${taskName(t)}`, merged: r.accs[i], expert: T.expertAccs[i][i], base: T.baseAccs ? T.baseAccs[i] : null })),
+        avg: r.avg, retention: r.retention, cost: r.cost > 1.05 ? `${r.cost.toFixed(1)}×` : '1×', storage: r.storage > 1.05 ? `${Math.round(r.storage)}×` : '1×', warnings: r.warnings || [],
+      },
+      mapPng,
+      sensitivity: !$('#sweepPanel').hidden ? text('#sweepSum p') : null,
+      layerMap: !$('#layerPanel').hidden ? text('#heatSum p') : null,
+      robust, compare,
+      method: { tagline: m.tagline, how: m.how, pros: m.pros, cons: m.cons, realWorld: m.realWorld || '', paper: m.paper, oss: m.oss },
+      export: exp,
+    };
+  }
+  let report = null;
+  const repDlg = $('#reportDlg');
+  $('#openReport').addEventListener('click', () => {
+    const d = collectReport();
+    if (!d) { toast('Train the experts and pick a method that can run here first'); return; }
+    report = Object.assign(MM.buildReport(d), { method: S.method });
+    $('#repFrame').srcdoc = report.html;
+    if (typeof repDlg.showModal === 'function') { if (!repDlg.open) repDlg.showModal(); } else repDlg.setAttribute('open', '');
+  });
+  $('#closeReport').addEventListener('click', () => { if (repDlg.open) repDlg.close(); });
+  repDlg.addEventListener('click', (ev) => { if (ev.target === repDlg) repDlg.close(); });
+  $('#repPrint').addEventListener('click', () => { try { $('#repFrame').contentWindow.focus(); $('#repFrame').contentWindow.print(); } catch (e) { toast('Printing is blocked here; download the HTML and print it'); } });
+  $('#repHtml').addEventListener('click', () => {
+    if (!report) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([report.html], { type: 'text/html' }));
+    a.download = `modelmixer-report-${report.method}.html`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+  $('#repMd').addEventListener('click', () => { if (report) copy(report.markdown, 'Report copied as Markdown'); });
+
   // ---------------- RECIPE ADVISOR ----------------
   const advDlg = $('#advisor');
   let advResult = null;

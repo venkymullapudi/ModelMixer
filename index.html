@@ -29,6 +29,7 @@
     </nav>
     <button class="btn advisor-btn" id="openAdvisor" title="Answer a few questions about your real models and get a ranked recipe">✨ <span>Recipe advisor</span></button>
     <button class="btn ghost share-btn" id="shareLink" title="Copy a link that opens this exact recipe: experts, settings, method, knobs and any pinned comparison">🔗 <span>Share</span></button>
+    <button class="btn ghost share-btn" id="openReport" title="One page with this recipe, its results, how forgiving it is and the mergekit config: print, save as PDF, download or copy as Markdown">📄 <span>Report</span></button>
     <div class="status" id="status" role="status" aria-live="polite"><span class="pulse"></span><span id="statusText">Warming up…</span></div>
   </header>
 
@@ -193,6 +194,22 @@
     </div>
   </dialog>
 
+  <dialog class="advisor report-dlg" id="reportDlg" aria-labelledby="repTitle">
+    <div class="adv-head">
+      <div>
+        <h2 id="repTitle">Recipe report</h2>
+        <p class="muted">This recipe on one page: settings, results, how forgiving it is, any checks you ran, and the mergekit config. Hand it to a teammate before the real merge.</p>
+      </div>
+      <div class="rep-actions">
+        <button class="btn sm primary" id="repPrint">Print / save PDF</button>
+        <button class="btn ghost sm" id="repHtml">Download HTML</button>
+        <button class="btn ghost sm" id="repMd">Copy Markdown</button>
+        <button class="btn ghost sm" id="closeReport" aria-label="Close">✕</button>
+      </div>
+    </div>
+    <iframe id="repFrame" title="Recipe report preview"></iframe>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="js/nn.js"></script>
@@ -203,6 +220,7 @@
   <script src="js/advisor.js"></script>
   <script src="js/share.js"></script>
   <script src="js/mkimport.js"></script>
+  <script src="js/report.js"></script>
   <script src="js/viz.js"></script>
   <script src="js/app.js"></script>
 </body>

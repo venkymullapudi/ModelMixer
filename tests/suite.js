@@ -218,6 +218,28 @@ parameters:
       assert(big.ok && big.params.lambda === 2 && big.warnings.some((w) => /clamped/.test(w)), `λ should clamp to the lab range: ${JSON.stringify(big.params)}`);
     });
 
+    // ---------- recipe report ----------
+    test('buildReport: sections, escaping, and nothing invented for checks that were not run', () => {
+      const base = {
+        title: 'TIES-Merging recipe report', date: '2026-11-22', link: 'https://x.io/#r=abc',
+        recipe: { method: 'TIES-Merging', family: 'Task vectors', label: 'TIES · k 0.20 · λ 1.00', scenario: 'Two skills', experts: ['A: Moons', 'B: <script>alert(1)<\/script>'], lineage: 'shared base', aligned: false, width: 32, ftSteps: 250, seed: 7 },
+        result: { tasks: [{ name: 'A · Moons', merged: 0.792, expert: 1, base: 0.794 }, { name: 'B | pipes', merged: 0.992, expert: 1, base: null }], avg: 0.892, retention: 0.892, cost: '1×', storage: '1×', warnings: [] },
+        method: { tagline: 't', how: ['one', 'two'], pros: ['p'], cons: ['c'], realWorld: '', paper: 'Yadav et al.', oss: [{ name: 'mergekit', url: 'https://github.com/arcee-ai/mergekit' }] },
+        export: { file: 'config.yml', yaml: 'merge_method: ties\n', cmd: 'mergekit-yaml config.yml ./merged', note: '' },
+      };
+      const a = MM.buildReport(base);
+      assert(a.html.startsWith('<!doctype html>') && a.html.includes('79.2%') && a.html.includes('89.2%'), 'scorecard in html');
+      assert(!a.html.includes('<script>alert') && a.html.includes('&lt;script&gt;'), 'html must escape user text');
+      assert(a.markdown.includes('```yaml\nmerge_method: ties\n```') && a.markdown.includes('B \\| pipes'), 'markdown yaml block and escaped pipe');
+      for (const t of ['How forgiving', 'Which layer', 'Is the winner real', 'Compared with the pinned']) assert(!a.html.includes(t) && !a.markdown.includes(t), `"${t}" should be omitted when not run`);
+      const b = MM.buildReport(Object.assign({}, base, {
+        sensitivity: 'Best density 0.33.', layerMap: 'Hidden 1 matters.',
+        robust: { seeds: 5, rows: [{ name: 'TIES-Merging', mean: 0.913, sd: 0.032, worst: 0.756, stability: 'some spread', current: true }], verdict: 'No clear winner.', h2h: 'leans ahead' },
+        compare: { pinned: 'DARE · p 0.50', now: 'TIES · k 0.20', summary: 'B is better.', edge: 'No reliable difference.' },
+      }));
+      for (const t of ['How forgiving', 'Which layer', 'Is the winner real? (5 seeds)', 'Compared with the pinned', 'this recipe', '91.3% ± 3.2']) assert(b.html.includes(t), `missing "${t}"`);
+    });
+
     // ---------- recipe advisor ----------
     const advise = (o) => MM.adviseRecipe(o);
     const top = (r, n) => r.recs.slice(0, n || 3).map((x) => x.id);

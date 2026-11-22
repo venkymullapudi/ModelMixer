@@ -16,13 +16,20 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Recipe report:** one click turns the current recipe into a printable, shareable page: method and knobs, scorecard, knob sensitivity, multi-seed robustness / head-to-head (if run), advisor evidence on both toys, the mergekit YAML and the share link. It's what a practitioner hands to a teammate before running the real merge.
-2. **First-run tour:** a skippable 5-step guided tour (scenario → method → knobs → compare / Arena → Export) for first-time visitors, keyboard-accessible, shown once.
-3. **Undo / redo:** ⌘Z / ⇧⌘Z (and buttons) for recipe changes in the Lab (method, knobs, per-layer values, pin), so exploring is safe.
-4. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
+1. **First-run tour:** a skippable 5-step guided tour (scenario → method → knobs → compare / Arena → Export) for first-time visitors, keyboard-accessible, shown once.
+2. **Undo / redo:** ⌘Z / ⇧⌘Z (and buttons) for recipe changes in the Lab (method, knobs, per-layer values, pin), so exploring is safe.
+3. **Arena on demand for digits:** a per-method saliency strip in the Arena gallery, so the image merges can be compared at a glance.
 
 ## Done
 
+- 2026-11-22: **Recipe report.** A 📄 Report button in the top bar turns the current recipe into one page you can print or save as PDF, download as self-contained HTML, or copy as Markdown. It contains:
+  - the recipe (method, settings label, scenario and experts, lineage and alignment, training);
+  - the result on the toy (decision-map snapshot, per-task merged / expert / base, average, retention, cost);
+  - the method's how it works, strengths, missing pieces and real-model note;
+  - the mergekit YAML and command (or the open-source pointer);
+  - a share link back to the recipe.
+
+  Knob sensitivity, the per-layer map, the multi-seed table and head-to-head, and the pinned comparison and paired check appear only if they were run, so nothing is invented. The builder is a pure `js/report.js` module, and its test covers HTML escaping. That test first broke the browser test page because a literal `</script>` inside an inline script closed the tag; it now uses `<\/script>`. 62 tests. axe 0 on the report dialog and every view; no overflow at 375 px.
 - 2026-11-22: **AdaMerging objective, take 2, plus a correction.** I measured five objectives × two modes on 12 bundles (Two / Three / Hard + easy / Digits × 3 seeds):
   - **The correction:** on the image-like **Digits** toy, AdaMerging beats Task Arithmetic by about 12 pts (task-wise entropy 96.6 vs 84.6), matching the paper's vision results. The earlier "trails Task Arithmetic" note only held for the 2-D toys.
   - **Kept:** *anchored entropy* (entropy plus a small pull toward λ₀ = 0.3) is never worse than plain entropy in any slice, and **task-wise anchored** has the best overall mean (85.7) and the best Digits mean (96.7), so it is the new default. *Expert-average targets* are the steadiest overall (sd 5.0, worst 76.0) and help the 2-D toys, but cost about 6 pts on Digits, so they are kept as an option.
