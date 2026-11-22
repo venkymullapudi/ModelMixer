@@ -358,6 +358,20 @@
    * record had the same coalescing key and came within `windowMs`, it replaces the top instead (one undo step
    * per slider drag). undo()/redo() return the snapshot to restore, or null.
    */
+  /**
+   * Undo coalescing keys. Knob edits get a key (method, alignment, pin), so a quick run of them merges into one step.
+   * An edit that changes the method, alignment or pin gets null, so it is always its own step and the knob edit
+   * after it can't overwrite it.
+   */
+  function editKeyTracker() {
+    let last;
+    return (method, align, pin) => {
+      const k = JSON.stringify([method, !!align, pin || null]);
+      const out = last === undefined || k === last ? k : null;
+      last = k;
+      return out;
+    };
+  }
   function makeHistory(limit, windowMs) {
     limit = limit || 100; windowMs = windowMs == null ? 700 : windowMs;
     const past = [], future = [];
@@ -378,5 +392,5 @@
     };
   }
 
-  Object.assign(MM, { makeHistory, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

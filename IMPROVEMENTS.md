@@ -7,6 +7,7 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 ## How to verify an iteration
 
 - Phone: `python3 scripts/phone_audit.py` (exits 1 on failure; CI runs it) should show ✓ (no horizontal overflow) for every view and state.
+- Keyboard: `python3 scripts/keyboard_audit.py` (exits 1 on failure; CI runs it) must complete the whole keyboard-only flow.
 - Accessibility: `python3 scripts/axe_audit.py` (exits 1 on failure; CI runs it) must report 0 violations on every view (Lab, Arena, Atlas, Export, advisor, report) and keep every new control labelled and keyboard reachable.
 
 - `node tests/run.js` (CI runs this too). Without Node: `python3 scripts/bundle.py --tests`, then open
@@ -16,10 +17,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Keyboard-only flow check in CI:** a Playwright script that does a full recipe (scenario → method → knob → pin → compare → export) using only Tab / arrows / Enter, so keyboard reachability is guarded like axe and phone layout.
-2. **Saliency in the report:** on a digit scenario, include the expert vs merged saliency maps and pattern matches in the recipe report (HTML and Markdown).
+1. **Saliency in the report:** on a digit scenario, include the expert vs merged saliency maps and pattern matches in the recipe report (HTML and Markdown).
+2. **Skip link and landmarks:** a "Skip to recipe" link and named regions, so keyboard and screen-reader users don't tab through all 18 method chips (the keyboard audit needs 24 Tab presses to reach the picker and about 60 to reach the edge check).
 
 ## Done
+
+- 2026-11-22: **Keyboard-only flow in CI.** `scripts/keyboard_audit.py` builds a recipe using only Tab, arrows, Enter, Ctrl+Z and Esc. It picks a scenario, arrows to TIES, pins A, nudges a knob, undoes it, runs the paired edge check, arrows to Export, copies the config, and opens and closes the advisor. Every control is reached by real Tab presses, and every focus stop must show a ring. It runs as a third gate in the CI `browser` job. On its first run it found three real bugs, now fixed: (1) **undo lost the pin.** Pinning and then moving a knob within 0.7 s merged into one undo step, so Ctrl+Z also removed the pin. Pin, method and alignment changes now always get their own step (`editKeyTracker` in `js/lab.js`, test added, 66 total). (2) **Undo dropped keyboard focus** to the page body, because the controls re-render. Focus now returns to the same control. (3) **Text fields and selects** (the Export form) had `outline: none` and no keyboard focus ring; they now show the same ring as everything else. With the old undo code restored, the audit fails (exit 1).
 
 - 2026-11-22: **Arena saliency strip for digits.** On a Digits scenario the Arena shows "Where each mix looks": an on-demand button computes pixel saliency for every unblocked method on every task (one method per tick, about 1.7 s for 18), with the experts' maps as a reference row, a pattern match per task, and the mean. Rows are sorted by accuracy and open the method in the Lab. It is hidden for plane scenarios. Finding: on Digits 0 vs 1 / 2 vs 3, MoE has 98% accuracy but only a 35% match on task A, because its router reads different pixels from the expert. The caption now explains that "low match, high accuracy" means the mix solves the task another way, and "high match, low accuracy" is the conflict signature. Helpers `expertSaliency` and `saliencyRow` in `js/lab.js` (the Lab's insight panel now shares the expert-map cache), 1 test (65 total). Both CI browser gates now cover the strip: axe 0 on the digits Arena, and no overflow at 375 px (18 views).
 

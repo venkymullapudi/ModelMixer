@@ -705,3 +705,6 @@ button.asal-row:hover { border-color: var(--line); background: var(--panel); }
   .asal canvas.sal { width: 36px; height: 36px; }
   .asal-cell { flex-direction: column; gap: 2px; }
 }
+
+/* text fields and selects suppress the default outline above; give keyboard users the same ring as everything else */
+select:focus-visible, input[type='text']:focus-visible, input[type='number']:focus-visible, .field input:focus-visible, textarea:focus-visible { outline: 2px solid #a78bfa; outline-offset: 1px; }

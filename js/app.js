@@ -165,11 +165,12 @@
   // Training settings are not recorded, so undo never triggers retraining.
   const undoHistory = MM.makeHistory(100, 700); // not `history`: that would shadow window.history (share-link sync)
   let restoring = false;
+  const editKey = MM.editKeyTracker();
   const recipeSnap = () => JSON.stringify({ method: S.method, params: S.params, align: S.align, pin: S.pin });
   function recordHistory() {
     if (restoring || !undoHistory) return;
-    // coalesce rapid edits to the same method (a slider drag) into one step
-    if (undoHistory.record(recipeSnap(), performance.now(), `${S.method}`)) updateUndoButtons();
+    // coalesce rapid knob edits (a slider drag) into one step, but never across a pin, alignment or method change
+    if (undoHistory.record(recipeSnap(), performance.now(), editKey(S.method, S.align, S.pin))) updateUndoButtons();
   }
   function updateUndoButtons() {
     const u = document.getElementById('undoBtn'), r = document.getElementById('redoBtn');
@@ -180,6 +181,7 @@
     if (!snap) { toast(verb === 'Undo' ? 'Nothing to undo' : 'Nothing to redo'); return; }
     const o = JSON.parse(snap);
     const alignChanged = S.align !== o.align;
+    const refocus = focusSelector(); // re-rendering replaces the focused control; put keyboard focus back on it
     restoring = true;
     S.method = o.method; S.params = o.params; S.align = o.align; S.pin = o.pin;
     persist();
@@ -189,7 +191,19 @@
     if (alignChanged) renderIngredients();
     refresh();
     updateUndoButtons();
+    if (refocus && (!document.activeElement || document.activeElement === document.body)) {
+      const el = document.querySelector(refocus);
+      if (el) el.focus({ preventScroll: true });
+    }
     toast(`${verb}: ${MM.recipeLabel(S.method, S.params[S.method], S.align, S.experts.length)}`);
+  }
+  /** A selector that finds the focused control again after a re-render (by id or its data-* key), or null. */
+  function focusSelector() {
+    const e = document.activeElement;
+    if (!e || e === document.body) return null;
+    if (e.id) return `#${CSS.escape(e.id)}`;
+    for (const a of ['param', 'weight', 'grad', 'method', 'pin']) if (e.dataset[a] != null) return `[data-${a}="${CSS.escape(e.dataset[a])}"]`;
+    return null;
   }
   const undo = () => restoreSnap(undoHistory.undo(), 'Undo');
   const redo = () => restoreSnap(undoHistory.redo(), 'Redo');

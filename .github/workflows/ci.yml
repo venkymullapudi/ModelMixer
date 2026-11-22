@@ -21,7 +21,7 @@ jobs:
           git diff --exit-code dist/ || (echo "dist/modelmixer.html is stale: run python3 scripts/bundle.py and commit" && exit 1)
 
   browser:
-    # accessibility (axe-core, every view) and phone layout (375 px, 17 views) can't silently regress
+    # accessibility (axe-core, every view), keyboard-only use and phone layout (375 px) can't silently regress
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +36,10 @@ jobs:
         run: python3 scripts/bundle.py
       - name: Accessibility audit (axe-core)
         run: python3 scripts/axe_audit.py
+        env:
+          PW_CHANNEL: ''
+      - name: Keyboard-only flow (Tab / arrows / Enter / Esc)
+        run: python3 scripts/keyboard_audit.py
         env:
           PW_CHANNEL: ''
       - name: Phone layout audit (375 px)

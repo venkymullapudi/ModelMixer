@@ -219,6 +219,19 @@ parameters:
     });
 
     // ---------- undo / redo ----------
+    test('Undo key: pinning then nudging a knob within the window stays two undo steps', () => {
+      const h = MM.makeHistory(100, 700), key = MM.editKeyTracker(), pin = { method: 'ties', params: { density: 0.2 }, align: false };
+      const snap = (d, p, al) => JSON.stringify({ method: 'ties', density: d, pin: p, align: !!al });
+      h.record(snap(0.2, null), 0, key('ties', false, null));
+      h.record(snap(0.2, pin), 100, key('ties', false, pin));      // pin
+      h.record(snap(0.23, pin), 300, key('ties', false, pin));     // knob, 200 ms later
+      h.record(snap(0.25, pin), 400, key('ties', false, pin));     // same drag: coalesces
+      h.record(snap(0.25, pin, true), 500, key('ties', true, pin)); // alignment toggled right after
+      assert(h.size() === 4, `pin, drag and alignment are three steps: size ${h.size()}`);
+      assert(h.undo() === snap(0.25, pin), 'undo removes only the alignment change');
+      assert(h.undo() === snap(0.2, pin), 'next undo removes the knob drag and keeps the pin');
+      assert(h.undo() === snap(0.2, null), 'last undo removes the pin');
+    });
     test('makeHistory: push, coalesce drags, undo/redo, redo cleared by a new change, limit', () => {
       const h = MM.makeHistory(4, 500);
       h.record('a', 0, null);
