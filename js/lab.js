@@ -443,6 +443,31 @@
     return { best, safe, near: cnt ? near / cnt : 0, sensA: sensA / C, sensB: sensB / R };
   }
 
+  /**
+   * Per-layer grid over several seeds: grids = one vals × vals matrix of average accuracy per seed.
+   * Returns { mean (cell-wise mean grid), pick (pickGrid of the mean), bests (each seed's best cell), spread (largest
+   * distance between two seeds' best cells, as a fraction of the grid width), regret (worst seed's loss at the mean's
+   * best cell), kind ('moves' | 'narrow' | 'transfers' | 'holds', same thresholds as knobTransfer), layer (per seed,
+   * which axis the recipe is most sensitive to: 'a' rows, 'b' columns, 'both') }.
+   */
+  function gridTransfer(grids) {
+    const n = grids.length, R = grids[0].length, C = grids[0][0].length;
+    const mean = grids[0].map((row, i) => row.map((_, j) => {
+      const vs = grids.map((g) => g[i][j]);
+      return vs.some((v) => v == null) ? null : vs.reduce((a, b) => a + b, 0) / n;
+    }));
+    const pick = pickGrid(mean);
+    const per = grids.map((g) => pickGrid(g));
+    const bests = per.map((q) => ({ i: q.best.i, j: q.best.j, v: q.best.v }));
+    const span = Math.max(R - 1, C - 1) || 1;
+    let spread = 0;
+    for (const a of bests) for (const b of bests) spread = Math.max(spread, Math.max(Math.abs(a.i - b.i), Math.abs(a.j - b.j)) / span);
+    const regret = Math.max(...grids.map((g, k) => per[k].best.v - g[pick.best.i][pick.best.j]));
+    const kind = regret > 0.01 ? (spread > 0.15 ? 'moves' : 'narrow') : spread > 0.15 ? 'transfers' : 'holds';
+    const layer = per.map((q) => (q.sensA > q.sensB * 1.5 ? 'a' : q.sensB > q.sensA * 1.5 ? 'b' : 'both'));
+    return { n, mean, pick, bests, spread, regret, kind, layer };
+  }
+
   // ---------- pixel saliency for digit tasks ----------
   /** Mean |Δp| / δ when each of the 64 pixels is nudged by δ, over the first m test digits of a task. */
   function digitSaliency(predict, task, m, delta) {
@@ -584,5 +609,5 @@
     };
   }
 
-  Object.assign(MM, { transferSummary, makeLRU, seedBests, knobTransfer, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { gridTransfer, transferSummary, makeLRU, seedBests, knobTransfer, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

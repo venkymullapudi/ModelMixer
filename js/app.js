@@ -144,7 +144,7 @@
   try {
     const saved = JSON.parse(localStorage.getItem('modelmixer:v1') || 'null');
     if (saved) {
-      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor', 'sweepKnob', 'sweepSeeds', 'robustSeeds', 'gridPair']) if (saved[k] !== undefined) S[k] = saved[k];
+      for (const k of ['scenario', 'experts', 'init', 'hidden', 'ftSteps', 'seed', 'align', 'method', 'overlay', 'tab', 'pin', 'advisor', 'sweepKnob', 'sweepSeeds', 'robustSeeds', 'gridPair', 'gridSeeds']) if (saved[k] !== undefined) S[k] = saved[k];
       // v2 defaults (2026-11 review): drop knobs saved under the old defaults so everyone starts from the new ones
       if (saved.params && saved.paramsV === PARAMS_V) for (const id in saved.params) if (S.params[id]) Object.assign(S.params[id], saved.params[id]);
       if (saved.exp) Object.assign(S.exp, saved.exp);
@@ -155,8 +155,8 @@
   function persist() {
     recordHistory();
     try {
-      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds, gridPair } = S;
-      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, paramsV: PARAMS_V, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds, gridPair }));
+      const { scenario, experts, init, hidden, ftSteps, seed, align, method, params, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds, gridPair, gridSeeds } = S;
+      localStorage.setItem('modelmixer:v1', JSON.stringify({ scenario, experts, init, hidden, ftSteps, seed, align, method, params, paramsV: PARAMS_V, overlay, tab, exp, pin, advisor, sweepKnob, sweepSeeds, robustSeeds, gridPair, gridSeeds }));
     } catch (e) { /* ignore */ }
     syncHash();
   }
@@ -814,19 +814,41 @@
     const [la, lb] = pair.split('-').map(Number);
     const fixed = [0, 1, 2].find((l) => l !== la && l !== lb);
     const vals = Array.from({ length: GRID_N }, (_, i) => +(g.min + ((g.max - g.min) * i) / (GRID_N - 1)).toFixed(4));
-    const key = JSON.stringify([S.align, m.id, MM.layerGridParams(p, la, lb, 0, 0), la, lb]);
+    const seeds = !!S.gridSeeds;
+    const key = JSON.stringify([S.align, m.id, MM.layerGridParams(p, la, lb, 0, 0), la, lb, seeds]);
     let byT = gridCache.get(T);
     if (!byT) { byT = new Map(); gridCache.set(T, byT); }
-    const M = byT.get(key);
+    const cached = byT.get(key);
+    const M = cached && (cached.grids ? cached.gt.mean : cached);
     const LN = MM.LAYER_NAMES;
     panel.innerHTML = `<div class="sweep-head">
         <div><h2>Per-layer sensitivity <span class="pill-mini">which layer matters?</span></h2>
           <p class="muted">Average accuracy for every combination of ${esc(g.label)} in two layers, with ${LN[fixed]} held at ${fmtG(g, p.grad[fixed])}. A colour change along one axis only means that layer is the one to tune.</p></div>
-        <div class="sweep-ctl"><div class="seg" id="gridPair">${PAIRS.map(([k, l]) => `<button data-pair="${k}" class="${k === pair ? 'on' : ''}">${l}</button>`).join('')}</div></div></div>
+        <div class="sweep-ctl"><div class="seg" id="gridPair">${PAIRS.map(([k, l]) => `<button data-pair="${k}" class="${k === pair ? 'on' : ''}">${l}</button>`).join('')}</div>
+          <button class="tg ${seeds ? 'on' : ''}" id="gridSeeds" title="Map the grid on the 5 shared seeds (the same ones the other checks use) and show the mean">± ${SWEEP_SEEDS} seeds</button></div></div>
       <div class="heat-wrap" id="heatWrap">${M ? '' : '<div class="loading"><span class="spinner"></span> <span id="heatMsg">Mapping…</span></div>'}</div>
       <div class="sweep-sum" id="heatSum"></div>`;
-    if (M) drawHeat(m, g, p, la, lb, vals, M);
-    else {
+    if (M) drawHeat(m, g, p, la, lb, vals, M, cached.grids ? cached.gt : null);
+    else if (seeds) {
+      // every seed's 49 merges in its own worker, in parallel
+      const token = ++gridToken, Tnow = T, align = S.align;
+      const cancelled = () => token !== gridToken;
+      const msg = (t) => { const el = $('#heatMsg'); if (el && !cancelled()) el.textContent = t; };
+      (async () => {
+        const bundles = await seedBundles(SWEEP_SEEDS, cancelled, msg);
+        if (!bundles) return;
+        const recipes = [];
+        vals.forEach((va, i) => vals.forEach((vb, j) => recipes.push({ key: `c${i}_${j}`, method: m.id, params: MM.layerGridParams(p, la, lb, va, vb), align })));
+        let done = 0;
+        msg(`Mapping ${LN[la]} × ${LN[lb]} on ${bundles.length} seeds${workerOK ? ' in parallel' : ''}…`);
+        const runs = await Promise.all(bundles.map((b) => scoreAsync(b, recipes, { cancelled }).then((r) => { done++; msg(`Mapping ${LN[la]} × ${LN[lb]}… ${done}/${bundles.length} seeds`); return r; })));
+        if (cancelled() || runs.some((r) => !r)) return;
+        const grids = runs.map((r) => vals.map((_, i) => vals.map((__, j) => (r[`c${i}_${j}`].blocked ? null : r[`c${i}_${j}`].avg))));
+        const entry = { grids, gt: MM.gridTransfer(grids) };
+        byT.set(key, entry);
+        if (T === Tnow && S.method === m.id) drawHeat(m, g, p, la, lb, vals, entry.gt.mean, entry.gt);
+      })();
+    } else {
       const token = ++gridToken, Tnow = T, ctx = MM.bundleCtx(T, S.align);
       (async () => {
         // one row per frame so the page stays responsive (49 merges in all)
@@ -847,10 +869,10 @@
     }
   }
   function fmtG(g, v) { return g.key === 'balance' ? `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` : (+v).toFixed(2); }
-  function drawHeat(m, g, p, la, lb, vals, M) {
+  function drawHeat(m, g, p, la, lb, vals, M, gt) {
     const wrap = $('#heatWrap');
     if (!wrap) return;
-    const pick = MM.pickGrid(M);
+    const pick = gt ? gt.pick : MM.pickGrid(M);
     const flat = M.flat().filter((x) => x != null);
     const lo = Math.min(...flat), hi = Math.max(...flat);
     const col = (v) => {
@@ -875,19 +897,39 @@
         </div>
         <div class="hxlab">${esc(LN[lb])} →</div>
       </div>
-      <div class="chart-legend heat-legend"><span><i class="hk now"></i>now</span><span><i class="hk best"></i>best</span><span><i class="hk safe"></i>safest</span><span class="muted">cell = average accuracy %</span></div>`;
+      <div class="chart-legend heat-legend"><span><i class="hk now"></i>now</span><span><i class="hk best"></i>best</span><span><i class="hk safe"></i>safest</span><span class="muted">cell = average accuracy %${gt ? `, mean of ${gt.n} seeds` : ''}</span></div>`;
     const sens = pick.sensA > pick.sensB * 1.5 ? `<b>${esc(LN[la])}</b> is the layer this recipe is sensitive to (≈${(pick.sensA * 100).toFixed(0)} pts swing vs ${(pick.sensB * 100).toFixed(0)} for ${esc(LN[lb])})`
       : pick.sensB > pick.sensA * 1.5 ? `<b>${esc(LN[lb])}</b> is the layer this recipe is sensitive to (≈${(pick.sensB * 100).toFixed(0)} pts swing vs ${(pick.sensA * 100).toFixed(0)} for ${esc(LN[la])})`
       : `Both layers matter about equally (≈${(pick.sensA * 100).toFixed(0)} vs ${(pick.sensB * 100).toFixed(0)} pts swing)`;
     const at = (c) => `${esc(LN[la])} ${fmtG(g, vals[c.i])}, ${esc(LN[lb])} ${fmtG(g, vals[c.j])}`;
-    $('#heatSum').innerHTML = `<p>${sens}. Best: ${at(pick.best)} (<b>${pct(pick.best.v)}</b>); ${Math.round(pick.near * 100)}% of settings are within 2 pts of it.
-      ${pick.safe.i !== pick.best.i || pick.safe.j !== pick.best.j ? `The <span class="safe-word">safest</span> cell is ${at(pick.safe)}: its worst neighbour still scores ${pct(pick.safe.lower)}.` : ''} Single-seed map: confirm a favourite with the paired checks.</p>
-      <div class="row"><button class="btn sm" data-grid-use="${vals[pick.best.i]},${vals[pick.best.j]}">Use best</button>${pick.safe.i !== pick.best.i || pick.safe.j !== pick.best.j ? `<button class="btn ghost sm" data-grid-use="${vals[pick.safe.i]},${vals[pick.safe.j]}">Use safest</button>` : ''}</div>`;
+    // across seeds: does the best cell hold, and is it the same layer that matters on every seed?
+    let seedLine = 'Single-seed map: turn on <b>± 5 seeds</b> to see whether the best cell holds.';
+    const moves = !!gt && (gt.kind === 'moves' || gt.kind === 'narrow');
+    if (gt) {
+      const cells = gt.bests.map((c) => `${fmtG(g, vals[c.i])}/${fmtG(g, vals[c.j])}`).join(', ');
+      const cost = `${(gt.regret * 100).toFixed(1)} pts`;
+      const cellLine = gt.kind === 'moves'
+        ? `<span class="seed-best moves">The best cell moves with the seed (${esc(LN[la])}/${esc(LN[lb])}: ${cells}).</span> On the worst seed the mean’s best is ${cost} below that seed’s own best, so tune these layers on your own models.`
+        : gt.kind === 'narrow'
+          ? `<span class="seed-best moves">The best cell is in the same spot on every seed, but the peak is narrow (${cost} on the worst seed).</span>`
+          : `<span class="seed-best holds">The best cell ${gt.kind === 'transfers' ? 'transfers' : 'holds'} across seeds</span> (within ${cost} of every seed’s best).`;
+      const ca = gt.layer.filter((x) => x === 'a').length, cb = gt.layer.filter((x) => x === 'b').length;
+      const layerLine = ca === gt.n ? `${esc(LN[la])} is the sensitive layer on every seed.` : cb === gt.n ? `${esc(LN[lb])} is the sensitive layer on every seed.`
+        : `Which layer matters changes with the seed (${esc(LN[la])} on ${ca}, ${esc(LN[lb])} on ${cb}, both on ${gt.n - ca - cb} of ${gt.n}).`;
+      seedLine = `${cellLine} ${layerLine}`;
+    }
+    const safeDiff = pick.safe.i !== pick.best.i || pick.safe.j !== pick.best.j;
+    const useBest = `<button class="btn ${moves && safeDiff ? 'ghost ' : ''}sm" data-grid-use="${vals[pick.best.i]},${vals[pick.best.j]}">${moves ? 'Use the best on average' : 'Use best'}</button>`;
+    const useSafe = safeDiff ? `<button class="btn ${moves ? '' : 'ghost '}sm" data-grid-use="${vals[pick.safe.i]},${vals[pick.safe.j]}">Use safest</button>` : '';
+    $('#heatSum').innerHTML = `<p>${sens}. Best: ${at(pick.best)} (<b>${pct(pick.best.v)}</b>${gt ? `, mean of ${gt.n} seeds` : ''}); ${Math.round(pick.near * 100)}% of settings are within 2 pts of it.
+      ${safeDiff ? `The <span class="safe-word">safest</span> cell is ${at(pick.safe)}: its worst neighbour still scores ${pct(pick.safe.lower)}.` : ''} ${seedLine}</p>
+      <div class="row">${moves ? useSafe + useBest : useBest + useSafe}</div>`;
   }
   $('#layerPanel').addEventListener('click', (ev) => {
     const m = MM.METHOD_BY_ID[S.method];
     const pb = ev.target.closest('[data-pair]');
     if (pb) { S.gridPair = pb.dataset.pair; persist(); renderLayerMap(m, current); return; }
+    if (ev.target.closest('#gridSeeds')) { S.gridSeeds = !S.gridSeeds; persist(); renderLayerMap(m, current); return; }
     const use = ev.target.closest('[data-grid-use]');
     if (use) {
       const g = m.gradient, p = S.params[m.id];

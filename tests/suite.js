@@ -260,6 +260,15 @@ parameters:
       assert(sum.split.length >= 10, `expected many knobs to carry over on some toys only, got ${sum.split.length}`);
       return `${snap.entries.length} toys, ${sum.keys.length} knobs: 0 carry over everywhere, ${sum.split.length} depend on the toy`;
     });
+    test('gridTransfer: mean grid, per-seed best cells, moves vs holds, and which layer matters per seed', () => {
+      const G = (bi, bj, rowSens) => [0, 1, 2].map((i) => [0, 1, 2].map((j) => (i === bi && j === bj ? 0.95 : 0.8 - (rowSens ? 0.05 * Math.abs(i - bi) : 0.05 * Math.abs(j - bj)))));
+      const same = MM.gridTransfer([G(1, 1, true), G(1, 1, true), G(1, 1, true)]);
+      assert(same.kind === 'holds' && same.regret === 0 && same.pick.best.i === 1 && same.pick.best.j === 1 && same.layer.every((x) => x === 'a'), JSON.stringify({ k: same.kind, l: same.layer }));
+      const mv = MM.gridTransfer([G(0, 0, true), G(2, 2, false), G(0, 0, true)]);
+      assert(mv.kind === 'moves' && mv.spread === 1 && mv.regret > 0.1, `${mv.kind} ${mv.spread} ${mv.regret}`);
+      assert(mv.layer.join() === 'a,b,a', `layer per seed: ${mv.layer.join()}`);
+      assert(Math.abs(mv.mean[0][0] - (0.95 + 0.7 + 0.95) / 3) < 1e-12, 'mean grid');
+    });
     test('transferSummary: everywhere vs split', () => {
       const e = (label, kinds) => ({ label, rows: Object.entries(kinds).map(([knob, kind]) => ({ method: 'TIES', knob, kind })) });
       const s = MM.transferSummary([e('A', { λ: 'transfers', k: 'moves', ε: 'holds' }), e('B', { λ: 'holds', k: 'narrow', ε: 'moves' })]);

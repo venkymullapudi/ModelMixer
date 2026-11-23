@@ -53,7 +53,8 @@ with sync_playwright() as p:
     pg.wait_for_function(READY, timeout=120000)
     pg.click('[data-tab="atlas"]')
     pg.click("#runTransfer")
-    pg.wait_for_function("() => !!document.querySelector('#transfer table')", timeout=600000)
+    # wait for the live table (the pre-measured snapshot also renders a table, with class tr-x)
+    pg.wait_for_function("() => !!document.querySelector('#transfer table.tr-table:not(.tr-x)')", timeout=600000)
     while pg.locator("[data-tr-toy]").count():
         toy = pg.locator("[data-tr-toy]").first.get_attribute("data-tr-toy")
         pg.click(f'[data-tr-toy="{toy}"]')
@@ -64,6 +65,10 @@ with sync_playwright() as p:
 
 if errs:
     print("page errors:", errs)
+    sys.exit(1)
+expected = 7
+if len(entries) < expected or any(not e["rows"] for e in entries):
+    print(f"incomplete measurement ({len(entries)} of {expected} toys): not writing the snapshot")
     sys.exit(1)
 order = {sid: i for i, sid in enumerate(["two", "three", "overlap", "strangers", "hard", "digits", "digits-conflict"])}
 entries.sort(key=lambda e: order.get(e["scenario"], 99))
