@@ -17,10 +17,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Advisor evidence on the same 5 seeds:** the advisor still measures each pick on 3 seeds (7, 108, 209). Move it to the shared 5-seed cache where the toy matches the lab's, so the advisor, the sweep and the checks can't disagree just because they used different seeds.
+1. **Robustness table on the shared cache:** the Arena's "Run 3 / 5 / 10 seeds" check trains its own seeds; route it through the shared bundle cache too, so a 5-seed Arena run after any Lab check costs only scoring.
 2. **Seed stability for the gallery lessons:** the "Conflicting skills have a ceiling" card is already checked on seeds by a test; add a Digits-conflict card only if its saliency reading holds on most seeds (today it does not: TIES flips between "conflict" and "lost").
 
 ## Done
+
+- 2026-11-23: **One seed cache for the advisor and the Lab.** The advisor now measures each pick on the same 5 seeds the Lab's checks use (7, 108, 209, 310, 411), up from its own 3. A single `bundleCache`, keyed by the full training config including the seed, sits under both: the Lab's seed checks (edge, attribution, saliency, sweep) and the advisor evidence look there first and store what they train. The same config and seed are trained once and give one answer everywhere. Measured: cold, the advisor's 5 seeds take 3.7 s (3.6 s for 3 before, since seeds train in parallel); after an edge check the advisor needs 0.1 s; after the advisor, the edge check needs 0.1 s and the 5-seed sweep 0.4 s. Verdicts unchanged on defaults ("Measurements agree: DARE") and on both toys ("Both toys agree: DARE"). README updated. 72 tests, axe 0, keyboard and phone gates pass.
 
 - 2026-11-23: **Sensitivity on the shared 5 seeds.** "± 3 seeds" became "± 5 seeds": the sweep now runs on the same cached seed bundles as the edge check, attribution and saliency checks, with each seed's 17-point sweep scored in its own worker in parallel (`scoreAsync`). It takes about 4 s from cold, including training the 4 extra seeds. The unused single-seed helper was removed. The extra seeds changed two verdicts. SLERP t "held" on 3 seeds but moves on 5 (0.25, 0.19, 0.19, 0.25, 0.38; 3.1 pts on the worst seed). DARE p's worst-seed cost went from 1.1 to 6.5 pts. TIES λ still transfers (0.7 pts); density still moves (2.4 pts). README updated. axe 0, keyboard and phone gates pass, 72 tests.
 

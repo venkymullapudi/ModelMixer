@@ -5885,17 +5885,31 @@ ${parts.join('\n')}
 
   // ---------------- ROBUSTNESS (multi-seed) ----------------
   const seedCache = new Map(); // trainKey -> bundles for seeds S.seed + 101·i (i ≥ 1)
+  // Every extra-seed bundle, keyed by its full training config (seed included). The lab's seed checks and the
+  // advisor's evidence both look here first, so the same config and seed are trained once and give one answer.
+  const bundleCache = new Map();
+  const cachedBundle = (cfg) => (T && T.experts && !training && trainKey(S) === trainKey(cfg) ? T : bundleCache.get(trainKey(cfg)) || null);
+  async function trainCached(cfg, opt) {
+    const hit = cachedBundle(cfg);
+    if (hit) return hit;
+    const b = await trainAsync(cfg, opt);
+    if (b) bundleCache.set(trainKey(cfg), b);
+    return b;
+  }
   /** Bundles for seed indices 0..n-1 (0 = the lab's experts); missing ones train in parallel workers. */
   async function seedBundles(n, cancelled, msg) {
     const tk = trainKey(S);
     if (!seedCache.has(tk)) seedCache.set(tk, []);
     const arr = seedCache.get(tk);
     const missing = [];
-    for (let i = 1; i < n; i++) if (!arr[i - 1]) missing.push(i);
-    let finished = 0;
     const base = { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps };
+    for (let i = 1; i < n; i++) if (!arr[i - 1]) {
+      const hit = bundleCache.get(trainKey({ ...base, seed: S.seed + 101 * i })); // e.g. trained by the advisor
+      if (hit) arr[i - 1] = hit; else missing.push(i);
+    }
+    let finished = 0;
     const runOne = async (i) => {
-      const b = await trainAsync({ ...base, seed: S.seed + 101 * i }, { cancelled });
+      const b = await trainCached({ ...base, seed: S.seed + 101 * i }, { cancelled });
       if (!b) return false;
       arr[i - 1] = b; finished++;
       if (msg) msg(`Training experts on extra seeds… ${finished}/${missing.length}`);
@@ -6628,7 +6642,7 @@ dtype: bfloat16
   }
   function closeAdvisor() { evToken++; if (advDlg.open) { if (typeof advDlg.close === 'function') advDlg.close(); else advDlg.removeAttribute('open'); } }
   // ---- measured evidence: each top pick, run on the closest toy scenario over EV_SEEDS seeds ----
-  const EV_SEEDS = [7, 108, 209];
+  const EV_SEEDS = [0, 1, 2, 3, 4].map((i) => 7 + 101 * i); // the lab's 5 check seeds (7, 108 … 411), shared via bundleCache
   const evBundles = {}; // toyKey -> trained bundles (one per seed)
   const evCache = {}; // evKey -> seed summary
   const evSeeds = {}; // evKey -> per-seed results, for the paired re-ranking
@@ -6685,9 +6699,8 @@ dtype: bfloat16
     const need = toys.filter((t) => !evBundles[toyKey(t)]);
     const trained = await Promise.all(need.map((t) => Promise.all(EV_SEEDS.map((seed) => {
       const cfg = Object.assign(MM.toyConfig(t.scenario, seed), { init: t.init || 'shared' });
-      // Reuse the lab's trained experts when they are exactly this toy config (saves ~3 s).
-      if (T && T.experts && !training && trainKey(S) === trainKey(cfg)) return T;
-      return trainAsync(cfg, { cancelled: () => token !== evToken });
+      // the lab's experts or any bundle already trained for this exact config and seed (lab seed checks included)
+      return trainCached(cfg, { cancelled: () => token !== evToken });
     }))));
     if (token !== evToken || trained.some((bs) => bs.some((b) => !b))) return;
     need.forEach((t, i) => (evBundles[toyKey(t)] = trained[i]));
