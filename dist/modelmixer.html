@@ -4189,7 +4189,7 @@ ${parts.join('\n')}
     },
     {
       id: 'ties-which-layer', title: 'Which layer, not which value',
-      lesson: 'With a λ per layer, TIES on Two skills is sensitive to Hidden 1 on all 7 seeds we tried (a 14–27 pt swing, against at most 9.5 for the other layers). But the best Hidden 1 value is not stable: λ 0.65 there helped on 5 of the 7 seeds and hurt on 2. What carries over is where to look, not the number.',
+      lesson: 'With a λ per layer, TIES on Two skills is sensitive to Hidden 1 on all 7 seeds we tried (a 14–27 pt swing, against at most 9.5 for the other layers). But the best Hidden 1 value is not stable: λ 0.65 there helped on 5 of the 7 seeds and hurt on 2. Across 6 toys × 5 seeds, Hidden 1 was the most sensitive layer in 26 of 30 cases; the 4 exceptions were Output (on Three skills, Overlapping skills and Hard + easy). So start tuning at Hidden 1, map the layers on your own models, and don’t copy the number.',
       hint: 'In the Lab’s per-layer map, turn on “± 5 seeds”: the best cell moves, the sensitive layer doesn’t.',
       scenario: 'two',
       A: { method: 'ties', params: p('ties', { layerwise: true, grad: [1, 1, 1] }), align: false },
