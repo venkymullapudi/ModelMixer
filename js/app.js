@@ -1927,35 +1927,43 @@
   };
 
   /** YAML comments with the multi-seed sweep evidence for this recipe's knobs (only knobs already swept on seeds). */
-  function evidenceComments(id) {
-    if (!T || !T.experts) return { lines: [], swept: 0, knobs: 0 };
-    const m = MM.METHOD_BY_ID[id], params = S.params[id];
+  /**
+   * Seed evidence for each knob of a method: from a 5-seed sweep at this recipe's settings if there is one, else at
+   * default settings (as the Atlas transfer table measures). Rows: { knob, kind, lo, hi, best, regret, now, n, basis }.
+   */
+  function knobEvidence(id, opts) {
+    if (!T || !T.experts) return { rows: [], knobs: 0 };
+    const m = MM.METHOD_BY_ID[id], params = S.params[id], defaults = MM.defaultParams(m, T.K);
     const ks = MM.sweepKnobs(id, T.K, params);
     const byT = sweepCache.get(T);
-    const lines = [];
-    let n = 0;
+    const rows = [];
     for (const knob of ks) {
-      const res = byT && byT.get(sweepKey(id, params, knob, true));
+      let basis = 'recipe', res = byT && byT.get(sweepKey(id, params, knob, true));
+      if (!res && !(opts && opts.recipeOnly)) { basis = 'defaults'; res = byT && byT.get(sweepKey(id, defaults, knob, true)); }
       if (!res || res.curves.length < 2 || res.curves.some((c) => c.some((q) => q.blocked))) continue;
       const tv = MM.knobTransfer(res.xs, res.curves.map((c) => c.map((q) => q.avg)));
-      n = tv.n;
-      const name = knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, '');
       const f = (x) => knobFmt(knob, x);
-      const now = f(MM.knobValue(params, knob));
-      const lo = f(Math.min(...tv.bests)), hi = f(Math.max(...tv.bests));
-      lines.push(tv.kind === 'moves'
-        ? `#   ${name}: best moves with the seed (${lo} to ${hi}); tune it on your own models. This config: ${now}.`
-        : tv.kind === 'transfers'
-          ? `#   ${name}: ${f(tv.best)} transfers (within ${(tv.regret * 100).toFixed(1)} pts of every seed's best). This config: ${now}.`
-          : tv.kind === 'narrow'
-            ? `#   ${name}: best sits near ${f(tv.best)} on every seed but the peak is narrow (${(tv.regret * 100).toFixed(1)} pts on the worst seed); tune it finely. This config: ${now}.`
-            : `#   ${name}: best ${f(tv.best)} holds across seeds. This config: ${now}.`);
+      rows.push({ knob: knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, ''), kind: tv.kind, n: tv.n, basis,
+        lo: f(Math.min(...tv.bests)), hi: f(Math.max(...tv.bests)), best: f(tv.best), regret: tv.regret, now: f(MM.knobValue(params, knob)) });
     }
-    if (!lines.length) return { lines: [], swept: 0, knobs: ks.length };
-    const sc = MM.SCENARIOS.find((x) => x.id === S.scenario);
+    return { rows, knobs: ks.length };
+  }
+  /** YAML comments with the multi-seed sweep evidence for this recipe's knobs (only sweeps at this recipe's settings). */
+  function evidenceComments(id) {
+    const { rows, knobs } = knobEvidence(id, { recipeOnly: true });
+    if (!rows.length) return { lines: [], swept: 0, knobs };
+    const m = MM.METHOD_BY_ID[id], sc = MM.SCENARIOS.find((x) => x.id === S.scenario);
+    const pts = (r) => `${(r.regret * 100).toFixed(1)} pts`;
+    const lines = rows.map((r) => (r.kind === 'moves'
+      ? `#   ${r.knob}: best moves with the seed (${r.lo} to ${r.hi}); tune it on your own models. This config: ${r.now}.`
+      : r.kind === 'transfers'
+        ? `#   ${r.knob}: ${r.best} transfers (within ${pts(r)} of every seed's best). This config: ${r.now}.`
+        : r.kind === 'narrow'
+          ? `#   ${r.knob}: best sits near ${r.best} on every seed but the peak is narrow (${pts(r)} on the worst seed); tune it finely. This config: ${r.now}.`
+          : `#   ${r.knob}: best ${r.best} holds across seeds. This config: ${r.now}.`));
     return {
-      lines: [`# ModelMixer toy evidence: ${m.name} on ${sc ? sc.name : 'a custom'} toy, knob sweeps over ${n} seeds.`, ...lines, '# Toy-scale evidence only: confirm on a sample of your real data.'],
-      swept: lines.length, knobs: ks.length,
+      lines: [`# ModelMixer toy evidence: ${m.name} on ${sc ? sc.name : 'a custom'} toy, knob sweeps over ${rows[0].n} seeds.`, ...lines, '# Toy-scale evidence only: confirm on a sample of your real data.'],
+      swept: rows.length, knobs,
     };
   }
   let annotateToken = 0;
@@ -2297,6 +2305,7 @@ dtype: bfloat16
       },
       mapPng,
       sensitivity: !$('#sweepPanel').hidden ? text('#sweepSum p') : null,
+      transfer: ((ev) => (ev.rows.length ? { rows: ev.rows, knobs: ev.knobs, seeds: ev.rows[0].n } : null))(knobEvidence(S.method)),
       layerMap: !$('#layerPanel').hidden ? text('#heatSum p') : null,
       robust, compare, saliency,
       method: { tagline: m.tagline, how: m.how, pros: m.pros, cons: m.cons, realWorld: m.realWorld || '', paper: m.paper, oss: m.oss },

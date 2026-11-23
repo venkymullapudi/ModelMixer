@@ -276,7 +276,13 @@ parameters:
       assert(a.html.startsWith('<!doctype html>') && a.html.includes('79.2%') && a.html.includes('89.2%'), 'scorecard in html');
       assert(!a.html.includes('<script>alert') && a.html.includes('&lt;script&gt;'), 'html must escape user text');
       assert(a.markdown.includes('```yaml\nmerge_method: ties\n```') && a.markdown.includes('B \\| pipes'), 'markdown yaml block and escaped pipe');
-      for (const t of ['How forgiving', 'Which layer', 'Is the winner real', 'Compared with the pinned']) assert(!a.html.includes(t) && !a.markdown.includes(t), `"${t}" should be omitted when not run`);
+      for (const t of ['How forgiving', 'Which layer', 'Is the winner real', 'Compared with the pinned', 'can be copied']) assert(!a.html.includes(t) && !a.markdown.includes(t), `"${t}" should be omitted when not run`);
+      const tr = MM.buildReport(Object.assign({}, base, { transfer: { seeds: 5, knobs: 3, rows: [
+        { knob: 'Density k', kind: 'moves', lo: '0.08', hi: '0.39', best: '0.33', regret: 0.024, now: '0.20', basis: 'recipe' },
+        { knob: 'Scaling λ', kind: 'transfers', lo: '0.38', hi: '0.75', best: '0.63', regret: 0.007, now: '1.00', basis: 'defaults' }] } }));
+      assert(tr.html.includes('Which knob values can be copied? (5 seeds)') && tr.html.includes('moves with the seed') && tr.html.includes('default settings'), 'transfer section in html');
+      assert(tr.markdown.includes('| Density k | moves with the seed | 0.08 – 0.39 | 0.33 | 2.4 pts | 0.20 | this recipe |'), 'transfer row in markdown');
+      assert(tr.markdown.includes('1 of 2 measured knobs should be tuned') && tr.markdown.includes('1 knob was not measured'), 'transfer note');
       const b = MM.buildReport(Object.assign({}, base, {
         sensitivity: 'Best density 0.33.', layerMap: 'Hidden 1 matters.',
         robust: { seeds: 5, rows: [{ name: 'TIES-Merging', mean: 0.913, sd: 0.032, worst: 0.756, stability: 'some spread', current: true }], verdict: 'No clear winner.', h2h: 'leans ahead' },

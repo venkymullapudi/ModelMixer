@@ -3851,7 +3851,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
    * d = { title, date, link,
    *   recipe: { method, family, label, scenario, experts:[...], lineage, aligned, width, ftSteps, seed },
    *   result: { tasks:[{ name, merged, expert, base }], avg, retention, cost, storage, warnings:[] }, mapPng,
-   *   sensitivity?, layerMap?, robust?: { seeds, rows:[{ name, mean, sd, worst, stability, current }], verdict, h2h },
+   *   sensitivity?, layerMap?, transfer?: { rows: [{ knob, kind, lo, hi, best, regret, now, basis }], knobs, seeds }, robust?: { seeds, rows:[{ name, mean, sd, worst, stability, current }], verdict, h2h },
    *   compare?: { pinned, now, changes?: [{ what, a, b, delta? }], attribution?: { total, interaction, seed }, summary, edge },
    *   saliency?: { tasks:[{ name, match, merged, expert, expertPng?, mergedPng?, seeds? }], mean, router? },
    *     (seeds = a saliencySeedSummary entry, present only if the multi-seed check was run) method: { tagline, how:[], pros:[], cons:[], realWorld, paper, oss:[{name,url}] },
@@ -3861,6 +3861,11 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
   const attrTxt = (x) => (x.seeds ? ` (alone: ${pts(x.seeds.mean)} ± ${(x.seeds.sd * 100).toFixed(1)}, ${x.seeds.sign})`
     : x.delta === undefined ? '' : x.delta === null ? ' (can’t run alone)' : ` (alone: ${pts(x.delta)})`);
   const attrFoot = (a) => `"Alone" is A with only that change, ${a.seeds ? `mean ± sd over ${a.seeds} seeds` : `on seed ${a.seed}`}. Together: ${pts(a.total)}${a.seeds ? ` ± ${(a.totalSd * 100).toFixed(1)}` : ''}; ${Math.abs(a.interaction) < 0.005 ? 'the changes roughly add up (within half a point).' : `${pts(a.interaction)} comes from the changes interacting.`}`;
+  const TRANSFER_TXT = { moves: 'moves with the seed', narrow: 'same spot, narrow peak', transfers: 'transfers', holds: 'holds' };
+  const transferNote = (t) => {
+    const mv = t.rows.filter((r) => r.kind === 'moves' || r.kind === 'narrow').length;
+    return `${mv ? `${mv} of ${t.rows.length} measured knob${t.rows.length > 1 ? 's' : ''} should be tuned on your own models rather than copied.` : 'Every measured knob value carries over from seed to seed.'}${t.rows.length < t.knobs ? ` ${t.knobs - t.rows.length} knob${t.knobs - t.rows.length > 1 ? 's were' : ' was'} not measured.` : ''} "Worst-seed cost" is how far the best-on-average value falls below that seed's own best.`;
+  };
   function buildReport(d) {
     const r = d.recipe, res = d.result, m = d.method;
     // ---------- Markdown ----------
@@ -3879,6 +3884,12 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     (res.warnings || []).forEach((w) => md.push('', `> ⚠ ${w}`));
     md.push('');
     if (d.sensitivity) md.push('## How forgiving is it?', '', d.sensitivity, '');
+    if (d.transfer) {
+      md.push(`## Which knob values can be copied? (${d.transfer.seeds} seeds)`, '');
+      md.push('| Knob | Across seeds | Per-seed best | Best on average | Worst-seed cost | This recipe | Measured at |', '| --- | --- | --- | --- | --- | --- | --- |');
+      d.transfer.rows.forEach((r) => md.push(`| ${mdCell(r.knob)} | ${TRANSFER_TXT[r.kind]} | ${r.lo} – ${r.hi} | ${r.best} | ${(r.regret * 100).toFixed(1)} pts | ${r.now} | ${r.basis === 'recipe' ? 'this recipe' : 'default settings'} |`));
+      md.push('', transferNote(d.transfer), '');
+    }
     if (d.layerMap) md.push('## Which layer matters?', '', d.layerMap, '');
     const sal = d.saliency ? d.saliency.tasks.map((t) => {
       const reading = saliencyReading(t.match, t.merged, t.expert, { router: d.saliency.router });
@@ -3944,6 +3955,8 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
         <div><b>${esc(t.name)}</b> <span class="pill ${t.match > 0.9 ? 'good' : t.match > 0.7 ? 'mid' : 'bad'}">${Math.round(t.match * 100)}% match</span><br/><span class="muted">${pct(t.merged)} merged vs ${pct(t.expert)} expert.</span> ${esc(t.claim)}.${t.stab ? `<br/><span class="stab ${t.stab.level}">${t.stab.level === 'stable' ? '✓' : t.stab.level === 'mostly' ? '≈' : '⚠'} ${esc(t.stab.text.charAt(0).toUpperCase() + t.stab.text.slice(1))}.</span>` : ''}</div></div>`).join('')}</div>
       ${anySeeds ? '' : '<p class="muted">Readings near the 80% line can change with the seed: run the 5-seed check in the Lab before relying on one.</p>'}`));
     if (d.sensitivity) parts.push(sec('How forgiving is it?', `<p>${esc(d.sensitivity)}</p>`));
+    if (d.transfer) parts.push(sec(`Which knob values can be copied? (${d.transfer.seeds} seeds)`, `<table>${row(['Knob', 'Across seeds', 'Per-seed best', 'Best on average', 'Worst-seed cost', 'This recipe', 'Measured at'], 'th')}${d.transfer.rows.map((r) => row([esc(r.knob), `<span class="tv ${r.kind}">${TRANSFER_TXT[r.kind]}</span>`, `${esc(r.lo)} – ${esc(r.hi)}`, esc(r.best), `${(r.regret * 100).toFixed(1)} pts`, esc(r.now), r.basis === 'recipe' ? 'this recipe' : 'default settings'])).join('')}</table>
+      <p class="muted">${esc(transferNote(d.transfer))}</p>`));
     if (d.layerMap) parts.push(sec('Which layer matters?', `<p>${esc(d.layerMap)}</p>`));
     if (d.robust) parts.push(sec(`Is the winner real? (${d.robust.seeds} seeds)`, `<table>${row(['Method', 'Mean ± sd', 'Worst task', 'Stability'], 'th')}${d.robust.rows.map((x) => `<tr class="${x.current ? 'cur' : ''}"><td>${esc(x.name)}${x.current ? ' <span class="tag">this recipe</span>' : ''}</td><td>${pct(x.mean)} ± ${(x.sd * 100).toFixed(1)}</td><td>${pct(x.worst)}</td><td>${esc(x.stability)}</td></tr>`).join('')}</table>
       ${d.robust.verdict ? `<p>${esc(d.robust.verdict)}</p>` : ''}${d.robust.h2h ? `<p><b>Head-to-head:</b> ${esc(d.robust.h2h)}</p>` : ''}`));
@@ -3978,6 +3991,8 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
   .pill { font-size: 11.5px; border-radius: 999px; padding: 1px 8px; border: 1px solid; } .pill.good { color: #047857; border-color: #a7f3d0; background: #ecfdf5; }
   .pill.mid { color: #92400e; border-color: #fde68a; background: #fffbeb; } .pill.bad { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
   .stab { font-size: 12.5px; } .stab.stable { color: #047857; } .stab.mostly { color: #92400e; } .stab.unstable { color: #b91c1c; }
+  .tv { font-size: 11.5px; border-radius: 999px; padding: 0 7px; border: 1px solid; white-space: nowrap; }
+  .tv.moves, .tv.narrow { color: #92400e; border-color: #fde68a; background: #fffbeb; } .tv.transfers, .tv.holds { color: #047857; border-color: #a7f3d0; background: #ecfdf5; }
   footer { margin-top: 32px; color: #6b7280; font-size: 12px; }
   @media (max-width: 600px) { .res, .two { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
   @media print { body { padding: 0; } a { color: inherit; } h2 { break-after: avoid; } section { break-inside: avoid; } }
@@ -6417,35 +6432,43 @@ ${parts.join('\n')}
   };
 
   /** YAML comments with the multi-seed sweep evidence for this recipe's knobs (only knobs already swept on seeds). */
-  function evidenceComments(id) {
-    if (!T || !T.experts) return { lines: [], swept: 0, knobs: 0 };
-    const m = MM.METHOD_BY_ID[id], params = S.params[id];
+  /**
+   * Seed evidence for each knob of a method: from a 5-seed sweep at this recipe's settings if there is one, else at
+   * default settings (as the Atlas transfer table measures). Rows: { knob, kind, lo, hi, best, regret, now, n, basis }.
+   */
+  function knobEvidence(id, opts) {
+    if (!T || !T.experts) return { rows: [], knobs: 0 };
+    const m = MM.METHOD_BY_ID[id], params = S.params[id], defaults = MM.defaultParams(m, T.K);
     const ks = MM.sweepKnobs(id, T.K, params);
     const byT = sweepCache.get(T);
-    const lines = [];
-    let n = 0;
+    const rows = [];
     for (const knob of ks) {
-      const res = byT && byT.get(sweepKey(id, params, knob, true));
+      let basis = 'recipe', res = byT && byT.get(sweepKey(id, params, knob, true));
+      if (!res && !(opts && opts.recipeOnly)) { basis = 'defaults'; res = byT && byT.get(sweepKey(id, defaults, knob, true)); }
       if (!res || res.curves.length < 2 || res.curves.some((c) => c.some((q) => q.blocked))) continue;
       const tv = MM.knobTransfer(res.xs, res.curves.map((c) => c.map((q) => q.avg)));
-      n = tv.n;
-      const name = knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, '');
       const f = (x) => knobFmt(knob, x);
-      const now = f(MM.knobValue(params, knob));
-      const lo = f(Math.min(...tv.bests)), hi = f(Math.max(...tv.bests));
-      lines.push(tv.kind === 'moves'
-        ? `#   ${name}: best moves with the seed (${lo} to ${hi}); tune it on your own models. This config: ${now}.`
-        : tv.kind === 'transfers'
-          ? `#   ${name}: ${f(tv.best)} transfers (within ${(tv.regret * 100).toFixed(1)} pts of every seed's best). This config: ${now}.`
-          : tv.kind === 'narrow'
-            ? `#   ${name}: best sits near ${f(tv.best)} on every seed but the peak is narrow (${(tv.regret * 100).toFixed(1)} pts on the worst seed); tune it finely. This config: ${now}.`
-            : `#   ${name}: best ${f(tv.best)} holds across seeds. This config: ${now}.`);
+      rows.push({ knob: knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, ''), kind: tv.kind, n: tv.n, basis,
+        lo: f(Math.min(...tv.bests)), hi: f(Math.max(...tv.bests)), best: f(tv.best), regret: tv.regret, now: f(MM.knobValue(params, knob)) });
     }
-    if (!lines.length) return { lines: [], swept: 0, knobs: ks.length };
-    const sc = MM.SCENARIOS.find((x) => x.id === S.scenario);
+    return { rows, knobs: ks.length };
+  }
+  /** YAML comments with the multi-seed sweep evidence for this recipe's knobs (only sweeps at this recipe's settings). */
+  function evidenceComments(id) {
+    const { rows, knobs } = knobEvidence(id, { recipeOnly: true });
+    if (!rows.length) return { lines: [], swept: 0, knobs };
+    const m = MM.METHOD_BY_ID[id], sc = MM.SCENARIOS.find((x) => x.id === S.scenario);
+    const pts = (r) => `${(r.regret * 100).toFixed(1)} pts`;
+    const lines = rows.map((r) => (r.kind === 'moves'
+      ? `#   ${r.knob}: best moves with the seed (${r.lo} to ${r.hi}); tune it on your own models. This config: ${r.now}.`
+      : r.kind === 'transfers'
+        ? `#   ${r.knob}: ${r.best} transfers (within ${pts(r)} of every seed's best). This config: ${r.now}.`
+        : r.kind === 'narrow'
+          ? `#   ${r.knob}: best sits near ${r.best} on every seed but the peak is narrow (${pts(r)} on the worst seed); tune it finely. This config: ${r.now}.`
+          : `#   ${r.knob}: best ${r.best} holds across seeds. This config: ${r.now}.`));
     return {
-      lines: [`# ModelMixer toy evidence: ${m.name} on ${sc ? sc.name : 'a custom'} toy, knob sweeps over ${n} seeds.`, ...lines, '# Toy-scale evidence only: confirm on a sample of your real data.'],
-      swept: lines.length, knobs: ks.length,
+      lines: [`# ModelMixer toy evidence: ${m.name} on ${sc ? sc.name : 'a custom'} toy, knob sweeps over ${rows[0].n} seeds.`, ...lines, '# Toy-scale evidence only: confirm on a sample of your real data.'],
+      swept: rows.length, knobs,
     };
   }
   let annotateToken = 0;
@@ -6787,6 +6810,7 @@ dtype: bfloat16
       },
       mapPng,
       sensitivity: !$('#sweepPanel').hidden ? text('#sweepSum p') : null,
+      transfer: ((ev) => (ev.rows.length ? { rows: ev.rows, knobs: ev.knobs, seeds: ev.rows[0].n } : null))(knobEvidence(S.method)),
       layerMap: !$('#layerPanel').hidden ? text('#heatSum p') : null,
       robust, compare, saliency,
       method: { tagline: m.tagline, how: m.how, pros: m.pros, cons: m.cons, realWorld: m.realWorld || '', paper: m.paper, oss: m.oss },
