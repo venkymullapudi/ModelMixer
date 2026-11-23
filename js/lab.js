@@ -321,6 +321,23 @@
     return { best: xs[bi], bestVal: mean[bi], safe: xs[si], safeVal: mean[si], safeLower: lower[si], range: [xs[lo], xs[hi]], rangeFrac: (xs[hi] - xs[lo]) / (xs[xs.length - 1] - xs[0] || 1) };
   }
 
+  /**
+   * Does the best setting transfer across seeds? curves = one array of average accuracies per seed, over xs.
+   * pickX = the value the panel recommends (e.g. the best of the mean curve).
+   * Returns { bests: [{ x, val }], spread (fraction of the knob range between the lowest and highest per-seed best),
+   *   regret (worst over seeds of: that seed's best − its accuracy at pickX), moves (spread > 0.15) }.
+   */
+  function seedBests(xs, curves, pickX) {
+    const bests = curves.map((c) => { let bi = 0; c.forEach((v, i) => { if (v > c[bi] + 1e-12) bi = i; }); return { x: xs[bi], val: c[bi] }; });
+    const span = xs[xs.length - 1] - xs[0] || 1;
+    const bx = bests.map((b) => b.x);
+    const spread = (Math.max(...bx) - Math.min(...bx)) / span;
+    let pi = 0;
+    xs.forEach((x, i) => { if (Math.abs(x - pickX) < Math.abs(xs[pi] - pickX)) pi = i; });
+    const regret = Math.max(...curves.map((c, k) => bests[k].val - c[pi]));
+    return { bests, spread, regret, moves: spread > 0.15 };
+  }
+
   // ---------- paired comparisons across seeds ----------
   // two-sided 95% critical t values by degrees of freedom (n − 1)
   const T95 = [Infinity, 12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23];
@@ -509,5 +526,5 @@
     };
   }
 
-  Object.assign(MM, { recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { seedBests, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

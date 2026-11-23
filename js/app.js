@@ -1007,10 +1007,22 @@
     const span = pick.range[0] === pick.range[1]
       ? 'No other setting comes within 2 pts of it'
       : `Anything from <b>${knobFmt(knob, pick.range[0])}</b> to <b>${knobFmt(knob, pick.range[1])}</b> stays within 2 pts`;
-    $('#sweepSum').innerHTML = `<p>Best ${esc(kname)} is <b>${knobFmt(knob, pick.best)}</b> (${pct(pick.bestVal)}). ${span}, so this knob is <b class="sens ${pick.rangeFrac > 0.35 ? 'good' : pick.rangeFrac > 0.12 ? 'mid' : 'bad'}">${forgiving}</b>.
+    // with several seeds: does the best value itself hold from seed to seed?
+    let transfer = '';
+    if (n > 1) {
+      const sb = MM.seedBests(xs, curves.map((c) => c.map((q) => q.avg)), pick.best);
+      const vals = sb.bests.map((b) => knobFmt(knob, b.x)).join(', ');
+      const cost = `${(sb.regret * 100).toFixed(1)} pts`;
+      transfer = sb.moves && sb.regret > 0.01
+        ? `<span class="seed-best moves">The best value moves with the seed: ${vals} on the ${n} seeds.</span> Treat ${knobFmt(knob, pick.best)} as one point in a range and tune this knob on your own data; on the worst seed it is ${cost} below that seed’s own best.`
+        : sb.moves
+          ? `<span class="seed-best holds">${knobFmt(knob, pick.best)} transfers across seeds:</span> each seed’s best differs (${vals}), but the curve is flat enough that ${knobFmt(knob, pick.best)} is within ${cost} of every seed’s best.`
+          : `<span class="seed-best holds">The best value holds across seeds (${vals}).</span>${sb.regret > 0.01 ? ` On the worst seed it is ${cost} below that seed’s own best.` : ''}`;
+    }
+    $('#sweepSum').innerHTML = `<p>Best ${esc(kname)} is <b>${knobFmt(knob, pick.best)}</b> (${pct(pick.bestVal)}${n > 1 ? `, mean of ${n} seeds` : ''}). ${span}, so this knob is <b class="sens ${pick.rangeFrac > 0.35 ? 'good' : pick.rangeFrac > 0.12 ? 'mid' : 'bad'}">${forgiving}</b>. ${transfer}
       ${gap > 0.01 ? `Your setting (${knobFmt(knob, now)}) is ${(gap * 100).toFixed(1)} pts below the best.` : 'Your setting is at or near the best.'}
       ${pick.safe !== pick.best ? `The <span class="safe-word">safest</span> choice is ${knobFmt(knob, pick.safe)}: ${sd ? 'it has the best mean − 1 sd across seeds' : 'it has the best worst-case among neighbouring settings'}.` : ''}
-      ${!sd && pick.rangeFrac <= 0.12 ? 'A sharp single-seed peak can be luck: turn on <b>± 3 seeds</b> to check it.' : ''}</p>
+      ${!sd ? (pick.rangeFrac <= 0.12 ? 'A sharp single-seed peak can be luck: turn on <b>± 3 seeds</b> to check it.' : 'This is one seed: turn on <b>± 3 seeds</b> to see whether the best value holds.') : ''}</p>
       <div class="row"><button class="btn sm" data-sweep-use="${pick.best}">Use best (${knobFmt(knob, pick.best)})</button>${pick.safe !== pick.best ? `<button class="btn ghost sm" data-sweep-use="${pick.safe}">Use safest (${knobFmt(knob, pick.safe)})</button>` : ''}</div>`;
   }
   $('#sweepPanel').addEventListener('click', (ev) => {

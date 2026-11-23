@@ -459,6 +459,14 @@ parameters:
       assert(MM.summarizeAttributions([mk(0.01, null, 0)]).parts[1].sign === 'none', 'never runnable alone');
       assert(Math.abs(s.total.mean - 0.04 / 3) < 1e-12, 'total mean');
     });
+    test('seedBests: per-seed best values, spread across the range, and regret of the recommended value', () => {
+      const xs = [0, 0.25, 0.5, 0.75, 1];
+      const same = MM.seedBests(xs, [[0.8, 0.9, 0.95, 0.9, 0.8], [0.79, 0.88, 0.93, 0.9, 0.81]], 0.5);
+      assert(!same.moves && same.spread === 0 && same.bests.every((b) => b.x === 0.5) && same.regret === 0, JSON.stringify(same));
+      const moving = MM.seedBests(xs, [[0.9, 0.85, 0.8, 0.8, 0.8], [0.8, 0.8, 0.82, 0.85, 0.95], [0.8, 0.9, 0.85, 0.8, 0.8]], 0.25);
+      assert(moving.moves && moving.spread === 1 && moving.bests.map((b) => b.x).join() === '0,1,0.25', JSON.stringify(moving.bests));
+      assert(Math.abs(moving.regret - 0.15) < 1e-12, `worst seed loses 15 pts at 0.25: ${moving.regret}`);
+    });
     test('Two skills: each expert masters its own task, base does not', () => {
       T.expertAccs.forEach((a, i) => assert(a[i] > 0.9, `expert ${i} only ${pct(a[i])} on own task`));
       const baseAvg = T.baseAccs.reduce((a, b) => a + b, 0) / T.K;

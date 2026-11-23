@@ -774,6 +774,10 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .cmp-changes .attr { flex-wrap: wrap; justify-content: flex-end; }
 .gal-card .gal-hint { flex: 0; font-size: 12px; color: #a78bfa; }
 
+/* ---------- sensitivity: does the best transfer across seeds? ---------- */
+.seed-best { font-weight: 600; }
+.seed-best.moves { color: #fbbf24; } .seed-best.holds { color: #34d399; }
+
 </style>
 </head>
 <body>
@@ -3034,6 +3038,23 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     return { best: xs[bi], bestVal: mean[bi], safe: xs[si], safeVal: mean[si], safeLower: lower[si], range: [xs[lo], xs[hi]], rangeFrac: (xs[hi] - xs[lo]) / (xs[xs.length - 1] - xs[0] || 1) };
   }
 
+  /**
+   * Does the best setting transfer across seeds? curves = one array of average accuracies per seed, over xs.
+   * pickX = the value the panel recommends (e.g. the best of the mean curve).
+   * Returns { bests: [{ x, val }], spread (fraction of the knob range between the lowest and highest per-seed best),
+   *   regret (worst over seeds of: that seed's best − its accuracy at pickX), moves (spread > 0.15) }.
+   */
+  function seedBests(xs, curves, pickX) {
+    const bests = curves.map((c) => { let bi = 0; c.forEach((v, i) => { if (v > c[bi] + 1e-12) bi = i; }); return { x: xs[bi], val: c[bi] }; });
+    const span = xs[xs.length - 1] - xs[0] || 1;
+    const bx = bests.map((b) => b.x);
+    const spread = (Math.max(...bx) - Math.min(...bx)) / span;
+    let pi = 0;
+    xs.forEach((x, i) => { if (Math.abs(x - pickX) < Math.abs(xs[pi] - pickX)) pi = i; });
+    const regret = Math.max(...curves.map((c, k) => bests[k].val - c[pi]));
+    return { bests, spread, regret, moves: spread > 0.15 };
+  }
+
   // ---------- paired comparisons across seeds ----------
   // two-sided 95% critical t values by degrees of freedom (n − 1)
   const T95 = [Infinity, 12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23];
@@ -3222,7 +3243,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     };
   }
 
-  Object.assign(MM, { recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { seedBests, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();
 
 </script>
@@ -5443,10 +5464,22 @@ ${parts.join('\n')}
     const span = pick.range[0] === pick.range[1]
       ? 'No other setting comes within 2 pts of it'
       : `Anything from <b>${knobFmt(knob, pick.range[0])}</b> to <b>${knobFmt(knob, pick.range[1])}</b> stays within 2 pts`;
-    $('#sweepSum').innerHTML = `<p>Best ${esc(kname)} is <b>${knobFmt(knob, pick.best)}</b> (${pct(pick.bestVal)}). ${span}, so this knob is <b class="sens ${pick.rangeFrac > 0.35 ? 'good' : pick.rangeFrac > 0.12 ? 'mid' : 'bad'}">${forgiving}</b>.
+    // with several seeds: does the best value itself hold from seed to seed?
+    let transfer = '';
+    if (n > 1) {
+      const sb = MM.seedBests(xs, curves.map((c) => c.map((q) => q.avg)), pick.best);
+      const vals = sb.bests.map((b) => knobFmt(knob, b.x)).join(', ');
+      const cost = `${(sb.regret * 100).toFixed(1)} pts`;
+      transfer = sb.moves && sb.regret > 0.01
+        ? `<span class="seed-best moves">The best value moves with the seed: ${vals} on the ${n} seeds.</span> Treat ${knobFmt(knob, pick.best)} as one point in a range and tune this knob on your own data; on the worst seed it is ${cost} below that seed’s own best.`
+        : sb.moves
+          ? `<span class="seed-best holds">${knobFmt(knob, pick.best)} transfers across seeds:</span> each seed’s best differs (${vals}), but the curve is flat enough that ${knobFmt(knob, pick.best)} is within ${cost} of every seed’s best.`
+          : `<span class="seed-best holds">The best value holds across seeds (${vals}).</span>${sb.regret > 0.01 ? ` On the worst seed it is ${cost} below that seed’s own best.` : ''}`;
+    }
+    $('#sweepSum').innerHTML = `<p>Best ${esc(kname)} is <b>${knobFmt(knob, pick.best)}</b> (${pct(pick.bestVal)}${n > 1 ? `, mean of ${n} seeds` : ''}). ${span}, so this knob is <b class="sens ${pick.rangeFrac > 0.35 ? 'good' : pick.rangeFrac > 0.12 ? 'mid' : 'bad'}">${forgiving}</b>. ${transfer}
       ${gap > 0.01 ? `Your setting (${knobFmt(knob, now)}) is ${(gap * 100).toFixed(1)} pts below the best.` : 'Your setting is at or near the best.'}
       ${pick.safe !== pick.best ? `The <span class="safe-word">safest</span> choice is ${knobFmt(knob, pick.safe)}: ${sd ? 'it has the best mean − 1 sd across seeds' : 'it has the best worst-case among neighbouring settings'}.` : ''}
-      ${!sd && pick.rangeFrac <= 0.12 ? 'A sharp single-seed peak can be luck: turn on <b>± 3 seeds</b> to check it.' : ''}</p>
+      ${!sd ? (pick.rangeFrac <= 0.12 ? 'A sharp single-seed peak can be luck: turn on <b>± 3 seeds</b> to check it.' : 'This is one seed: turn on <b>± 3 seeds</b> to see whether the best value holds.') : ''}</p>
       <div class="row"><button class="btn sm" data-sweep-use="${pick.best}">Use best (${knobFmt(knob, pick.best)})</button>${pick.safe !== pick.best ? `<button class="btn ghost sm" data-sweep-use="${pick.safe}">Use safest (${knobFmt(knob, pick.safe)})</button>` : ''}</div>`;
   }
   $('#sweepPanel').addEventListener('click', (ev) => {
