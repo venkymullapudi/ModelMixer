@@ -777,6 +777,8 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 /* ---------- sensitivity: does the best transfer across seeds? ---------- */
 .seed-best { font-weight: 600; }
 .seed-best.moves { color: #fbbf24; } .seed-best.holds { color: #34d399; }
+.ev-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ev-note .btn { margin-left: auto; }
 
 </style>
 </head>
@@ -5396,7 +5398,7 @@ ${parts.join('\n')}
       return;
     }
     const params = S.params[m.id];
-    const key = JSON.stringify([S.align, m.id, MM.withKnob(params, knob, knob.min), knob.key, S.sweepSeeds]);
+    const key = sweepKey(m.id, params, knob, S.sweepSeeds);
     let byT = sweepCache.get(T);
     if (!byT) { byT = new Map(); sweepCache.set(T, byT); }
     const res = byT.get(key);
@@ -5413,6 +5415,21 @@ ${parts.join('\n')}
     if (res) drawSweep(m, knob, res);
     else scheduleSweep(m, knob, params, key, byT);
   }
+  /** The sweep cache key for one knob: other knobs at their current values, this knob's value left out. */
+  const sweepKey = (id, params, knob, seeds) => JSON.stringify([S.align, id, MM.withKnob(params, knob, knob.min), knob.key, !!seeds]);
+  /** Sweep one knob on the shared seeds: each seed's sweep in its own worker, in parallel. Returns { xs, curves } or null. */
+  async function seededSweep(id, knob, params, cancelled, msg) {
+    const xs = MM.sweepValues(knob, SWEEP_N);
+    const kname = knob.label.replace(/\s*\(.*\)$/, '');
+    const bundles = await seedBundles(SWEEP_SEEDS, cancelled, msg);
+    if (!bundles) return null;
+    const recipes = xs.map((x, i) => ({ key: `x${i}`, method: id, params: MM.withKnob(params, knob, x), align: S.align }));
+    let done = 0;
+    msg(`Sweeping ${kname} on ${bundles.length} seeds${workerOK ? ' in parallel' : ''}…`);
+    const runs = await Promise.all(bundles.map((b) => scoreAsync(b, recipes, { cancelled }).then((r) => { done++; msg(`Sweeping ${kname}… ${done}/${bundles.length} seeds`); return r; })));
+    if (cancelled() || runs.some((r) => !r)) return null;
+    return { xs, curves: runs.map((r) => xs.map((x, i) => (r[`x${i}`].blocked ? { x, blocked: r[`x${i}`].blocked } : { x, avg: r[`x${i}`].avg, accs: r[`x${i}`].accs }))) };
+  }
   function scheduleSweep(m, knob, params, key, byT) {
     clearTimeout(sweepTimer);
     const token = ++sweepToken;
@@ -5420,20 +5437,14 @@ ${parts.join('\n')}
     sweepTimer = setTimeout(async () => {
       const msg = (t) => { const el = $('#sweepMsg'); if (el && token === sweepToken) el.textContent = t; };
       const cancelled = () => token !== sweepToken;
-      const xs = MM.sweepValues(knob, SWEEP_N);
-      const kname = knob.label.replace(/\s*\(.*\)$/, '');
-      const curves = [];
+      let res;
       if (S.sweepSeeds) {
-        // every seed's sweep in its own worker, in parallel (in-page fallback inside scoreAsync)
-        const bundles = await seedBundles(SWEEP_SEEDS, cancelled, msg);
-        if (!bundles) return;
-        const recipes = xs.map((x, i) => ({ key: `x${i}`, method: m.id, params: MM.withKnob(params, knob, x), align: S.align }));
-        let done = 0;
-        msg(`Sweeping ${kname} on ${bundles.length} seeds${workerOK ? ' in parallel' : ''}…`);
-        const runs = await Promise.all(bundles.map((b) => scoreAsync(b, recipes, { cancelled }).then((r) => { done++; msg(`Sweeping ${kname}… ${done}/${bundles.length} seeds`); return r; })));
-        if (cancelled() || runs.some((r) => !r)) return;
-        runs.forEach((r) => curves.push(xs.map((x, i) => (r[`x${i}`].blocked ? { x, blocked: r[`x${i}`].blocked } : { x, avg: r[`x${i}`].avg, accs: r[`x${i}`].accs }))));
+        res = await seededSweep(m.id, knob, params, cancelled, msg);
+        if (!res) return;
       } else {
+        const xs = MM.sweepValues(knob, SWEEP_N);
+        const kname = knob.label.replace(/\s*\(.*\)$/, '');
+        const curves = [];
         const ctx = MM.bundleCtx(Tnow, S.align);
         const pts = [];
         for (const x of xs) {
@@ -5443,8 +5454,8 @@ ${parts.join('\n')}
           if (cancelled()) return;
         }
         curves.push(pts);
+        res = { xs, curves };
       }
-      const res = { xs, curves };
       byT.set(key, res);
       if (token === sweepToken && T === Tnow && S.method === m.id) drawSweep(m, knob, res);
     }, 250);
@@ -6316,7 +6327,7 @@ ${parts.join('\n')}
     const lines = [];
     let n = 0;
     for (const knob of ks) {
-      const res = byT && byT.get(JSON.stringify([S.align, id, MM.withKnob(params, knob, knob.min), knob.key, true]));
+      const res = byT && byT.get(sweepKey(id, params, knob, true));
       if (!res || res.curves.length < 2 || res.curves.some((c) => c.some((q) => q.blocked))) continue;
       const tv = MM.knobTransfer(res.xs, res.curves.map((c) => c.map((q) => q.avg)));
       n = tv.n;
@@ -6337,6 +6348,27 @@ ${parts.join('\n')}
       swept: lines.length, knobs: ks.length,
     };
   }
+  let annotateToken = 0;
+  async function annotateAll() {
+    const id = S.method, params = S.params[id], Tnow = T;
+    if (!T || !T.experts || training) return;
+    const token = ++annotateToken;
+    const cancelled = () => token !== annotateToken || T !== Tnow || S.method !== id;
+    const msg = (t) => { const el = $('#annotateMsg'); if (el && !cancelled()) el.textContent = t; };
+    const btn = $('#annotateAll');
+    if (btn) btn.disabled = true;
+    let byT = sweepCache.get(Tnow);
+    if (!byT) { byT = new Map(); sweepCache.set(Tnow, byT); }
+    for (const knob of MM.sweepKnobs(id, Tnow.K, params)) {
+      const key = sweepKey(id, params, knob, true);
+      if (byT.has(key)) continue;
+      const res = await seededSweep(id, knob, params, cancelled, msg);
+      if (!res) return;
+      byT.set(key, res);
+    }
+    if (!cancelled() && S.tab === 'export') renderExport();
+  }
+  $('#exportNotes').addEventListener('click', (ev) => { if (ev.target.closest('#annotateAll')) annotateAll(); });
   function renderExport() {
     const id = S.method, m = MM.METHOD_BY_ID[id], K = S.experts.length;
     const opts = MM.METHODS.map((x) => `<option value="${x.id}" ${x.id === id ? 'selected' : ''}>${x.name}${x.mergekit ? '' : '  (no mergekit)'}</option>`).join('');
@@ -6356,7 +6388,8 @@ ${parts.join('\n')}
       $('#exportFile').textContent = y.file || 'config.yml';
       $('#cmd').textContent = `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`;
       const evNote = ev.knobs && ev.swept < ev.knobs
-        ? `<div class="note muted">${ev.swept ? `The config is annotated with seed evidence for ${ev.swept} of ${ev.knobs} knobs.` : 'Want the config annotated with which knobs transfer across seeds?'} In the Lab’s knob sensitivity panel, turn on <b>± ${SWEEP_SEEDS} seeds</b> and sweep each knob.</div>` : '';
+        ? `<div class="note muted ev-note">${ev.swept ? `The config is annotated with seed evidence for ${ev.swept} of ${ev.knobs} knobs.` : 'Annotate the config with which knobs transfer across seeds?'}
+            <button class="btn sm" id="annotateAll">Sweep ${ev.swept ? 'the rest' : ev.knobs > 1 ? `all ${ev.knobs} knobs` : 'the knob'} on ${SWEEP_SEEDS} seeds</button><span class="muted small" id="annotateMsg" aria-live="polite"></span></div>` : '';
       notes.innerHTML = (y.note ? `<div class="note">${y.note}</div>` : '') + evNote;
     } else {
       const n = NOT_MK[id];

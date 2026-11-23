@@ -765,3 +765,5 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 /* ---------- sensitivity: does the best transfer across seeds? ---------- */
 .seed-best { font-weight: 600; }
 .seed-best.moves { color: #fbbf24; } .seed-best.holds { color: #34d399; }
+.ev-note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.ev-note .btn { margin-left: auto; }
