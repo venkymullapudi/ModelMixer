@@ -941,14 +941,15 @@
     else scheduleSweep(m, knob, params, key, byT);
   }
   /** The sweep cache key for one knob: other knobs at their current values, this knob's value left out. */
-  const sweepKey = (id, params, knob, seeds) => JSON.stringify([S.align, id, MM.withKnob(params, knob, knob.min), knob.key, !!seeds]);
+  const sweepKey = (id, params, knob, seeds, align) => JSON.stringify([align == null ? S.align : !!align, id, MM.withKnob(params, knob, knob.min), knob.key, !!seeds]);
   /** Sweep one knob on the shared seeds: each seed's sweep in its own worker, in parallel. Returns { xs, curves } or null. */
-  async function seededSweep(id, knob, params, cancelled, msg, given) {
+  async function seededSweep(id, knob, params, cancelled, msg, given, align) {
+    align = align == null ? S.align : !!align;
     const xs = MM.sweepValues(knob, SWEEP_N);
     const kname = knob.label.replace(/\s*\(.*\)$/, '');
     const bundles = given || await seedBundles(SWEEP_SEEDS, cancelled, msg);
     if (!bundles) return null;
-    const recipes = xs.map((x, i) => ({ key: `x${i}`, method: id, params: MM.withKnob(params, knob, x), align: S.align }));
+    const recipes = xs.map((x, i) => ({ key: `x${i}`, method: id, params: MM.withKnob(params, knob, x), align }));
     let done = 0;
     msg(`Sweeping ${kname} on ${bundles.length} seeds${workerOK ? ' in parallel' : ''}…`);
     const runs = await Promise.all(bundles.map((b) => scoreAsync(b, recipes, { cancelled }).then((r) => { done++; msg(`Sweeping ${kname}… ${done}/${bundles.length} seeds`); return r; })));
@@ -2409,6 +2410,72 @@ dtype: bfloat16
       <span class="ev-val ${tone}">${pct(e.mean)} <small>± ${(e.sd * 100).toFixed(1)}</small></span>
       <span class="ev-sub">worst task ${pct(e.worstTask)} · ${e.seeds} seeds · default knobs</span>`;
   }
+  // ---- do the picks' knob values transfer? (5-seed sweeps on the advisor's toys, shared caches) ----
+  const kvCache = {}; // toyKey|align|id -> { rows: [{ knob, kind, best, regret }] } | { skipped }
+  let kvToken = 0;
+  const kvKey = (t, align, id) => `${toyKey(t)}|${align ? 1 : 0}|${id}`;
+  const KV_TXT = { moves: 'moves with the seed', narrow: 'narrow peak', transfers: 'transfers', holds: 'holds' };
+  function knobsHTML(id, r) {
+    const toys = toysOf(r);
+    const got = toys.map((t) => kvCache[kvKey(t, r.align, id)]);
+    if (got.some((g) => !g)) return '';
+    return toys.map((t, i) => {
+      const g = got[i], sc = toySc(t);
+      if (g.skipped) return `<div class="kv-line muted">Knobs on ${esc(sc.name)}: ${esc(g.skipped)}</div>`;
+      if (!g.rows.length) return `<div class="kv-line muted">No knobs to tune on ${esc(sc.name)}.</div>`;
+      const tune = g.rows.filter((x) => x.kind === 'moves' || x.kind === 'narrow');
+      return `<div class="kv-line"><span class="kv-lbl">Knobs on ${esc(sc.name)}:</span> ${g.rows.map((x) => `<span class="kv ${x.kind}">${esc(x.knob)} ${KV_TXT[x.kind]}${x.kind === 'moves' ? '' : ` (${esc(x.best)})`}</span>`).join(' ')}${tune.length ? ` <span class="kv-tune">→ tune ${tune.map((x) => esc(x.knob)).join(', ')} on your models</span>` : ' <span class="kv-ok">→ defaults carry over</span>'}</div>`;
+    }).join('');
+  }
+  function knobsButtonHTML(r) {
+    const ids = r.recs.slice(0, 3).map((x) => x.id), toys = toysOf(r);
+    if (ids.every((id) => toys.every((t) => kvCache[kvKey(t, r.align, id)]))) return '';
+    return `<div class="kv-ask"><button class="btn ghost sm" id="advKnobs">Do these picks’ knob values transfer? Check on 5 seeds</button><span class="muted small" id="advKnobsMsg" aria-live="polite"></span></div>`;
+  }
+  async function measureKnobs(r) {
+    const token = ++kvToken;
+    const cancelled = () => token !== kvToken || !advDlg.open;
+    const msg = (t) => { const el = $('#advKnobsMsg'); if (el && !cancelled()) el.textContent = t; };
+    const btn = $('#advKnobs');
+    if (btn) btn.disabled = true;
+    const ids = r.recs.slice(0, 3).map((x) => x.id);
+    for (const t of toysOf(r)) {
+      const sc = toySc(t);
+      // the advisor's evidence already trained this toy's 5 seeds; train them here if it hasn't finished yet
+      let bundles = evBundles[toyKey(t)];
+      if (!bundles) {
+        bundles = await Promise.all(EV_SEEDS.map((seed) => trainCached(Object.assign(MM.toyConfig(t.scenario, seed), { init: t.init || 'shared' }), { cancelled })));
+        if (cancelled() || bundles.some((b) => !b)) return;
+      }
+      let byT = sweepCache.get(bundles[0]);
+      if (!byT) { byT = new Map(); sweepCache.set(bundles[0], byT); }
+      for (const id of ids) {
+        const key = kvKey(t, r.align, id);
+        if (kvCache[key]) continue;
+        const m = MM.METHOD_BY_ID[id], K = bundles[0].K;
+        if (m.req.training) { kvCache[key] = { skipped: 'not swept (each setting is a training run)' }; continue; }
+        const params = MM.defaultParams(m, K), rows = [];
+        for (const knob of MM.sweepKnobs(id, K, params)) {
+          const k = sweepKey(id, params, knob, true, r.align);
+          let res = byT.get(k);
+          if (!res) {
+            res = await seededSweep(id, knob, params, cancelled, (s) => msg(`${sc.name} · ${m.short}: ${s}`), bundles, r.align);
+            if (!res) return;
+            byT.set(k, res);
+          }
+          if (res.curves.some((c) => c.some((q) => q.blocked))) continue;
+          const tv = MM.knobTransfer(res.xs, res.curves.map((c) => c.map((q) => q.avg)));
+          rows.push({ knob: knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, ''), kind: tv.kind, best: knobFmt(knob, tv.best), regret: tv.regret });
+        }
+        kvCache[key] = { rows };
+        const el = $(`#advRecs [data-kv="${id}"]`);
+        if (el) el.innerHTML = knobsHTML(id, r);
+      }
+    }
+    if (!cancelled()) { const ask = $('#advRecs .kv-ask'); if (ask) ask.remove(); }
+  }
+  $('#advRecs').addEventListener('click', (ev) => { if (ev.target.closest('#advKnobs') && advResult) measureKnobs(advResult); });
+
   function evidenceHTML(id, r) { return toysOf(r).map((t) => `<div class="ev-line">${evidenceLine(id, r, t)}</div>`).join(''); }
   function evidenceVerdict(r, blend) {
     const nm = (id) => MM.METHOD_BY_ID[id].name;
@@ -2497,6 +2564,7 @@ dtype: bfloat16
         <div class="rec-top"><span class="rec-rank">#${i + 1}</span><b>${m.name}</b><span class="fam-tag" style="--fc:${f.color}">${f.name}</span>${moved === 'up' ? '<span class="badge moved up" title="Promoted: beat the rules’ #1 on the toy under the paired test">↑ measured</span>' : moved === 'down' ? '<span class="badge moved" title="The rules ranked this first">rules’ #1</span>' : ''}<span class="badge">${cost(m)}</span></div>
         <ul>${pros.map((t) => `<li class="pro">${t}</li>`).join('')}${cons.map((t) => `<li class="con">${t}</li>`).join('')}${!pros.length && !cons.length ? `<li class="pro">${m.tagline}</li>` : ''}</ul>
         <div class="evidence" data-ev="${x.id}">${evidenceHTML(x.id, r)}</div>
+        <div class="rec-knobs" data-kv="${x.id}">${knobsHTML(x.id, r)}</div>
         <div class="rec-actions">
           <button class="btn sm ${i === 0 ? 'primary' : ''}" data-adv-try="${x.id}">Try it in the Lab · ${sc.name}${r.align ? ' + alignment' : ''}</button>
           <button class="btn ghost sm" data-adv-export="${x.id}">${m.mergekit ? 'Export mergekit config' : 'Open-source pointers'}</button>
@@ -2506,7 +2574,7 @@ dtype: bfloat16
     const outs = r.excluded.map((x) => `<div class="alt"><b>${MM.METHOD_BY_ID[x.id].name}</b><span>${x.why}</span></div>`).join('');
     measureEvidence(r);
     $('#advRecs').innerHTML = `${r.notes.map((n) => `<div class="adv-note">${n}</div>`).join('')}
-      ${cards ? `<div class="ev-verdict" id="evVerdict">${evidenceVerdict(r, blend)}</div>` : ''}
+      ${cards ? `<div class="ev-verdict" id="evVerdict">${evidenceVerdict(r, blend)}</div>${knobsButtonHTML(r)}` : ''}
       ${cards || '<p class="muted">Nothing fits every constraint. Relax one of them (data, training or serving) to see options.</p>'}
       ${alts ? `<details class="adv-more"><summary>Other options that fit (${r.recs.length - 3})</summary>${alts}</details>` : ''}
       ${outs ? `<details class="adv-more"><summary>Ruled out (${r.excluded.length})</summary>${outs}</details>` : ''}`;
