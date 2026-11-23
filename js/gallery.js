@@ -59,6 +59,15 @@
       expect: { kind: 'layer-sensitive', layer: 0, ratio: 2 },
     },
     {
+      id: 'imbalance-output', title: 'Imbalanced skills: go easy on the output layer',
+      lesson: 'On Hard + easy the hard expert changes the output layer 1.5–8× more than the easy one (on Two skills the two are within 0.4–1.4× of each other). Doubling the output λ of a task-arithmetic merge then collapsed it on 3 of 5 seeds (the easy skill fell to 1% on one) and cost points on a 4th; on Two skills it never collapsed. You can spot this before merging: compare each expert’s per-layer update size.',
+      hint: 'In the Lab, the insight panel’s “Update size per layer” table shows the imbalance and warns about it.',
+      scenario: 'hard',
+      A: { method: 'task_arithmetic', params: p('task_arithmetic', { layerwise: true, grad: [1, 1, 2] }), align: false },
+      B: { method: 'task_arithmetic', params: p('task_arithmetic', { layerwise: true, grad: [1, 1, 1] }), align: false },
+      expect: { kind: 'b-beats-a', by: 0.2 },
+    },
+    {
       id: 'conflict-ceiling', title: 'Conflicting skills have a ceiling',
       lesson: 'When two skills disagree on the same inputs, no merge gets close to the experts. Even a Mixture of Experts, which beats TIES here, stays far below them: you need a task signal or retraining, not a better merge.',
       scenario: 'overlap',

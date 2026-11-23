@@ -807,3 +807,10 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .rec-layer summary { cursor: pointer; color: #b8c0d2; }
 .rec-layer p { margin: 4px 0 0; line-height: 1.55; color: #cdd3e3; }
 .layer-tip { color: #b8c0d2; }
+
+/* ---------- per-layer update size ---------- */
+.mini-table { width: 100%; border-collapse: collapse; font-size: 12px; margin: 4px 0 6px; }
+.mini-table th, .mini-table td { padding: 3px 6px; text-align: right; border-bottom: 1px solid var(--line); font-family: var(--mono); }
+.mini-table th:first-child, .mini-table td:first-child { text-align: left; font-family: inherit; }
+.mini-table th { color: var(--dim); font-weight: 600; }
+.mini-table .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; }

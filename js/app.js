@@ -1262,6 +1262,31 @@
   }
   $('#metrics').addEventListener('click', (ev) => { if (ev.target.closest('#edgeBtn')) checkEdge(); });
 
+  // Per-layer update size ‖θ_expert − θ_base‖ per layer: readable from real checkpoints with no data at all.
+  // A large imbalance in the output layer is what makes Output the risky per-layer knob (Hard + easy).
+  function layerNorms(ctx) {
+    const L = ctx.layout;
+    return ctx.experts.map((E) => [0, 1, 2].map((l) => {
+      let s = 0;
+      L.tensors.filter((t) => t.layer === l).forEach((t) => { for (let i = t.off; i < t.off + t.size; i++) { const d = E[i] - ctx.base[i]; s += d * d; } });
+      return Math.sqrt(s);
+    }));
+  }
+  function layerNormsHTML(ctx) {
+    if (!ctx.base || !ctx.cache) return '';
+    const N = ctx.cache.layerNorms || (ctx.cache.layerNorms = layerNorms(ctx));
+    const LN = MM.LAYER_NAMES;
+    const ratio = (l) => { const v = N.map((r) => r[l]); return Math.max(...v) / Math.max(Math.min(...v), 1e-9); };
+    const big = (l) => N.findIndex((r) => r[l] === Math.max(...N.map((x) => x[l])));
+    const out = ratio(2);
+    const warn = out >= 3
+      ? `<div class="warn-box">⚠ Expert ${LETTERS[big(2)]} changed the <b>Output</b> layer ${out.toFixed(1)}× more than the smallest expert. With skills this imbalanced, Output becomes the risky per-layer knob: keep its λ at or below 1. On Hard + easy, doubling it collapsed the merge on 3 of 5 seeds.</div>` : '';
+    return `<div class="section"><div class="sec-title">Update size per layer <span class="hint">‖expert − base‖, no data needed</span></div>
+      <table class="mini-table"><thead><tr><th>Layer</th>${N.map((_, k) => `<th><i class="dot" style="background:${MM.MODEL_COLORS[k]}"></i>${LETTERS[k]}</th>`).join('')}<th>Largest ÷ smallest</th></tr></thead>
+      <tbody>${[0, 1, 2].map((l) => `<tr><td>${LN[l]}</td>${N.map((r) => `<td>${r[l].toFixed(2)}</td>`).join('')}<td class="${ratio(l) >= 3 ? 'warn-text' : ''}">${ratio(l).toFixed(1)}×</td></tr>`).join('')}</tbody></table>
+      ${warn}<p class="tiny muted">Compute the same on your checkpoints (per-layer norm of fine-tuned minus base weights). When one expert’s output-layer update dwarfs the others’, push that layer’s λ gently.</p></div>`;
+  }
+
   // ---------------- INSIGHT ----------------
   function renderInsight(m, r, ctx) {
     const f = MM.FAMILIES[m.family];
@@ -1316,6 +1341,7 @@
         <p class="tiny muted">Which pixels move the prediction, for the expert and for the merge (each map scaled to its own peak). The match compares the patterns (80% or more counts as the same); each task's line reads it together with accuracy.</p></div>` : ''}
       <div class="section"><div class="sec-title">${hasBase ? 'Task-vector geometry' : 'Raw weight similarity <span class="hint">(no base)</span>'}</div>${geoHtml}
         <p class="tiny muted">${hasBase ? 'Low cosine + high sign conflict = skills that fight when added together. That is what TIES and DARE are built for.' : 'Independently trained experts look unrelated in weight space. Turn on neuron alignment and watch the similarity jump — same functions, re-ordered neurons.'}</p></div>
+      ${hasBase ? layerNormsHTML(ctx) : ''}
       <div class="section oss">
         <div class="sec-title">Run it for real</div>
         <div class="oss-row">${m.mergekit ? `<span class="pill mk">mergekit: <code>${m.mergekit}</code></span>` : '<span class="pill">not in mergekit</span>'}
