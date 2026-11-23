@@ -3055,6 +3055,22 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     return { bests, spread, regret, moves: spread > 0.15 };
   }
 
+  /**
+   * One verdict for "does this knob's best setting transfer across seeds?", shared by the sensitivity panel and the
+   * exported config. curves = per-seed average-accuracy arrays over xs (2+ seeds).
+   * kind: 'moves' (per-seed bests spread > 15% of the range AND the mean-best costs > 1 pt on some seed),
+   * 'transfers' (bests spread out but the curve is flat enough), 'holds' (bests agree).
+   */
+  function knobTransfer(xs, curves, tol) {
+    const n = curves.length;
+    const mean = xs.map((_, i) => curves.reduce((a, c) => a + c[i], 0) / n);
+    const sd = n > 1 ? xs.map((_, i) => Math.sqrt(curves.reduce((a, c) => a + (c[i] - mean[i]) ** 2, 0) / (n - 1))) : null;
+    const pick = pickSettings(xs, mean, sd, tol == null ? 0.02 : tol);
+    const sb = seedBests(xs, curves, pick.best);
+    const kind = sb.moves && sb.regret > 0.01 ? 'moves' : sb.moves ? 'transfers' : 'holds';
+    return { kind, n, best: pick.best, bestVal: pick.bestVal, bests: sb.bests.map((b) => b.x), regret: sb.regret, spread: sb.spread };
+  }
+
   // ---------- paired comparisons across seeds ----------
   // two-sided 95% critical t values by degrees of freedom (n − 1)
   const T95 = [Infinity, 12.71, 4.30, 3.18, 2.78, 2.57, 2.45, 2.36, 2.31, 2.26, 2.23];
@@ -3243,7 +3259,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     };
   }
 
-  Object.assign(MM, { seedBests, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { seedBests, knobTransfer, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();
 
 </script>
@@ -5472,14 +5488,14 @@ ${parts.join('\n')}
     // with several seeds: does the best value itself hold from seed to seed?
     let transfer = '';
     if (n > 1) {
-      const sb = MM.seedBests(xs, curves.map((c) => c.map((q) => q.avg)), pick.best);
-      const vals = sb.bests.map((b) => knobFmt(knob, b.x)).join(', ');
-      const cost = `${(sb.regret * 100).toFixed(1)} pts`;
-      transfer = sb.moves && sb.regret > 0.01
+      const tv = MM.knobTransfer(xs, curves.map((c) => c.map((q) => q.avg)));
+      const vals = tv.bests.map((x) => knobFmt(knob, x)).join(', ');
+      const cost = `${(tv.regret * 100).toFixed(1)} pts`;
+      transfer = tv.kind === 'moves'
         ? `<span class="seed-best moves">The best value moves with the seed: ${vals} on the ${n} seeds.</span> Treat ${knobFmt(knob, pick.best)} as one point in a range and tune this knob on your own data; on the worst seed it is ${cost} below that seed’s own best.`
-        : sb.moves
+        : tv.kind === 'transfers'
           ? `<span class="seed-best holds">${knobFmt(knob, pick.best)} transfers across seeds:</span> each seed’s best differs (${vals}), but the curve is flat enough that ${knobFmt(knob, pick.best)} is within ${cost} of every seed’s best.`
-          : `<span class="seed-best holds">The best value holds across seeds (${vals}).</span>${sb.regret > 0.01 ? ` On the worst seed it is ${cost} below that seed’s own best.` : ''}`;
+          : `<span class="seed-best holds">The best value holds across seeds (${vals}).</span>${tv.regret > 0.01 ? ` On the worst seed it is ${cost} below that seed’s own best.` : ''}`;
     }
     $('#sweepSum').innerHTML = `<p>Best ${esc(kname)} is <b>${knobFmt(knob, pick.best)}</b> (${pct(pick.bestVal)}${n > 1 ? `, mean of ${n} seeds` : ''}). ${span}, so this knob is <b class="sens ${pick.rangeFrac > 0.35 ? 'good' : pick.rangeFrac > 0.12 ? 'mid' : 'bad'}">${forgiving}</b>. ${transfer}
       ${gap > 0.01 ? `Your setting (${knobFmt(knob, now)}) is ${(gap * 100).toFixed(1)} pts below the best.` : 'Your setting is at or near the best.'}
@@ -6291,6 +6307,36 @@ ${parts.join('\n')}
     distill: { title: 'Distillation is training, not merging', body: 'Train a student on the teacher mixture’s outputs. DistillKit (arcee-ai) and TRL’s GKD trainer both support logit-based distillation from Hugging Face teachers.' },
   };
 
+  /** YAML comments with the multi-seed sweep evidence for this recipe's knobs (only knobs already swept on seeds). */
+  function evidenceComments(id) {
+    if (!T || !T.experts) return { lines: [], swept: 0, knobs: 0 };
+    const m = MM.METHOD_BY_ID[id], params = S.params[id];
+    const ks = MM.sweepKnobs(id, T.K, params);
+    const byT = sweepCache.get(T);
+    const lines = [];
+    let n = 0;
+    for (const knob of ks) {
+      const res = byT && byT.get(JSON.stringify([S.align, id, MM.withKnob(params, knob, knob.min), knob.key, true]));
+      if (!res || res.curves.length < 2 || res.curves.some((c) => c.some((q) => q.blocked))) continue;
+      const tv = MM.knobTransfer(res.xs, res.curves.map((c) => c.map((q) => q.avg)));
+      n = tv.n;
+      const name = knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, '');
+      const f = (x) => knobFmt(knob, x);
+      const now = f(MM.knobValue(params, knob));
+      const lo = f(Math.min(...tv.bests)), hi = f(Math.max(...tv.bests));
+      lines.push(tv.kind === 'moves'
+        ? `#   ${name}: best moves with the seed (${lo} to ${hi}); tune it on your own models. This config: ${now}.`
+        : tv.kind === 'transfers'
+          ? `#   ${name}: ${f(tv.best)} transfers (within ${(tv.regret * 100).toFixed(1)} pts of every seed's best). This config: ${now}.`
+          : `#   ${name}: best ${f(tv.best)} holds across seeds. This config: ${now}.`);
+    }
+    if (!lines.length) return { lines: [], swept: 0, knobs: ks.length };
+    const sc = MM.SCENARIOS.find((x) => x.id === S.scenario);
+    return {
+      lines: [`# ModelMixer toy evidence: ${m.name} on ${sc ? sc.name : 'a custom'} toy, knob sweeps over ${n} seeds.`, ...lines, '# Toy-scale evidence only: confirm on a sample of your real data.'],
+      swept: lines.length, knobs: ks.length,
+    };
+  }
   function renderExport() {
     const id = S.method, m = MM.METHOD_BY_ID[id], K = S.experts.length;
     const opts = MM.METHODS.map((x) => `<option value="${x.id}" ${x.id === id ? 'selected' : ''}>${x.name}${x.mergekit ? '' : '  (no mergekit)'}</option>`).join('');
@@ -6305,10 +6351,13 @@ ${parts.join('\n')}
     const y = yamlFor(id);
     const notes = $('#exportNotes');
     if (y) {
-      $('#yaml').textContent = y.yaml;
+      const ev = evidenceComments(id);
+      $('#yaml').textContent = ev.lines.length ? `${ev.lines.join('\n')}\n${y.yaml}` : y.yaml;
       $('#exportFile').textContent = y.file || 'config.yml';
       $('#cmd').textContent = `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`;
-      notes.innerHTML = y.note ? `<div class="note">${y.note}</div>` : '';
+      const evNote = ev.knobs && ev.swept < ev.knobs
+        ? `<div class="note muted">${ev.swept ? `The config is annotated with seed evidence for ${ev.swept} of ${ev.knobs} knobs.` : 'Want the config annotated with which knobs transfer across seeds?'} In the Lab’s knob sensitivity panel, turn on <b>± ${SWEEP_SEEDS} seeds</b> and sweep each knob.</div>` : '';
+      notes.innerHTML = (y.note ? `<div class="note">${y.note}</div>` : '') + evNote;
     } else {
       const n = NOT_MK[id];
       $('#yaml').textContent = n.code || `# ${n.title}\n# ${n.body}`;
@@ -6546,7 +6595,7 @@ dtype: bfloat16
     const taskName = (t) => `${MM.TASKS[t.spec.task].name}${t.spec.flip ? ' (inv)' : ''}${t.kind === 'plane' ? ` · ${MM.REGIONS[t.spec.region].name}` : ''}`;
     const y = yamlFor(S.method), nm = NOT_MK[S.method];
     const exp = y
-      ? { file: y.file || 'config.yml', yaml: y.yaml, cmd: `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`, note: y.note || '' }
+      ? { file: y.file || 'config.yml', yaml: ((ev) => (ev.length ? `${ev.join('\n')}\n` : ''))(evidenceComments(S.method).lines) + y.yaml, cmd: `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`, note: y.note || '' }
       : { file: 'notes', yaml: nm ? nm.code || `# ${nm.title}\n# ${nm.body}` : '', cmd: 'See the linked open-source implementations.', note: nm ? `${nm.title}. ${nm.body}` : '' };
     const text = (sel) => { const el = $(sel); return el ? el.innerText.trim() || null : null; };
     let robust = null;

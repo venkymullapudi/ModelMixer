@@ -467,6 +467,14 @@ parameters:
       assert(moving.moves && moving.spread === 1 && moving.bests.map((b) => b.x).join() === '0,1,0.25', JSON.stringify(moving.bests));
       assert(Math.abs(moving.regret - 0.15) < 1e-12, `worst seed loses 15 pts at 0.25: ${moving.regret}`);
     });
+    test('knobTransfer: moves / transfers / holds', () => {
+      const xs = [0, 0.25, 0.5, 0.75, 1];
+      assert(MM.knobTransfer(xs, [[0.8, 0.9, 0.95, 0.9, 0.8], [0.79, 0.88, 0.93, 0.9, 0.81]]).kind === 'holds', 'same peak');
+      const flat = MM.knobTransfer(xs, [[0.9, 0.905, 0.9, 0.9, 0.9], [0.9, 0.9, 0.9, 0.9, 0.906]]);
+      assert(flat.kind === 'transfers' && flat.regret < 0.01, JSON.stringify(flat));
+      const mv = MM.knobTransfer(xs, [[0.95, 0.85, 0.8, 0.8, 0.8], [0.8, 0.8, 0.82, 0.85, 0.95], [0.8, 0.9, 0.85, 0.8, 0.8]]);
+      assert(mv.kind === 'moves' && mv.n === 3 && mv.bests.join() === '0,1,0.25', JSON.stringify(mv));
+    });
     test('Two skills: each expert masters its own task, base does not', () => {
       T.expertAccs.forEach((a, i) => assert(a[i] > 0.9, `expert ${i} only ${pct(a[i])} on own task`));
       const baseAvg = T.baseAccs.reduce((a, b) => a + b, 0) / T.K;
