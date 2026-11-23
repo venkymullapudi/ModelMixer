@@ -1932,7 +1932,7 @@
     $('#gallery').innerHTML = MM.GALLERY.map((g) => {
       const sc = MM.SCENARIOS.find((s) => s.id === g.scenario);
       // same method on both sides: show the settings, since that is what the card is about
-      const side = (x) => (g.A.method === g.B.method && !g.A.params.layerwise && !g.B.params.layerwise && !!g.A.align === !!g.B.align
+      const side = (x) => (g.A.method === g.B.method && !!g.A.align === !!g.B.align
         ? MM.recipeLabel(x.method, x.params, x.align, sc.experts.length)
         : `${MM.METHOD_BY_ID[x.method].short}${x.params.layerwise ? ' (per-layer)' : ''}${x.align ? ' + aligned' : ''}`);
       return `<div class="panel gal-card">

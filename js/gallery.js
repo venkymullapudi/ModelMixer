@@ -50,6 +50,15 @@
       expect: { kind: 'change-helps', what: 'Scaling λ', by: 0.01 },
     },
     {
+      id: 'ties-which-layer', title: 'Which layer, not which value',
+      lesson: 'With a λ per layer, TIES on Two skills is sensitive to Hidden 1 on all 7 seeds we tried (a 14–27 pt swing, against at most 9.5 for the other layers). But the best Hidden 1 value is not stable: λ 0.65 there helped on 5 of the 7 seeds and hurt on 2. What carries over is where to look, not the number.',
+      hint: 'In the Lab’s per-layer map, turn on “± 5 seeds”: the best cell moves, the sensitive layer doesn’t.',
+      scenario: 'two',
+      A: { method: 'ties', params: p('ties', { layerwise: true, grad: [1, 1, 1] }), align: false },
+      B: { method: 'ties', params: p('ties', { layerwise: true, grad: [0.65, 1, 1] }), align: false },
+      expect: { kind: 'layer-sensitive', layer: 0, ratio: 2 },
+    },
+    {
       id: 'conflict-ceiling', title: 'Conflicting skills have a ceiling',
       lesson: 'When two skills disagree on the same inputs, no merge gets close to the experts. Even a Mixture of Experts, which beats TIES here, stays far below them: you need a task signal or retraining, not a better merge.',
       scenario: 'overlap',
@@ -72,12 +81,24 @@
   /**
    * Check a gallery lesson on a trained bundle: returns { ok, a, b, experts, change? }.
    * Kinds: 'b-beats-a' (B ahead by `by`), 'both-below-experts' (both at least `by` under the experts),
-   * 'change-helps' (the named change from A to B, applied alone, helps by at least `by`; see MM.attributeChanges).
+   * 'change-helps' (the named change from A to B, applied alone, helps by at least `by`; see MM.attributeChanges),
+   * 'layer-sensitive' (on B's per-layer grids, the swing along `layer` is at least `ratio`× the other layer's, in every
+   * grid that includes it; the same measure as the Lab's per-layer map).
    */
   function checkLesson(g, T) {
     const score = (side) => { const r = MM.scoreMethod(T, MM.bundleCtx(T, side.align), side.method, side.params); return r.blocked ? null : r.avg; };
     const a = score(g.A), b = score(g.B);
     const experts = T.expertAccs.reduce((x, e, i) => x + e[i], 0) / T.K;
+    if (g.expect.kind === 'layer-sensitive') {
+      const m = MM.METHOD_BY_ID[g.B.method], gr = m.gradient, L = g.expect.layer;
+      const vals = Array.from({ length: 7 }, (_, i) => +(gr.min + ((gr.max - gr.min) * i) / 6).toFixed(4));
+      const ctx = MM.bundleCtx(T, g.B.align);
+      const ratios = [0, 1, 2].filter((o) => o !== L).map((o) => {
+        const q = MM.pickGrid(MM.layerGrid(T, ctx, g.B.method, g.B.params, L, o, vals));
+        return q.sensA / Math.max(q.sensB, 1e-9);
+      });
+      return { ok: ratios.every((r) => r >= g.expect.ratio), a, b, experts, ratio: Math.min(...ratios) };
+    }
     if (g.expect.kind === 'change-helps') {
       const at = MM.attributeChanges(g.A, g.B, T.K, score);
       const part = at && at.parts.find((x) => x.what === g.expect.what);
