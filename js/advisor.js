@@ -18,10 +18,12 @@
     { key: 'train', q: 'Any training budget after merging?', options: [['no', 'Merge only'], ['yes', 'A short training run']] },
     { key: 'deploy', q: 'What can you serve?',
       options: [['single', 'One model, 1× cost'], ['router', 'Experts behind a router'], ['any', 'Every model, per request']] },
+    { key: 'imbalance', q: 'Did one model change much more than the others?', hint: 'Compare each model’s per-layer weight change from the base: no data needed. Three times or more in the last layer counts.',
+      options: [['unknown', 'Haven’t checked'], ['no', 'About the same'], ['yes', 'One changed much more']] },
     { key: 'toy', q: 'Check the picks on which toy?', hint: 'Evidence only: the rules above don’t change. Digits have 64-pixel inputs, closer to real high-dimensional models.',
       options: [['plane', 'Points on a plane (2-D)'], ['digits', '8×8 digits (images)'], ['both', 'Both, and flag disagreements']] },
   ];
-  const ADVISOR_DEFAULTS = { base: 'yes', goal: 'skills', count: '2', conflict: 'no', data: 'no', train: 'no', deploy: 'single', toy: 'plane' };
+  const ADVISOR_DEFAULTS = { base: 'yes', goal: 'skills', count: '2', conflict: 'no', data: 'no', train: 'no', deploy: 'single', imbalance: 'unknown', toy: 'plane' };
 
   // Rough prior for "a good default in practice" before situation-specific adjustments.
   const PRIOR = { ties: 7, dare: 7, della: 7, karcher: 5, sce: 6, adamerging: 7, localize_stitch: 7, task_arithmetic: 6, breadcrumbs: 5, linear: 5, slerp: 5, model_stock: 5, fisher: 6, regmean: 8, stitch: 2, ensemble: 5, moe: 7, distill: 7 };
@@ -110,12 +112,19 @@
       notes.push('No single model can give contradictory answers to the same input. Add a task signal (a system prompt or tag) and train on it, or keep the models separate.');
     }
 
+    // --- imbalanced updates (measured on the Hard + easy toy) ---
+    const imbalanced = a.imbalance === 'yes' && a.base !== 'no';
+    if (imbalanced) {
+      ['task_arithmetic', 'ties', 'dare', 'della', 'sce', 'breadcrumbs'].forEach((id) => st[id].caveats.push('One model’s update dwarfs the others’: keep the output-layer λ at or below 1. Doubling it collapsed Hard + easy merges on 3 of 5 seeds.'));
+      notes.push('When one model changed much more than the others, the output layer is where merges break. Scale it gently and check the easy skill first: it is the one that collapses.');
+    }
+
     const all = Object.values(st);
     const recs = all.filter((s) => !s.out).sort((x, y) => y.score - x.score || x.id.localeCompare(y.id));
     const excluded = all.filter((s) => s.out).map((s) => ({ id: s.id, why: s.out }));
     // closest toy(s) for the measured evidence: plane scenarios and/or the digit (image) scenarios
     const init = a.base === 'no' ? 'independent' : 'shared'; // the digit toys default to a shared base, so override
-    const plane = { scenario: a.base === 'no' ? 'strangers' : a.conflict === 'yes' ? 'overlap' : a.count === '3+' ? 'three' : 'two', init };
+    const plane = { scenario: a.base === 'no' ? 'strangers' : a.conflict === 'yes' ? 'overlap' : a.count === '3+' ? 'three' : imbalanced ? 'hard' : 'two', init };
     const digit = { scenario: a.conflict === 'yes' ? 'digits-conflict' : 'digits', init };
     const toys = a.toy === 'digits' ? [digit] : a.toy === 'both' ? [plane, digit] : [plane];
     if (a.toy !== 'plane' && a.count === '3+') notes.push('The digit toys use two experts, so the measurements compare pairs.');

@@ -378,6 +378,16 @@ parameters:
     // ---------- recipe advisor ----------
     const advise = (o) => MM.adviseRecipe(o);
     const top = (r, n) => r.recs.slice(0, n || 3).map((x) => x.id);
+    test('Advisor imbalance question: caveat on λ-scaled picks and the Hard + easy toy, nothing changes by default', () => {
+      const d = advise({}), u = advise({ imbalance: 'unknown' }), n = advise({ imbalance: 'no' });
+      assert(JSON.stringify(top(d, 5)) === JSON.stringify(top(u, 5)) && JSON.stringify(top(d, 5)) === JSON.stringify(top(n, 5)) && d.scenario === 'two', 'unchecked or balanced: same advice');
+      const y = advise({ imbalance: 'yes' });
+      assert(JSON.stringify(top(y, 5)) === JSON.stringify(top(d, 5)), 'ranking unchanged: it is a caveat, not a rule');
+      assert(y.scenario === 'hard', `evidence toy should be Hard + easy, got ${y.scenario}`);
+      const ties = y.recs.find((x) => x.id === 'ties');
+      assert(ties && ties.caveats.some((c) => /output-layer λ at or below 1/.test(c)) && y.notes.some((t) => /output layer is where merges break/.test(t)), 'caveat and note');
+      assert(advise({ imbalance: 'yes', base: 'no' }).scenario === 'strangers' && advise({ imbalance: 'yes', count: '3+' }).scenario === 'three', 'other situations keep their toy');
+    });
     test('Advisor default (shared base, no data, one model) recommends task-vector merges', () => {
       const r = advise({});
       assert(['ties', 'dare', 'task_arithmetic'].includes(r.recs[0].id), `top is ${r.recs[0].id}`);
