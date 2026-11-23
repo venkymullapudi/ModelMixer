@@ -17,10 +17,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Sensitivity on 5 seeds:** the panel's "± 3 seeds" uses 3; the edge check, attribution and saliency use 5. Move the sweep to the same 5 cached seeds so every "across seeds" statement in the app rests on the same evidence.
+1. **Advisor evidence on the same 5 seeds:** the advisor still measures each pick on 3 seeds (7, 108, 209). Move it to the shared 5-seed cache where the toy matches the lab's, so the advisor, the sweep and the checks can't disagree just because they used different seeds.
 2. **Seed stability for the gallery lessons:** the "Conflicting skills have a ceiling" card is already checked on seeds by a test; add a Digits-conflict card only if its saliency reading holds on most seeds (today it does not: TIES flips between "conflict" and "lost").
 
 ## Done
+
+- 2026-11-23: **Sensitivity on the shared 5 seeds.** "± 3 seeds" became "± 5 seeds": the sweep now runs on the same cached seed bundles as the edge check, attribution and saliency checks, with each seed's 17-point sweep scored in its own worker in parallel (`scoreAsync`). It takes about 4 s from cold, including training the 4 extra seeds. The unused single-seed helper was removed. The extra seeds changed two verdicts. SLERP t "held" on 3 seeds but moves on 5 (0.25, 0.19, 0.19, 0.25, 0.38; 3.1 pts on the worst seed). DARE p's worst-seed cost went from 1.1 to 6.5 pts. TIES λ still transfers (0.7 pts); density still moves (2.4 pts). README updated. axe 0, keyboard and phone gates pass, 72 tests.
 
 - 2026-11-23: **Does the best setting transfer across seeds?** With "± 3 seeds" on, the sensitivity panel now finds each seed's own best value and says one of three things. (1) "The best value moves with the seed: 0.08, 0.14, 0.33 … tune this knob on your own data; on the worst seed it is 2.4 pts below that seed's own best": the spread between per-seed bests is over 15% of the knob range and the recommended value costs over 1 pt somewhere. (2) "0.63 transfers across seeds": the bests differ, but the curve is flat enough that the recommendation is within 1 pt of every seed's best. (3) "The best value holds across seeds". The first draft said "moves" for λ even though it cost only 0.6 pts; that is now case (2). With one seed it nudges toward ± 3 seeds. Results on TIES / Two skills match the gallery lesson: density moves (2.4 pts), λ transfers (0.6 pts). SLERP t holds (0.25, 0.19, 0.19); DARE p moves (1.1 pts). The report's sensitivity line carries the same sentence. Pure `seedBests` in `js/lab.js` (1 test, 72 total). axe 0, keyboard and phone gates pass.
 

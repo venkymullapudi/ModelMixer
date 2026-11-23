@@ -899,6 +899,7 @@
 
   // ---------------- KNOB SENSITIVITY ----------------
   const SWEEP_N = 17;
+  const SWEEP_SEEDS = 5; // the same 5 cached seeds as the edge check, attribution and saliency checks
   const sweepCache = new WeakMap(); // trained bundle -> Map(key -> sweep result)
   let sweepToken = 0, sweepTimer = null;
   const knobFmt = (knob, v) => (knob.key === 'balance' ? `${Math.round((1 - v) * 100)}/${Math.round(v * 100)}` : (+v).toFixed(knob.step < 0.01 ? 3 : 2));
@@ -931,7 +932,7 @@
           <p class="muted">Average accuracy as one knob moves, with the others held at your settings. A flat top means the recipe is forgiving; a sharp peak means you should tune it carefully on real models too.</p></div>
         <div class="sweep-ctl">
           ${ks.length > 1 ? `<div class="seg" id="sweepKnobs">${ks.map((k) => `<button data-k="${k.key}" class="${k.key === knob.key ? 'on' : ''}">${esc(k.label.replace(/\s*\(.*\)$/, ''))}</button>`).join('')}</div>` : `<span class="muted small">${esc(knob.label)}</span>`}
-          <button class="tg ${S.sweepSeeds ? 'on' : ''}" id="sweepSeeds" title="Retrain the experts on 2 more seeds and show a ±1 sd band">± 3 seeds</button>
+          <button class="tg ${S.sweepSeeds ? 'on' : ''}" id="sweepSeeds" title="Repeat the sweep on the 5 shared seeds (the same ones the edge check and attribution use) and show a ±1 sd band">± ${SWEEP_SEEDS} seeds</button>
         </div></div>
       <div class="chart" id="sweepChart">${res ? '' : '<div class="loading"><span class="spinner"></span> <span id="sweepMsg">Sweeping…</span></div>'}</div>
       <div class="chart-legend" id="sweepLegend"></div>
@@ -945,24 +946,28 @@
     const Tnow = T;
     sweepTimer = setTimeout(async () => {
       const msg = (t) => { const el = $('#sweepMsg'); if (el && token === sweepToken) el.textContent = t; };
-      const bundles = [Tnow];
-      if (S.sweepSeeds) {
-        for (let i = 1; i <= 2; i++) {
-          const b = await seedBundle(i, () => token !== sweepToken, msg);
-          if (!b) return;
-          bundles.push(b);
-        }
-      }
+      const cancelled = () => token !== sweepToken;
       const xs = MM.sweepValues(knob, SWEEP_N);
+      const kname = knob.label.replace(/\s*\(.*\)$/, '');
       const curves = [];
-      for (let b = 0; b < bundles.length; b++) {
-        const ctx = MM.bundleCtx(bundles[b], S.align);
+      if (S.sweepSeeds) {
+        // every seed's sweep in its own worker, in parallel (in-page fallback inside scoreAsync)
+        const bundles = await seedBundles(SWEEP_SEEDS, cancelled, msg);
+        if (!bundles) return;
+        const recipes = xs.map((x, i) => ({ key: `x${i}`, method: m.id, params: MM.withKnob(params, knob, x), align: S.align }));
+        let done = 0;
+        msg(`Sweeping ${kname} on ${bundles.length} seeds${workerOK ? ' in parallel' : ''}…`);
+        const runs = await Promise.all(bundles.map((b) => scoreAsync(b, recipes, { cancelled }).then((r) => { done++; msg(`Sweeping ${kname}… ${done}/${bundles.length} seeds`); return r; })));
+        if (cancelled() || runs.some((r) => !r)) return;
+        runs.forEach((r) => curves.push(xs.map((x, i) => (r[`x${i}`].blocked ? { x, blocked: r[`x${i}`].blocked } : { x, avg: r[`x${i}`].avg, accs: r[`x${i}`].accs }))));
+      } else {
+        const ctx = MM.bundleCtx(Tnow, S.align);
         const pts = [];
         for (const x of xs) {
-          msg(`Sweeping ${knob.label.replace(/\s*\(.*\)$/, '')}${bundles.length > 1 ? ` · seed ${b + 1}/${bundles.length}` : ''}…`);
-          pts.push(MM.sweepMethod(bundles[b], ctx, m.id, params, knob, [x])[0]);
+          msg(`Sweeping ${kname}…`);
+          pts.push(MM.sweepMethod(Tnow, ctx, m.id, params, knob, [x])[0]);
           await frame();
-          if (token !== sweepToken) return;
+          if (cancelled()) return;
         }
         curves.push(pts);
       }
@@ -1022,7 +1027,7 @@
     $('#sweepSum').innerHTML = `<p>Best ${esc(kname)} is <b>${knobFmt(knob, pick.best)}</b> (${pct(pick.bestVal)}${n > 1 ? `, mean of ${n} seeds` : ''}). ${span}, so this knob is <b class="sens ${pick.rangeFrac > 0.35 ? 'good' : pick.rangeFrac > 0.12 ? 'mid' : 'bad'}">${forgiving}</b>. ${transfer}
       ${gap > 0.01 ? `Your setting (${knobFmt(knob, now)}) is ${(gap * 100).toFixed(1)} pts below the best.` : 'Your setting is at or near the best.'}
       ${pick.safe !== pick.best ? `The <span class="safe-word">safest</span> choice is ${knobFmt(knob, pick.safe)}: ${sd ? 'it has the best mean − 1 sd across seeds' : 'it has the best worst-case among neighbouring settings'}.` : ''}
-      ${!sd ? (pick.rangeFrac <= 0.12 ? 'A sharp single-seed peak can be luck: turn on <b>± 3 seeds</b> to check it.' : 'This is one seed: turn on <b>± 3 seeds</b> to see whether the best value holds.') : ''}</p>
+      ${!sd ? (pick.rangeFrac <= 0.12 ? `A sharp single-seed peak can be luck: turn on <b>± ${SWEEP_SEEDS} seeds</b> to check it.` : `This is one seed: turn on <b>± ${SWEEP_SEEDS} seeds</b> to see whether the best value holds.`) : ''}</p>
       <div class="row"><button class="btn sm" data-sweep-use="${pick.best}">Use best (${knobFmt(knob, pick.best)})</button>${pick.safe !== pick.best ? `<button class="btn ghost sm" data-sweep-use="${pick.safe}">Use safest (${knobFmt(knob, pick.safe)})</button>` : ''}</div>`;
   }
   $('#sweepPanel').addEventListener('click', (ev) => {
@@ -1423,12 +1428,6 @@
 
   // ---------------- ROBUSTNESS (multi-seed) ----------------
   const seedCache = new Map(); // trainKey -> bundles for seeds S.seed + 101·i (i ≥ 1)
-  /** Bundle for seed index i (0 = the lab's trained experts). Trains and caches when needed; null if cancelled. */
-  async function seedBundle(i, cancelled, msg) {
-    if (i === 0) return T;
-    const all = await seedBundles(i + 1, cancelled, msg);
-    return all ? all[i] : null;
-  }
   /** Bundles for seed indices 0..n-1 (0 = the lab's experts); missing ones train in parallel workers. */
   async function seedBundles(n, cancelled, msg) {
     const tk = trainKey(S);
