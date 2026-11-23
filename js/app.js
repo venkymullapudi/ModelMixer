@@ -1028,6 +1028,7 @@
       : `Anything from <b>${knobFmt(knob, pick.range[0])}</b> to <b>${knobFmt(knob, pick.range[1])}</b> stays within 2 pts`;
     // with several seeds: does the best value itself hold from seed to seed?
     let transfer = '';
+    let moves = false; // does this knob's best move with the seed (live 5-seed sweep or the snapshot)?
     // one seed only: if the shipped snapshot measured this knob on this exact toy, say up front whether its best holds
     let pre = '';
     if (n === 1 && labIsSnapshotToy()) {
@@ -1035,6 +1036,7 @@
       const sr = (snapshotRows(S.scenario, m.id) || []).find((r) => r.knob === kname);
       const atDefaults = JSON.stringify(MM.withKnob(S.params[m.id], knob, knob.min)) === JSON.stringify(MM.withKnob(MM.defaultParams(m, T.K), knob, knob.min));
       if (sr) {
+        moves = sr.kind === 'moves' || sr.kind === 'narrow';
         const where = `pre-measured on ${MM.TRANSFER_SNAPSHOT.seeds} seeds${atDefaults ? '' : ' at default settings for the other knobs'}`;
         pre = sr.kind === 'moves'
           ? `<span class="seed-best moves">Careful: ${where}, this knob’s best moves with the seed (${esc(sr.lo)} to ${esc(sr.hi)}).</span> Read the best above as one seed’s answer, not a value to copy.`
@@ -1045,6 +1047,7 @@
     }
     if (n > 1) {
       const tv = MM.knobTransfer(xs, curves.map((c) => c.map((q) => q.avg)));
+      moves = tv.kind === 'moves' || tv.kind === 'narrow';
       const vals = tv.bests.map((x) => knobFmt(knob, x)).join(', ');
       const cost = `${(tv.regret * 100).toFixed(1)} pts`;
       transfer = tv.kind === 'moves'
@@ -1059,7 +1062,21 @@
       ${gap > 0.01 ? `Your setting (${knobFmt(knob, now)}) is ${(gap * 100).toFixed(1)} pts below the best.` : 'Your setting is at or near the best.'}
       ${pick.safe !== pick.best ? `The <span class="safe-word">safest</span> choice is ${knobFmt(knob, pick.safe)}: ${sd ? 'it has the best mean − 1 sd across seeds' : 'it has the best worst-case among neighbouring settings'}.` : ''}
       ${!sd ? (pre ? `${pre} Turn on <b>± ${SWEEP_SEEDS} seeds</b> to see it at your settings.` : pick.rangeFrac <= 0.12 ? `A sharp single-seed peak can be luck: turn on <b>± ${SWEEP_SEEDS} seeds</b> to check it.` : `This is one seed: turn on <b>± ${SWEEP_SEEDS} seeds</b> to see whether the best value holds.`) : ''}</p>
-      <div class="row"><button class="btn sm" data-sweep-use="${pick.best}">Use best (${knobFmt(knob, pick.best)})</button>${pick.safe !== pick.best ? `<button class="btn ghost sm" data-sweep-use="${pick.safe}">Use safest (${knobFmt(knob, pick.safe)})</button>` : ''}</div>`;
+      ${useButtons(knob, pick, n, moves)}`;
+  }
+  /**
+   * "Use best" / "Use safest". When the knob's best moves with the seed, the one-seed (or average) optimum is not a
+   * value to copy: the safest setting becomes the primary button and "best" says whose best it is.
+   */
+  function useButtons(knob, pick, n, moves) {
+    const f = (x) => knobFmt(knob, x);
+    const safe = pick.safe !== pick.best ? pick.safe : null;
+    if (!moves) {
+      return `<div class="row"><button class="btn sm" data-sweep-use="${pick.best}">Use best (${f(pick.best)})</button>${safe != null ? `<button class="btn ghost sm" data-sweep-use="${safe}">Use safest (${f(safe)})</button>` : ''}</div>`;
+    }
+    const bestLabel = n > 1 ? `Use the best on average (${f(pick.best)})` : `Use this seed’s best (${f(pick.best)})`;
+    return `<div class="row">${safe != null ? `<button class="btn sm" data-sweep-use="${safe}">Use safest (${f(safe)})</button>` : ''}<button class="btn ${safe != null ? 'ghost ' : ''}sm" data-sweep-use="${pick.best}">${bestLabel}</button>
+      <span class="muted small use-why">This knob’s best moves with the seed, so tune it on your own models.</span></div>`;
   }
   $('#sweepPanel').addEventListener('click', (ev) => {
     const m = MM.METHOD_BY_ID[S.method];

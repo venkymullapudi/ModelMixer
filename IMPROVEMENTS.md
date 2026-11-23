@@ -18,10 +18,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **"Use best" guard for knobs that move:** the sensitivity panel's "Use best" button still copies a one-seed optimum. When the snapshot or a live 5-seed sweep says the knob moves with the seed, relabel it "Use this seed's best" and make "Use safest" the primary button.
+1. **Per-layer heat map on seeds:** the per-layer grid (which layer the recipe is sensitive to) is still one seed. Give it the same treatment as the knob sweep: an optional 5-seed mode through `seededSweep`-style workers, and a "best cell moves with the seed" warning.
 2. **Seed stability for the gallery lessons:** the "Conflicting skills have a ceiling" card is already checked on seeds by a test; add a Digits-conflict card only if its saliency reading holds on most seeds (today it does not: TIES flips between "conflict" and "lost").
 
 ## Done
+
+- 2026-11-23: **"Use best" no longer pushes a value that moves with the seed.** When the knob's best moves with the seed or sits on a narrow peak (from a live 5-seed sweep, or from the snapshot on one seed), the sensitivity panel makes "Use safest" the primary button. "Best" becomes a secondary button that says whose best it is ("Use this seed's best (0.08)" on one seed, "Use the best on average (0.33)" on five), next to a one-line reason. Knobs that transfer keep the old buttons. Verified: TIES density on 1 seed → [Use safest 0.51] then "this seed's best 0.08"; on 5 seeds → [Use safest 0.14] then "best on average 0.33"; TIES λ unchanged; the primary button applies its value (density 0.2 → 0.14, toast). 76 tests, axe 0, keyboard and phone gates pass, snapshot --check passes.
 
 - 2026-11-23: **Single-seed sensitivity, read with the right caution.** On one seed the sensitivity panel's "best" is one seed's answer. When the shipped snapshot measured this knob on this exact toy, the panel now says so up front. TIES density: "Careful: pre-measured on 5 seeds, this knob's best moves with the seed (0.08 to 0.39). Read the best above as one seed's answer, not a value to copy." TIES λ: "Pre-measured on 5 seeds, 0.63 transfers across seeds." Ensemble balance: "Careful … narrow peak (17.4 pts on the worst seed)." If the other knobs differ from their defaults it adds "at default settings for the other knobs"; with alignment on (not what the snapshot measured) it falls back to the generic "turn on ± 5 seeds" nudge. No engine change (snapshot --check passes). 76 tests, axe 0, keyboard and phone gates pass.
 

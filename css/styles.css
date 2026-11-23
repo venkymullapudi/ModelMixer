@@ -800,3 +800,4 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .tr-snap { margin-top: 14px; }
 .tr-snap > summary { cursor: pointer; font-weight: 600; font-size: 13.5px; margin-bottom: 8px; }
 .kv-pre { color: #b8c0d2; font-size: 11px; }
+.use-why { align-self: center; }
