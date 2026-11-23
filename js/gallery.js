@@ -41,6 +41,15 @@
       expect: { kind: 'b-beats-a', by: 0.03 },
     },
     {
+      id: 'ties-lambda-first', title: 'On TIES, tune λ before density',
+      lesson: 'Going from k 0.30, λ 1.4 to k 0.20, λ 0.8, the λ change alone helped on all 7 seeds we tried (+0.6 to +4.5 pts), while the density change alone went up on 3 seeds and down on 4 (the best density differs by seed). Scaling λ is the knob that transfers; check density on your own data.',
+      hint: 'In the Lab, press “Which change mattered?”, then “Repeat on 5 seeds”.',
+      scenario: 'two',
+      A: { method: 'ties', params: p('ties', { density: 0.3, lambda: 1.4 }), align: false },
+      B: { method: 'ties', params: p('ties', { density: 0.2, lambda: 0.8 }), align: false },
+      expect: { kind: 'change-helps', what: 'Scaling λ', by: 0.01 },
+    },
+    {
       id: 'conflict-ceiling', title: 'Conflicting skills have a ceiling',
       lesson: 'When two skills disagree on the same inputs, no merge gets close to the experts. Even a Mixture of Experts, which beats TIES here, stays far below them: you need a task signal or retraining, not a better merge.',
       scenario: 'overlap',
@@ -60,11 +69,21 @@
     };
   }
 
-  /** Check a gallery lesson on a trained bundle: returns { ok, a, b, experts }. */
+  /**
+   * Check a gallery lesson on a trained bundle: returns { ok, a, b, experts, change? }.
+   * Kinds: 'b-beats-a' (B ahead by `by`), 'both-below-experts' (both at least `by` under the experts),
+   * 'change-helps' (the named change from A to B, applied alone, helps by at least `by`; see MM.attributeChanges).
+   */
   function checkLesson(g, T) {
-    const score = (side) => MM.scoreMethod(T, MM.bundleCtx(T, side.align), side.method, side.params).avg;
+    const score = (side) => { const r = MM.scoreMethod(T, MM.bundleCtx(T, side.align), side.method, side.params); return r.blocked ? null : r.avg; };
     const a = score(g.A), b = score(g.B);
     const experts = T.expertAccs.reduce((x, e, i) => x + e[i], 0) / T.K;
+    if (g.expect.kind === 'change-helps') {
+      const at = MM.attributeChanges(g.A, g.B, T.K, score);
+      const part = at && at.parts.find((x) => x.what === g.expect.what);
+      const change = part ? part.delta : null;
+      return { ok: change != null && change >= g.expect.by, a, b, experts, change };
+    }
     const ok = g.expect.kind === 'b-beats-a' ? b - a >= g.expect.by : Math.max(a, b) <= experts - g.expect.by;
     return { ok, a, b, experts };
   }

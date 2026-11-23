@@ -1677,10 +1677,13 @@
   function renderAtlas() {
     $('#gallery').innerHTML = MM.GALLERY.map((g) => {
       const sc = MM.SCENARIOS.find((s) => s.id === g.scenario);
-      const side = (x) => `${MM.METHOD_BY_ID[x.method].short}${x.params.layerwise ? ' (per-layer)' : ''}${x.align ? ' + aligned' : ''}`;
+      // same method on both sides: show the settings, since that is what the card is about
+      const side = (x) => (g.A.method === g.B.method && !g.A.params.layerwise && !g.B.params.layerwise && !!g.A.align === !!g.B.align
+        ? MM.recipeLabel(x.method, x.params, x.align, sc.experts.length)
+        : `${MM.METHOD_BY_ID[x.method].short}${x.params.layerwise ? ' (per-layer)' : ''}${x.align ? ' + aligned' : ''}`);
       return `<div class="panel gal-card">
         <h3>${esc(g.title)}</h3>
-        <p>${esc(g.lesson)}</p>
+        <p>${esc(g.lesson)}</p>${g.hint ? `<p class="gal-hint">${esc(g.hint)}</p>` : ''}
         <div class="gal-meta"><span class="mini-tag">${esc(sc.name)}</span><span class="gal-vs"><b>A</b> ${esc(side(g.A))} <span class="muted">vs</span> <b>B</b> ${esc(side(g.B))}</span></div>
         <button class="btn sm primary" data-gallery="${g.id}">Open in the Lab</button>
       </div>`;

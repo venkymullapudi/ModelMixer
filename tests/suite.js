@@ -801,8 +801,8 @@ parameters:
         assert(d.ok && d.recipe.method === g.B.method && d.recipe.pin && d.recipe.pin.method === g.A.method, `${g.id}: link round-trip`);
         if (!bundles[g.scenario]) bundles[g.scenario] = MM.trainBundleSync(scenario(g.scenario));
         const c = MM.checkLesson(g, bundles[g.scenario]);
-        assert(c.ok, `${g.id}: lesson no longer holds (A ${pct(c.a)}, B ${pct(c.b)}, experts ${pct(c.experts)})`);
-        out.push(`${g.id} A ${pct(c.a)} → B ${pct(c.b)}`);
+        assert(c.ok, `${g.id}: lesson no longer holds (A ${pct(c.a)}, B ${pct(c.b)}, experts ${pct(c.experts)}${c.change !== undefined ? `, change alone ${c.change == null ? 'n/a' : pct(c.change)}` : ''})`);
+        out.push(`${g.id} A ${pct(c.a)} → B ${pct(c.b)}${c.change != null ? ` (${g.expect.what} alone ${c.change >= 0 ? '+' : ''}${(c.change * 100).toFixed(1)} pts)` : ''}`);
       }
       return out.join('; ');
     });

@@ -772,6 +772,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .attr-sign { font-size: 10.5px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--line2); color: var(--dim); white-space: nowrap; }
 .attr-sign.up { color: #34d399; border-color: rgba(52, 211, 153, 0.4); } .attr-sign.down { color: #f87171; border-color: rgba(248, 113, 113, 0.4); }
 .cmp-changes .attr { flex-wrap: wrap; justify-content: flex-end; }
+.gal-card .gal-hint { flex: 0; font-size: 12px; color: #a78bfa; }
 
 </style>
 </head>
@@ -3983,6 +3984,15 @@ ${parts.join('\n')}
       expect: { kind: 'b-beats-a', by: 0.03 },
     },
     {
+      id: 'ties-lambda-first', title: 'On TIES, tune λ before density',
+      lesson: 'Going from k 0.30, λ 1.4 to k 0.20, λ 0.8, the λ change alone helped on all 7 seeds we tried (+0.6 to +4.5 pts), while the density change alone went up on 3 seeds and down on 4 (the best density differs by seed). Scaling λ is the knob that transfers; check density on your own data.',
+      hint: 'In the Lab, press “Which change mattered?”, then “Repeat on 5 seeds”.',
+      scenario: 'two',
+      A: { method: 'ties', params: p('ties', { density: 0.3, lambda: 1.4 }), align: false },
+      B: { method: 'ties', params: p('ties', { density: 0.2, lambda: 0.8 }), align: false },
+      expect: { kind: 'change-helps', what: 'Scaling λ', by: 0.01 },
+    },
+    {
       id: 'conflict-ceiling', title: 'Conflicting skills have a ceiling',
       lesson: 'When two skills disagree on the same inputs, no merge gets close to the experts. Even a Mixture of Experts, which beats TIES here, stays far below them: you need a task signal or retraining, not a better merge.',
       scenario: 'overlap',
@@ -4002,11 +4012,21 @@ ${parts.join('\n')}
     };
   }
 
-  /** Check a gallery lesson on a trained bundle: returns { ok, a, b, experts }. */
+  /**
+   * Check a gallery lesson on a trained bundle: returns { ok, a, b, experts, change? }.
+   * Kinds: 'b-beats-a' (B ahead by `by`), 'both-below-experts' (both at least `by` under the experts),
+   * 'change-helps' (the named change from A to B, applied alone, helps by at least `by`; see MM.attributeChanges).
+   */
   function checkLesson(g, T) {
-    const score = (side) => MM.scoreMethod(T, MM.bundleCtx(T, side.align), side.method, side.params).avg;
+    const score = (side) => { const r = MM.scoreMethod(T, MM.bundleCtx(T, side.align), side.method, side.params); return r.blocked ? null : r.avg; };
     const a = score(g.A), b = score(g.B);
     const experts = T.expertAccs.reduce((x, e, i) => x + e[i], 0) / T.K;
+    if (g.expect.kind === 'change-helps') {
+      const at = MM.attributeChanges(g.A, g.B, T.K, score);
+      const part = at && at.parts.find((x) => x.what === g.expect.what);
+      const change = part ? part.delta : null;
+      return { ok: change != null && change >= g.expect.by, a, b, experts, change };
+    }
     const ok = g.expect.kind === 'b-beats-a' ? b - a >= g.expect.by : Math.max(a, b) <= experts - g.expect.by;
     return { ok, a, b, experts };
   }
@@ -6093,10 +6113,13 @@ ${parts.join('\n')}
   function renderAtlas() {
     $('#gallery').innerHTML = MM.GALLERY.map((g) => {
       const sc = MM.SCENARIOS.find((s) => s.id === g.scenario);
-      const side = (x) => `${MM.METHOD_BY_ID[x.method].short}${x.params.layerwise ? ' (per-layer)' : ''}${x.align ? ' + aligned' : ''}`;
+      // same method on both sides: show the settings, since that is what the card is about
+      const side = (x) => (g.A.method === g.B.method && !g.A.params.layerwise && !g.B.params.layerwise && !!g.A.align === !!g.B.align
+        ? MM.recipeLabel(x.method, x.params, x.align, sc.experts.length)
+        : `${MM.METHOD_BY_ID[x.method].short}${x.params.layerwise ? ' (per-layer)' : ''}${x.align ? ' + aligned' : ''}`);
       return `<div class="panel gal-card">
         <h3>${esc(g.title)}</h3>
-        <p>${esc(g.lesson)}</p>
+        <p>${esc(g.lesson)}</p>${g.hint ? `<p class="gal-hint">${esc(g.hint)}</p>` : ''}
         <div class="gal-meta"><span class="mini-tag">${esc(sc.name)}</span><span class="gal-vs"><b>A</b> ${esc(side(g.A))} <span class="muted">vs</span> <b>B</b> ${esc(side(g.B))}</span></div>
         <button class="btn sm primary" data-gallery="${g.id}">Open in the Lab</button>
       </div>`;
