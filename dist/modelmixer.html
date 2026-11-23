@@ -791,6 +791,12 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .tr-tag.moves, .tr-tag.narrow { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); }
 .tr-tag.transfers, .tr-tag.holds { color: #34d399; border-color: rgba(52, 211, 153, 0.4); }
 
+/* ---------- atlas: transfer across toys ---------- */
+.tr-sub { margin: 18px 0 6px; font-size: 14px; }
+.tr-more { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.tr-x td { white-space: nowrap; }
+.tr-x .mono { font-family: var(--mono); font-size: 12px; }
+
 </style>
 </head>
 <body>
@@ -5448,10 +5454,10 @@ ${parts.join('\n')}
   /** The sweep cache key for one knob: other knobs at their current values, this knob's value left out. */
   const sweepKey = (id, params, knob, seeds) => JSON.stringify([S.align, id, MM.withKnob(params, knob, knob.min), knob.key, !!seeds]);
   /** Sweep one knob on the shared seeds: each seed's sweep in its own worker, in parallel. Returns { xs, curves } or null. */
-  async function seededSweep(id, knob, params, cancelled, msg) {
+  async function seededSweep(id, knob, params, cancelled, msg, given) {
     const xs = MM.sweepValues(knob, SWEEP_N);
     const kname = knob.label.replace(/\s*\(.*\)$/, '');
-    const bundles = await seedBundles(SWEEP_SEEDS, cancelled, msg);
+    const bundles = given || await seedBundles(SWEEP_SEEDS, cancelled, msg);
     if (!bundles) return null;
     const recipes = xs.map((x, i) => ({ key: `x${i}`, method: id, params: MM.withKnob(params, knob, x), align: S.align }));
     let done = 0;
@@ -6216,13 +6222,29 @@ ${parts.join('\n')}
 
   // ---------------- ATLAS ----------------
   // ---------------- ATLAS: which knobs transfer across seeds ----------------
-  const transferCache = new Map(); // trainKey + align -> rows
+  const transferCache = new Map(); // toy config + align -> { label, scenario, rows }
   let transferToken = 0;
   const transferKey = () => JSON.stringify([trainKey(S), S.align]);
   const TRANSFER_TXT = { moves: 'moves with the seed', narrow: 'same spot, narrow peak', transfers: 'transfers', holds: 'holds' };
-  function transferMethods() {
+  function transferMethods(K, hasBase) {
     // trained methods are left out: every sweep point would be a training run
-    return MM.METHODS.filter((m) => !m.req.training && !(m.req.base && S.init !== 'shared') && MM.sweepKnobs(m.id, T.K, MM.defaultParams(m, T.K)).length);
+    K = K || T.K; hasBase = hasBase == null ? S.init === 'shared' : hasBase;
+    return MM.METHODS.filter((m) => !m.req.training && !(m.req.base && !hasBase) && MM.sweepKnobs(m.id, K, MM.defaultParams(m, K)).length);
+  }
+  // the 5 check seeds (7, 108 … 411), as a hoisted function so it is safe at start-up (EV_SEEDS is defined further down)
+  function checkSeeds() { return [0, 1, 2, 3, 4].map((i) => 7 + 101 * i); }
+  const toyTransferKey = (scId) => JSON.stringify([trainKey(MM.toyConfig(scId, checkSeeds()[0])), S.align]);
+  /** The 5 check seeds of any toy scenario (shared bundle cache; the lab's own experts when they match). */
+  async function toyBundles(scId, cancelled, msg) {
+    const cfgs = checkSeeds().map((seed) => MM.toyConfig(scId, seed));
+    const out = new Array(cfgs.length);
+    let done = 0;
+    const step = workerOK ? MAX_PARALLEL : 1;
+    for (let k = 0; k < cfgs.length; k += step) {
+      const got = await Promise.all(cfgs.slice(k, k + step).map((c, j) => trainCached(c, { cancelled }).then((b) => { done++; if (msg) msg(`Training ${done}/${cfgs.length} seeds…`); out[k + j] = b; return b; })));
+      if (got.some((b) => !b) || cancelled()) return null;
+    }
+    return out;
   }
   function renderTransfer() {
     const el = $('#transfer');
@@ -6230,7 +6252,8 @@ ${parts.join('\n')}
     const sc = MM.SCENARIOS.find((x) => x.id === S.scenario);
     const where = `${sc ? sc.name : 'the custom'} toy${S.align ? ', aligned' : ''}`;
     if (!T || !T.experts) { el.innerHTML = '<p class="muted small">Train the experts in the Lab first.</p>'; return; }
-    const rows = transferCache.get(transferKey());
+    const entry = transferCache.get(transferKey());
+    const rows = entry && entry.rows;
     if (!rows) {
       const ms = transferMethods();
       const nk = ms.reduce((a, m) => a + MM.sweepKnobs(m.id, T.K, MM.defaultParams(m, T.K)).length, 0);
@@ -6246,24 +6269,53 @@ ${parts.join('\n')}
         <td><span class="tr-tag ${r.kind}">${TRANSFER_TXT[r.kind]}</span></td>
         <td class="mono">${esc(r.lo)} – ${esc(r.hi)}</td><td class="mono">${esc(r.best)}</td><td class="mono">${(r.regret * 100).toFixed(1)} pts</td></tr>`).join('');
     el.innerHTML = `${lead}<div class="board-wrap"><table class="board tr-table"><thead><tr><th>Method</th><th>Knob</th><th>Across ${SWEEP_SEEDS} seeds</th><th>Per-seed best</th><th>Best on average</th><th>Cost on the worst seed</th></tr></thead><tbody>${body}</tbody></table></div>
-      <p class="muted small">“Cost on the worst seed” is how far the best-on-average value falls below that seed’s own best. Default settings for the other knobs; click a row to open it in the Lab.</p>`;
+      <p class="muted small">“Cost on the worst seed” is how far the best-on-average value falls below that seed’s own best. Default settings for the other knobs; click a row to open it in the Lab.</p>
+      ${compareToysHTML(sc ? sc.id : null)}`;
   }
-  async function runTransfer() {
-    const token = ++transferToken, key = transferKey(), Tnow = T;
-    const cancelled = () => token !== transferToken || T !== Tnow || transferKey() !== key;
-    const msg = (t) => { const el = $('#transferMsg'); if (el && !cancelled()) el.textContent = t; };
-    const btn = $('#runTransfer');
-    if (btn) btn.disabled = true;
-    let byT = sweepCache.get(Tnow);
-    if (!byT) { byT = new Map(); sweepCache.set(Tnow, byT); }
+  /** Side-by-side verdicts on every toy measured so far, and a button per toy not yet measured. */
+  function compareToysHTML(currentId) {
+    const measured = [];
+    const cur = transferCache.get(transferKey());
+    if (cur) measured.push(cur);
+    MM.SCENARIOS.forEach((sc) => { const e = transferCache.get(toyTransferKey(sc.id)); if (e && e !== cur && !measured.some((x) => x.scenario === sc.id)) measured.push(e); });
+    const others = MM.SCENARIOS.filter((sc) => sc.id !== currentId && !measured.some((x) => x.scenario === sc.id));
+    const buttons = others.length ? `<div class="tr-more"><span class="muted small">Does it depend on the data? Compare with:</span>${others.map((sc) => `<button class="btn ghost sm" data-tr-toy="${sc.id}">${esc(sc.name)}</button>`).join('')}<span class="muted small" id="trToyMsg" aria-live="polite"></span></div>` : '';
+    if (measured.length < 2) return buttons;
+    const keys = [];
+    measured.forEach((e) => e.rows.forEach((r) => { const k = `${r.method}|${r.knob}`; if (!keys.includes(k)) keys.push(k); }));
+    const find = (e, k) => e.rows.find((r) => `${r.method}|${r.knob}` === k);
+    const carry = (r) => r && (r.kind === 'holds' || r.kind === 'transfers');
+    const everywhere = keys.filter((k) => measured.every((e) => carry(find(e, k))));
+    const split = keys.filter((k) => { const rs = measured.map((e) => find(e, k)).filter(Boolean); return rs.length > 1 && rs.some(carry) && !rs.every(carry); });
+    const nm = (k) => k.replace('|', ' ');
+    const lead = `<p class="tr-lead">Across ${measured.length} toys (${measured.map((e) => esc(e.label)).join(', ')}): ${everywhere.length ? `<b>${everywhere.length}</b> knob value${everywhere.length > 1 ? 's carry' : ' carries'} over on every one (${everywhere.map((k) => esc(nm(k))).join(', ')})` : '<b>no knob value carries over on every toy</b>'}${split.length ? `; <b>${split.length}</b> carr${split.length > 1 ? 'y' : 'ies'} over on some toys but not others (${split.map((k) => esc(nm(k))).join(', ')}), so which values you can copy depends on the data` : ''}.</p>`;
+    const cell = (r) => (r ? `<span class="tr-tag ${r.kind}">${TRANSFER_TXT[r.kind]}</span> <span class="mono">${esc(r.best)}</span>` : '<span class="muted">—</span>');
+    const body = keys.map((k) => { const [mth, kn] = k.split('|'); return `<tr><td><b>${esc(mth)}</b></td><td>${esc(kn)}</td>${measured.map((e) => `<td>${cell(find(e, k))}</td>`).join('')}</tr>`; }).join('');
+    return `<h3 class="tr-sub">Across toys</h3>${lead}<div class="board-wrap" tabindex="0" role="region" aria-label="Knob verdicts across toys (scrolls sideways)"><table class="board tr-table tr-x"><thead><tr><th>Method</th><th>Knob</th>${measured.map((e) => `<th>${esc(e.label)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>
+      <p class="muted small">Each toy measured on its own 5 seeds, default settings; the number is that toy’s best value on average.</p>${buttons}`;
+  }
+  async function runTransfer(scId) {
+    const other = !!scId;
+    const token = ++transferToken, Tnow = T, alignNow = S.align;
+    const sc = MM.SCENARIOS.find((x) => x.id === (scId || S.scenario));
+    const key = other ? toyTransferKey(scId) : transferKey();
+    const cancelled = () => token !== transferToken || T !== Tnow || S.align !== alignNow || (!other && transferKey() !== key);
+    const msgEl = other ? '#trToyMsg' : '#transferMsg';
+    const msg = (t) => { const el = $(msgEl); if (el && !cancelled()) el.textContent = t; };
+    (other ? $$('[data-tr-toy]') : [$('#runTransfer')]).forEach((b) => { if (b) b.disabled = true; });
+    const bundles = other ? await toyBundles(scId, cancelled, (t) => msg(`${sc.name}: ${t}`)) : null;
+    if (other && !bundles) return;
+    const B0 = other ? bundles[0] : Tnow, K = B0.K, hasBase = other ? sc.init === 'shared' : S.init === 'shared';
+    let byT = sweepCache.get(B0);
+    if (!byT) { byT = new Map(); sweepCache.set(B0, byT); }
     const rows = [];
-    for (const m of transferMethods()) {
-      const params = MM.defaultParams(m, Tnow.K);
-      for (const knob of MM.sweepKnobs(m.id, Tnow.K, params)) {
+    for (const m of transferMethods(K, hasBase)) {
+      const params = MM.defaultParams(m, K);
+      for (const knob of MM.sweepKnobs(m.id, K, params)) {
         const k = sweepKey(m.id, params, knob, true);
         let res = byT.get(k);
         if (!res) {
-          res = await seededSweep(m.id, knob, params, cancelled, (t) => msg(`${m.short}: ${t}`));
+          res = await seededSweep(m.id, knob, params, cancelled, (t) => msg(`${other ? `${sc.name} · ` : ''}${m.short}: ${t}`), bundles || undefined);
           if (!res) return;
           byT.set(k, res);
         }
@@ -6274,11 +6326,13 @@ ${parts.join('\n')}
           kind: tv.kind, lo: f(Math.min(...tv.bests)), hi: f(Math.max(...tv.bests)), best: f(tv.best), regret: tv.regret });
       }
     }
-    transferCache.set(key, rows);
+    transferCache.set(key, { label: sc ? sc.name : 'Custom', scenario: sc ? sc.id : 'custom', rows });
     if (!cancelled()) renderTransfer();
   }
   $('#transfer').addEventListener('click', (ev) => {
     if (ev.target.closest('#runTransfer')) { runTransfer(); return; }
+    const toy = ev.target.closest('[data-tr-toy]');
+    if (toy) { runTransfer(toy.dataset.trToy); return; }
     const tr = ev.target.closest('[data-tr]');
     if (tr) openTransferRow(+tr.dataset.tr);
   });
@@ -6287,7 +6341,7 @@ ${parts.join('\n')}
     if (tr && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); openTransferRow(+tr.dataset.tr); }
   });
   function openTransferRow(i) {
-    const r = (transferCache.get(transferKey()) || [])[i];
+    const r = ((transferCache.get(transferKey()) || {}).rows || [])[i];
     if (!r) return;
     S.params[r.id] = MM.defaultParams(MM.METHOD_BY_ID[r.id], T.K); // the row was measured at default settings
     S.sweepKnob[r.id] = r.knobKey; S.sweepSeeds = true;
@@ -6848,7 +6902,7 @@ dtype: bfloat16
   }
   function closeAdvisor() { evToken++; if (advDlg.open) { if (typeof advDlg.close === 'function') advDlg.close(); else advDlg.removeAttribute('open'); } }
   // ---- measured evidence: each top pick, run on the closest toy scenario over EV_SEEDS seeds ----
-  const EV_SEEDS = [0, 1, 2, 3, 4].map((i) => 7 + 101 * i); // the lab's 5 check seeds (7, 108 … 411), shared via bundleCache
+  const EV_SEEDS = checkSeeds(); // the lab's 5 check seeds (7, 108 … 411), shared via bundleCache
   const evBundles = {}; // toyKey -> trained bundles (one per seed)
   const evCache = {}; // evKey -> seed summary
   const evSeeds = {}; // evKey -> per-seed results, for the paired re-ranking
