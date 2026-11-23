@@ -10,6 +10,7 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 - Keyboard: `python3 scripts/keyboard_audit.py` (exits 1 on failure; CI runs it) must complete the whole keyboard-only flow.
 - Accessibility: `python3 scripts/axe_audit.py` (exits 1 on failure; CI runs it) must report 0 violations on every view (Lab, Arena, Atlas, Export, advisor, report) and keep every new control labelled and keyboard reachable.
 
+- If you changed an engine file (js/nn, data, methods, merge, lab): `python3 scripts/bundle.py && python3 scripts/transfer_snapshot.py` (CI checks the snapshot matches).
 - `node tests/run.js` (CI runs this too). Without Node: `python3 scripts/bundle.py --tests`, then open
   `tests/_browser.html` and expect `N/N passed`.
 - `python3 scripts/bundle.py`, then open `dist/modelmixer.html`, exercise the changed feature, and check
@@ -17,10 +18,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Atlas finding across all 7 toys:** with every toy compared, "no knob value carries over on every toy; 16 carry over on some but not others". Turn that into a short, test-guarded Atlas sentence or gallery card (the claim must hold on the shared 5 seeds), so first-time visitors see it without running 70 s of sweeps.
+1. **Snapshot in the report and advisor:** use the pre-measured snapshot as a fallback where no live sweep exists (report "Which knob values can be copied?", advisor knob line), clearly labelled "pre-measured, default settings", so a first report already says which knobs to tune.
 2. **Seed stability for the gallery lessons:** the "Conflicting skills have a ceiling" card is already checked on seeds by a test; add a Digits-conflict card only if its saliency reading holds on most seeds (today it does not: TIES flips between "conflict" and "lost").
 
 ## Done
+
+- 2026-11-23: **Atlas: the 7-toy finding, pre-measured and guarded.** New `scripts/transfer_snapshot.py` drives the real app through every toy's knob-transfer measurement (about 70 s) and writes `js/transfer-snapshot.js`: 7 toys, 133 rows, plus the date and a SHA-256 of the engine sources (nn, data, methods, merge, lab). The Atlas shows it at once under "Already measured: all 7 toys × 5 seeds", leading with "no knob value carries over on every toy; 16 carry over on some toys but not others … so which values you can copy depends on the data". Measuring live replaces it. Guards: (1) a test checks the snapshot covers every scenario with valid rows and that the headline still follows from its rows through the same pure `transferSummary` the UI uses (0 everywhere, ≥ 10 split); (2) CI runs `transfer_snapshot.py --check`, which fails if any engine file changed since the snapshot. Proved by planting a one-line change in lab.js: exit 1, then exit 0 after reverting. **Workflow note:** any change to an engine file now needs `python3 scripts/bundle.py && python3 scripts/transfer_snapshot.py` before committing. 2 tests (76 total). axe 0, no overflow at 375 px, keyboard and phone gates pass.
 
 - 2026-11-23: **One capped cache for trained models.** `bundleCache` is now the single holder of trained toy models: an LRU capped at 40 (`makeLRU` in `js/lab.js`). The Lab's current models and its 5 check seeds are never evicted. The two side holders it replaced (the Lab's per-config seed arrays and the advisor's `evBundles`) were removed, so eviction actually frees memory. Sweep results and checks live in WeakMaps keyed by bundle and go with them. The advisor's evidence and knob checks fetch a toy's seeds through `toySeedBundles` (cache hits, training only what is missing). `window.ModelMixer.cachedModels` reports size and evictions for debugging. Verified: the Lab's edge check, then all 7 toys compared in the Atlas (35 models, 68 s), the advisor on both toys, then two re-seeds pushed it past the cap. It held at 40, evicted 5, and the current Lab seeds stayed (next check 0.1 s). No console errors. 1 test (74 total). axe 0, keyboard and phone gates pass.
 

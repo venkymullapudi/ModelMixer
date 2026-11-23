@@ -1755,7 +1755,7 @@
       const ms = transferMethods();
       const nk = ms.reduce((a, m) => a + MM.sweepKnobs(m.id, T.K, MM.defaultParams(m, T.K)).length, 0);
       el.innerHTML = `<div class="tr-head"><p class="muted small">Measures ${nk} knobs across ${ms.length} methods on ${where}, about 5–15 s. Uses the same seeds and cache as the Lab’s checks.</p>
-        <button class="btn sm" id="runTransfer">Measure on ${SWEEP_SEEDS} seeds</button><span class="muted small" id="transferMsg" aria-live="polite"></span></div>`;
+        <button class="btn sm" id="runTransfer">Measure on ${SWEEP_SEEDS} seeds</button><span class="muted small" id="transferMsg" aria-live="polite"></span></div>${snapshotHTML()}`;
       return;
     }
     const moving = rows.filter((r) => r.kind === 'moves'), narrow = rows.filter((r) => r.kind === 'narrow');
@@ -1778,18 +1778,25 @@
     const others = MM.SCENARIOS.filter((sc) => sc.id !== currentId && !measured.some((x) => x.scenario === sc.id));
     const buttons = others.length ? `<div class="tr-more"><span class="muted small">Does it depend on the data? Compare with:</span>${others.map((sc) => `<button class="btn ghost sm" data-tr-toy="${sc.id}">${esc(sc.name)}</button>`).join('')}<span class="muted small" id="trToyMsg" aria-live="polite"></span></div>` : '';
     if (measured.length < 2) return buttons;
-    const keys = [];
-    measured.forEach((e) => e.rows.forEach((r) => { const k = `${r.method}|${r.knob}`; if (!keys.includes(k)) keys.push(k); }));
+    return `<h3 class="tr-sub">Across toys</h3>${crossToyTable(measured, 'Each toy measured on its own 5 seeds, default settings; the number is that toy’s best value on average.')}${buttons}`;
+  }
+  /** Lead sentence + side-by-side table for several toys' knob-transfer rows (live or pre-measured). */
+  function crossToyTable(entries, note) {
+    const { keys, everywhere, split } = MM.transferSummary(entries);
     const find = (e, k) => e.rows.find((r) => `${r.method}|${r.knob}` === k);
-    const carry = (r) => r && (r.kind === 'holds' || r.kind === 'transfers');
-    const everywhere = keys.filter((k) => measured.every((e) => carry(find(e, k))));
-    const split = keys.filter((k) => { const rs = measured.map((e) => find(e, k)).filter(Boolean); return rs.length > 1 && rs.some(carry) && !rs.every(carry); });
     const nm = (k) => k.replace('|', ' ');
-    const lead = `<p class="tr-lead">Across ${measured.length} toys (${measured.map((e) => esc(e.label)).join(', ')}): ${everywhere.length ? `<b>${everywhere.length}</b> knob value${everywhere.length > 1 ? 's carry' : ' carries'} over on every one (${everywhere.map((k) => esc(nm(k))).join(', ')})` : '<b>no knob value carries over on every toy</b>'}${split.length ? `; <b>${split.length}</b> carr${split.length > 1 ? 'y' : 'ies'} over on some toys but not others (${split.map((k) => esc(nm(k))).join(', ')}), so which values you can copy depends on the data` : ''}.</p>`;
+    const lead = `<p class="tr-lead">Across ${entries.length} toys (${entries.map((e) => esc(e.label)).join(', ')}): ${everywhere.length ? `<b>${everywhere.length}</b> knob value${everywhere.length > 1 ? 's carry' : ' carries'} over on every one (${everywhere.map((k) => esc(nm(k))).join(', ')})` : '<b>no knob value carries over on every toy</b>'}${split.length ? `; <b>${split.length}</b> carr${split.length > 1 ? 'y' : 'ies'} over on some toys but not others (${split.map((k) => esc(nm(k))).join(', ')}), so which values you can copy depends on the data` : ''}.</p>`;
     const cell = (r) => (r ? `<span class="tr-tag ${r.kind}">${TRANSFER_TXT[r.kind]}</span> <span class="mono">${esc(r.best)}</span>` : '<span class="muted">—</span>');
-    const body = keys.map((k) => { const [mth, kn] = k.split('|'); return `<tr><td><b>${esc(mth)}</b></td><td>${esc(kn)}</td>${measured.map((e) => `<td>${cell(find(e, k))}</td>`).join('')}</tr>`; }).join('');
-    return `<h3 class="tr-sub">Across toys</h3>${lead}<div class="board-wrap" tabindex="0" role="region" aria-label="Knob verdicts across toys (scrolls sideways)"><table class="board tr-table tr-x"><thead><tr><th>Method</th><th>Knob</th>${measured.map((e) => `<th>${esc(e.label)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>
-      <p class="muted small">Each toy measured on its own 5 seeds, default settings; the number is that toy’s best value on average.</p>${buttons}`;
+    const body = keys.map((k) => { const [mth, kn] = k.split('|'); return `<tr><td><b>${esc(mth)}</b></td><td>${esc(kn)}</td>${entries.map((e) => `<td>${cell(find(e, k))}</td>`).join('')}</tr>`; }).join('');
+    return `${lead}<div class="board-wrap" tabindex="0" role="region" aria-label="Knob verdicts across toys (scrolls sideways)"><table class="board tr-table tr-x"><thead><tr><th>Method</th><th>Knob</th>${entries.map((e) => `<th>${esc(e.label)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div>
+      <p class="muted small">${note}</p>`;
+  }
+  /** The pre-measured snapshot (scripts/transfer_snapshot.py), shown until the reader measures live. */
+  function snapshotHTML() {
+    const snap = MM.TRANSFER_SNAPSHOT;
+    if (!snap || !snap.entries || snap.entries.length < 2) return '';
+    return `<details class="tr-snap" open><summary>Already measured: all ${snap.entries.length} toys × ${snap.seeds} seeds</summary>
+      ${crossToyTable(snap.entries, `Pre-measured with this version of the engine (${esc(snap.date)}) by <code>scripts/transfer_snapshot.py</code>; CI fails if the engine changes without re-measuring. Measure live above to check it on your own settings.`)}</details>`;
   }
   async function runTransfer(scId) {
     const other = !!scId;
@@ -2718,5 +2725,6 @@ dtype: bfloat16
   train();
   if (sharedMsg) toast(sharedMsg);
 
-  window.ModelMixer = { state: S, get trained() { return T; }, compute, getCtx, recipeLink, openRecipe, trainAsync, scoreAsync, get usesWorker() { return workerOK; }, get cachedModels() { return { size: bundleCache.size, evicted: bundleCache.evicted, cap: BUNDLE_CAP }; } };
+  window.ModelMixer = { state: S, get trained() { return T; }, compute, getCtx, recipeLink, openRecipe, trainAsync, scoreAsync, get usesWorker() { return workerOK; }, get cachedModels() { return { size: bundleCache.size, evicted: bundleCache.evicted, cap: BUNDLE_CAP }; },
+    transferEntries: () => Array.from(transferCache.values()).map((e) => ({ label: e.label, scenario: e.scenario, rows: e.rows.map(({ method, knob, kind, best, lo, hi, regret }) => ({ method, knob, kind, best, lo, hi, regret: +regret.toFixed(4) })) })) };
 })();

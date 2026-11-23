@@ -98,7 +98,7 @@ helps the Strangers scenario. CI (GitHub Actions) runs it on every push and also
 `dist/modelmixer.html` is out of date. A second CI job runs three browser gates in Playwright's Chromium: an axe-core
 accessibility audit of every view (`scripts/axe_audit.py`), a keyboard-only recipe flow (`scripts/keyboard_audit.py`:
 skip links, scenario, method, pin, knob, undo, edge check, export, advisor, with a visible focus ring at every stop) and a 375 px
-phone-layout audit (`scripts/phone_audit.py`).
+phone-layout audit (`scripts/phone_audit.py`). The Atlas's pre-measured knob-transfer snapshot (`js/transfer-snapshot.js`, made by `scripts/transfer_snapshot.py`) must match the engine: CI fails if an engine file changes without re-measuring.
 Locally they use your Google Chrome (`pip install playwright`). No Node? Run `python3 scripts/bundle.py --tests` and open
 `tests/_browser.html`.
 

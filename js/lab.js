@@ -510,6 +510,21 @@
    * per slider drag). undo()/redo() return the snapshot to restore, or null.
    */
   /**
+   * Cross-toy summary of knob-transfer tables. entries = [{ label, rows: [{ method, knob, kind }] }].
+   * Returns { keys (method|knob, first-seen order), everywhere (carries over on every toy that measured it, and on
+   * every toy), split (carries over on some toys, not on others) }. "Carries over" = kind 'holds' or 'transfers'.
+   */
+  function transferSummary(entries) {
+    const keys = [];
+    entries.forEach((e) => e.rows.forEach((r) => { const k = `${r.method}|${r.knob}`; if (!keys.includes(k)) keys.push(k); }));
+    const find = (e, k) => e.rows.find((r) => `${r.method}|${r.knob}` === k);
+    const carry = (r) => !!r && (r.kind === 'holds' || r.kind === 'transfers');
+    const everywhere = keys.filter((k) => entries.every((e) => carry(find(e, k))));
+    const split = keys.filter((k) => { const rs = entries.map((e) => find(e, k)).filter(Boolean); return rs.length > 1 && rs.some(carry) && !rs.every(carry); });
+    return { keys, everywhere, split };
+  }
+
+  /**
    * A least-recently-used map with a size cap. keep(key) marks entries that must never be evicted (e.g. the
    * Lab's current models); if only kept entries are left, the cache may grow past the cap rather than drop them.
    */
@@ -569,5 +584,5 @@
     };
   }
 
-  Object.assign(MM, { makeLRU, seedBests, knobTransfer, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { transferSummary, makeLRU, seedBests, knobTransfer, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

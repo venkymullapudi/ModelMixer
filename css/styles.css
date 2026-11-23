@@ -795,3 +795,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .kv.moves, .kv.narrow { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); }
 .kv.transfers, .kv.holds { color: #34d399; border-color: rgba(52, 211, 153, 0.4); }
 .kv-tune { color: #fbbf24; } .kv-ok { color: #34d399; }
+
+/* ---------- atlas: pre-measured snapshot ---------- */
+.tr-snap { margin-top: 14px; }
+.tr-snap > summary { cursor: pointer; font-weight: 600; font-size: 13.5px; margin-bottom: 8px; }

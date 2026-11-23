@@ -248,6 +248,23 @@ parameters:
       assert(lw.length === 1 && lw[0].what === 'λ per layer' && lw[0].a === 'off' && lw[0].b === '0.50 → 1.00 → 1.50', `scalar λ hidden when per-layer: ${JSON.stringify(lw)}`);
       return `${k[0].what} ${k[0].a} → ${k[0].b}`;
     });
+    test('Transfer snapshot: well-formed, every toy measured, and its headline still follows from its rows', () => {
+      const snap = MM.TRANSFER_SNAPSHOT;
+      assert(snap && snap.seeds === 5 && /^[0-9a-f]{64}$/.test(snap.engineHash), 'snapshot header');
+      assert(snap.entries.length === MM.SCENARIOS.length && MM.SCENARIOS.every((sc) => snap.entries.some((e) => e.scenario === sc.id)), 'one entry per scenario');
+      const kinds = new Set(['moves', 'narrow', 'transfers', 'holds']);
+      snap.entries.forEach((e) => { assert(e.rows.length > 0, `${e.label}: rows`); e.rows.forEach((r) => assert(kinds.has(r.kind) && MM.METHODS.some((m) => m.short === r.method), `${e.label}: ${r.method} ${r.knob}`)); });
+      const sum = MM.transferSummary(snap.entries);
+      // the claim the Atlas leads with
+      assert(sum.everywhere.length === 0, `expected no knob value to carry over on every toy, got ${sum.everywhere.join(', ')}`);
+      assert(sum.split.length >= 10, `expected many knobs to carry over on some toys only, got ${sum.split.length}`);
+      return `${snap.entries.length} toys, ${sum.keys.length} knobs: 0 carry over everywhere, ${sum.split.length} depend on the toy`;
+    });
+    test('transferSummary: everywhere vs split', () => {
+      const e = (label, kinds) => ({ label, rows: Object.entries(kinds).map(([knob, kind]) => ({ method: 'TIES', knob, kind })) });
+      const s = MM.transferSummary([e('A', { λ: 'transfers', k: 'moves', ε: 'holds' }), e('B', { λ: 'holds', k: 'narrow', ε: 'moves' })]);
+      assert(s.everywhere.join() === 'TIES|λ' && s.split.join() === 'TIES|ε' && s.keys.length === 3, JSON.stringify(s));
+    });
     test('makeLRU: caps size, evicts least recently used, never evicts kept keys', () => {
       const c = MM.makeLRU(3, (k) => k === 'lab');
       ['lab', 'a', 'b'].forEach((k) => c.set(k, k));
