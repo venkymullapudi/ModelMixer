@@ -823,7 +823,7 @@
     const LN = MM.LAYER_NAMES;
     panel.innerHTML = `<div class="sweep-head">
         <div><h2>Per-layer sensitivity <span class="pill-mini">which layer matters?</span></h2>
-          <p class="muted">Average accuracy for every combination of ${esc(g.label)} in two layers, with ${LN[fixed]} held at ${fmtG(g, p.grad[fixed])}. A colour change along one axis only means that layer is the one to tune.</p></div>
+          <p class="muted">Average accuracy for every combination of ${esc(g.label)} in two layers, with ${LN[fixed]} held at ${fmtG(g, p.grad[fixed])}. A colour change along one axis only means that layer is the one to tune.${MM.LAYER_FIRST[m.id] ? ` <span class="layer-tip">Measured across toys: Hidden 1 swung most for ${esc(m.short)} in ${MM.LAYER_FIRST[m.id].h1} of ${MM.LAYER_FIRST[m.id].n} toy-seed cases.</span>` : ''}</p></div>
         <div class="sweep-ctl"><div class="seg" id="gridPair">${PAIRS.map(([k, l]) => `<button data-pair="${k}" class="${k === pair ? 'on' : ''}">${l}</button>`).join('')}</div>
           <button class="tg ${seeds ? 'on' : ''}" id="gridSeeds" title="Map the grid on the 5 shared seeds (the same ones the other checks use) and show the mean">± ${SWEEP_SEEDS} seeds</button></div></div>
       <div class="heat-wrap" id="heatWrap">${M ? '' : '<div class="loading"><span class="spinner"></span> <span id="heatMsg">Mapping…</span></div>'}</div>
@@ -2694,6 +2694,7 @@ dtype: bfloat16
         <ul>${pros.map((t) => `<li class="pro">${t}</li>`).join('')}${cons.map((t) => `<li class="con">${t}</li>`).join('')}${!pros.length && !cons.length ? `<li class="pro">${m.tagline}</li>` : ''}</ul>
         <div class="evidence" data-ev="${x.id}">${evidenceHTML(x.id, r)}</div>
         <div class="rec-knobs" data-kv="${x.id}">${knobsHTML(x.id, r)}</div>
+        ${MM.layerFirstTip(x.id) ? `<details class="rec-layer"><summary>Per-layer values: which layer first?</summary><p>${esc(MM.layerFirstTip(x.id))}</p></details>` : ''}
         <div class="rec-actions">
           <button class="btn sm ${i === 0 ? 'primary' : ''}" data-adv-try="${x.id}">Try it in the Lab · ${sc.name}${r.align ? ' + alignment' : ''}</button>
           <button class="btn ghost sm" data-adv-export="${x.id}">${m.mergekit ? 'Export mergekit config' : 'Open-source pointers'}</button>

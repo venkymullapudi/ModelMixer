@@ -801,3 +801,9 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .tr-snap > summary { cursor: pointer; font-weight: 600; font-size: 13.5px; margin-bottom: 8px; }
 .kv-pre { color: #b8c0d2; font-size: 11px; }
 .use-why { align-self: center; }
+
+/* ---------- which layer first ---------- */
+.rec-layer { margin-top: 6px; font-size: 12px; }
+.rec-layer summary { cursor: pointer; color: #b8c0d2; }
+.rec-layer p { margin: 4px 0 0; line-height: 1.55; color: #cdd3e3; }
+.layer-tip { color: #b8c0d2; }

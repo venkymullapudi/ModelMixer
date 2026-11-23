@@ -814,6 +814,12 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .kv-pre { color: #b8c0d2; font-size: 11px; }
 .use-why { align-self: center; }
 
+/* ---------- which layer first ---------- */
+.rec-layer { margin-top: 6px; font-size: 12px; }
+.rec-layer summary { cursor: pointer; color: #b8c0d2; }
+.rec-layer p { margin: 4px 0 0; line-height: 1.55; color: #cdd3e3; }
+.layer-tip { color: #b8c0d2; }
+
 </style>
 </head>
 <body>
@@ -3546,7 +3552,26 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     };
   }
 
-  Object.assign(MM, { ADVISOR_QUESTIONS, ADVISOR_DEFAULTS, adviseRecipe, blendRanking, combineToyBlends });
+  /**
+   * Which layer to tune first when a method's values are set per layer. Measured 2026-11-24: each layer's swing in
+   * average accuracy (7×7 per-layer grids, averaged over the two maps that include the layer), default settings, 5 seeds
+   * per toy. `n` = toy-seed cases, `h1` = cases where Hidden 1 swung most. A test re-checks Hidden 1 on the test seed.
+   */
+  const LAYER_FIRST = {
+    ties: { h1: 26, n: 30, toys: 'Two skills, Three skills, Overlapping, Hard + easy, Digits, Digits conflict', other: 'Output 4×' },
+    task_arithmetic: { h1: 15, n: 20, toys: 'Two skills, Hard + easy, Overlapping, Digits', other: 'Output 5× (3 on Hard + easy)' },
+    dare: { h1: 15, n: 20, toys: 'Two skills, Hard + easy, Overlapping, Digits', other: 'Output 4×, Hidden 2 once' },
+    slerp: { h1: 18, n: 20, toys: 'Two skills, Hard + easy, Overlapping, Digits', other: 'Output 2×, both on Hard + easy' },
+    linear: { h1: 18, n: 20, toys: 'Two skills, Hard + easy, Overlapping, Digits', other: 'Output 2×, both on Hard + easy' },
+  };
+  /** One line for a method, or null if it has no measured per-layer evidence. */
+  function layerFirstTip(id) {
+    const e = LAYER_FIRST[id];
+    if (!e) return null;
+    return `If you set values per layer, tune Hidden 1 first: it was the most sensitive layer in ${e.h1} of ${e.n} toy-seed cases (${e.toys}). The exceptions were ${e.other}; Output tends to matter more when one skill is much harder than the other. The best value itself moves with the seed, so map it on your own models.`;
+  }
+
+  Object.assign(MM, { ADVISOR_QUESTIONS, ADVISOR_DEFAULTS, adviseRecipe, blendRanking, combineToyBlends, LAYER_FIRST, layerFirstTip });
 })();
 
 </script>
@@ -5484,7 +5509,7 @@ ${parts.join('\n')}
     const LN = MM.LAYER_NAMES;
     panel.innerHTML = `<div class="sweep-head">
         <div><h2>Per-layer sensitivity <span class="pill-mini">which layer matters?</span></h2>
-          <p class="muted">Average accuracy for every combination of ${esc(g.label)} in two layers, with ${LN[fixed]} held at ${fmtG(g, p.grad[fixed])}. A colour change along one axis only means that layer is the one to tune.</p></div>
+          <p class="muted">Average accuracy for every combination of ${esc(g.label)} in two layers, with ${LN[fixed]} held at ${fmtG(g, p.grad[fixed])}. A colour change along one axis only means that layer is the one to tune.${MM.LAYER_FIRST[m.id] ? ` <span class="layer-tip">Measured across toys: Hidden 1 swung most for ${esc(m.short)} in ${MM.LAYER_FIRST[m.id].h1} of ${MM.LAYER_FIRST[m.id].n} toy-seed cases.</span>` : ''}</p></div>
         <div class="sweep-ctl"><div class="seg" id="gridPair">${PAIRS.map(([k, l]) => `<button data-pair="${k}" class="${k === pair ? 'on' : ''}">${l}</button>`).join('')}</div>
           <button class="tg ${seeds ? 'on' : ''}" id="gridSeeds" title="Map the grid on the 5 shared seeds (the same ones the other checks use) and show the mean">± ${SWEEP_SEEDS} seeds</button></div></div>
       <div class="heat-wrap" id="heatWrap">${M ? '' : '<div class="loading"><span class="spinner"></span> <span id="heatMsg">Mapping…</span></div>'}</div>
@@ -7355,6 +7380,7 @@ dtype: bfloat16
         <ul>${pros.map((t) => `<li class="pro">${t}</li>`).join('')}${cons.map((t) => `<li class="con">${t}</li>`).join('')}${!pros.length && !cons.length ? `<li class="pro">${m.tagline}</li>` : ''}</ul>
         <div class="evidence" data-ev="${x.id}">${evidenceHTML(x.id, r)}</div>
         <div class="rec-knobs" data-kv="${x.id}">${knobsHTML(x.id, r)}</div>
+        ${MM.layerFirstTip(x.id) ? `<details class="rec-layer"><summary>Per-layer values: which layer first?</summary><p>${esc(MM.layerFirstTip(x.id))}</p></details>` : ''}
         <div class="rec-actions">
           <button class="btn sm ${i === 0 ? 'primary' : ''}" data-adv-try="${x.id}">Try it in the Lab · ${sc.name}${r.align ? ' + alignment' : ''}</button>
           <button class="btn ghost sm" data-adv-export="${x.id}">${m.mergekit ? 'Export mergekit config' : 'Open-source pointers'}</button>

@@ -174,5 +174,24 @@
     };
   }
 
-  Object.assign(MM, { ADVISOR_QUESTIONS, ADVISOR_DEFAULTS, adviseRecipe, blendRanking, combineToyBlends });
+  /**
+   * Which layer to tune first when a method's values are set per layer. Measured 2026-11-24: each layer's swing in
+   * average accuracy (7×7 per-layer grids, averaged over the two maps that include the layer), default settings, 5 seeds
+   * per toy. `n` = toy-seed cases, `h1` = cases where Hidden 1 swung most. A test re-checks Hidden 1 on the test seed.
+   */
+  const LAYER_FIRST = {
+    ties: { h1: 26, n: 30, toys: 'Two skills, Three skills, Overlapping, Hard + easy, Digits, Digits conflict', other: 'Output 4×' },
+    task_arithmetic: { h1: 15, n: 20, toys: 'Two skills, Hard + easy, Overlapping, Digits', other: 'Output 5× (3 on Hard + easy)' },
+    dare: { h1: 15, n: 20, toys: 'Two skills, Hard + easy, Overlapping, Digits', other: 'Output 4×, Hidden 2 once' },
+    slerp: { h1: 18, n: 20, toys: 'Two skills, Hard + easy, Overlapping, Digits', other: 'Output 2×, both on Hard + easy' },
+    linear: { h1: 18, n: 20, toys: 'Two skills, Hard + easy, Overlapping, Digits', other: 'Output 2×, both on Hard + easy' },
+  };
+  /** One line for a method, or null if it has no measured per-layer evidence. */
+  function layerFirstTip(id) {
+    const e = LAYER_FIRST[id];
+    if (!e) return null;
+    return `If you set values per layer, tune Hidden 1 first: it was the most sensitive layer in ${e.h1} of ${e.n} toy-seed cases (${e.toys}). The exceptions were ${e.other}; Output tends to matter more when one skill is much harder than the other. The best value itself moves with the seed, so map it on your own models.`;
+  }
+
+  Object.assign(MM, { ADVISOR_QUESTIONS, ADVISOR_DEFAULTS, adviseRecipe, blendRanking, combineToyBlends, LAYER_FIRST, layerFirstTip });
 })();

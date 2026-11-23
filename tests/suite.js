@@ -546,6 +546,21 @@ parameters:
       const nr = MM.knobTransfer(x9, [peak(4), peak(5), peak(4)]);
       assert(nr.kind === 'narrow' && nr.regret > 0.3 && nr.spread <= 0.15, JSON.stringify(nr));
     });
+    test('Which layer first: Hidden 1 swings most on the test seed for every method with a per-layer tip', () => {
+      const out = [];
+      for (const id of Object.keys(MM.LAYER_FIRST)) {
+        const m = MM.METHOD_BY_ID[id], g = m.gradient, e = MM.LAYER_FIRST[id];
+        assert(g && e.h1 > e.n / 2 && e.h1 <= e.n && MM.layerFirstTip(id).includes(`${e.h1} of ${e.n}`), `${id}: table entry`);
+        const vals = Array.from({ length: 7 }, (_, i) => +(g.min + ((g.max - g.min) * i) / 6).toFixed(4));
+        const ctx = MM.bundleCtx(T, false), base = Object.assign(params(id, 2), { layerwise: true });
+        const sw = [0, 0, 0];
+        for (const [a, b] of [[0, 1], [0, 2], [1, 2]]) { const q = MM.pickGrid(MM.layerGrid(T, ctx, id, base, a, b, vals)); sw[a] += q.sensA / 2; sw[b] += q.sensB / 2; }
+        assert(sw[0] > sw[1] && sw[0] > sw[2], `${id}: Hidden 1 should swing most on Two skills seed 7, got ${sw.map((v) => (v * 100).toFixed(1)).join(' / ')}`);
+        out.push(`${m.short} ${(sw[0] * 100).toFixed(0)} pts`);
+      }
+      assert(MM.layerFirstTip('regmean') === null, 'no tip without measurements');
+      return `Hidden 1 swing: ${out.join(', ')}`;
+    });
     test('Two skills: each expert masters its own task, base does not', () => {
       T.expertAccs.forEach((a, i) => assert(a[i] > 0.9, `expert ${i} only ${pct(a[i])} on own task`));
       const baseAvg = T.baseAccs.reduce((a, b) => a + b, 0) / T.K;
