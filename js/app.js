@@ -269,9 +269,12 @@
     status('Training experts…', true);
     const cfg = { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps, seed: S.seed };
     const shape = MM.bundleShape(cfg);
-    T = Object.assign(T || {}, { live: { layout: shape.layout, tasks: shape.tasks, base: null, experts: [], losses: [] } });
+    // already trained for exactly this config (e.g. by the advisor's evidence or a seed check)? reuse it, so its
+    // cached sweeps and checks come along and the Lab, advisor and report all talk about the same models
+    const hit = bundleCache.get(trainKey(cfg));
+    T = hit ? T : Object.assign(T || {}, { live: { layout: shape.layout, tasks: shape.tasks, base: null, experts: [], losses: [] } });
     try {
-      const res = await trainAsync(cfg, {
+      const res = hit || await trainAsync(cfg, {
         cancelled: () => token !== trainToken,
         onProgress: (m) => {
           if (token !== trainToken || !T.live) return;
@@ -283,6 +286,7 @@
       });
       if (!res || token !== trainToken) throw new Error('cancelled');
       T = res;
+      bundleCache.set(trainKey(cfg), res);
       training = false;
       setProgress(1, T.losses);
       status(`${T.K} experts ready · ${T.layout.total.toLocaleString()} params each`);

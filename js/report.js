@@ -66,6 +66,12 @@
       `- **Toy scenario:** ${r.scenario}: ${r.experts.join(', ')}`,
       `- **Lineage:** ${r.lineage}${r.aligned ? ', neurons aligned (Git Re-Basin)' : ''}`,
       `- **Training:** width ${r.width}, ${r.ftSteps} fine-tune steps, seed ${r.seed}`, '');
+    const tune = d.transfer ? d.transfer.rows.filter((x) => x.kind === 'moves' || x.kind === 'narrow') : [];
+    const keep = d.transfer ? d.transfer.rows.filter((x) => x.kind === 'holds' || x.kind === 'transfers') : [];
+    const before = d.transfer
+      ? `${tune.length ? `Tune on your own models: ${tune.map((x) => `${x.knob} (${TRANSFER_TXT[x.kind]})`).join(', ')}.` : 'Every measured knob value carried over from seed to seed.'}${keep.length ? ` Can be copied: ${keep.map((x) => `${x.knob} ${x.best}`).join(', ')}.` : ''}${d.transfer.rows.length < d.transfer.knobs ? ` ${d.transfer.knobs - d.transfer.rows.length} knob${d.transfer.knobs - d.transfer.rows.length > 1 ? 's' : ''} not measured.` : ''}`
+      : null;
+    if (before) md.push(`> **Before a real merge** (${d.transfer.seeds}-seed toy evidence): ${before}`, '');
     md.push('## Result on the toy', '');
     md.push('| Task | Merged | Expert alone | Base |', '| --- | --- | --- | --- |');
     res.tasks.forEach((t) => md.push(`| ${mdCell(t.name)} | ${pct(t.merged)} | ${pct(t.expert)} | ${pct(t.base)} |`));
@@ -133,6 +139,7 @@
       <dt>Toy scenario</dt><dd>${esc(r.scenario)}: ${r.experts.map(esc).join(', ')}</dd>
       <dt>Lineage</dt><dd>${esc(r.lineage)}${r.aligned ? ', neurons aligned (Git Re-Basin)' : ''}</dd>
       <dt>Training</dt><dd>width ${esc(r.width)}, ${esc(r.ftSteps)} fine-tune steps, seed ${esc(r.seed)}</dd></dl>`));
+    if (before) parts.push(`<div class="before"><b>Before a real merge</b> <span class="muted">(${d.transfer.seeds}-seed toy evidence)</span><br/>${esc(before)}</div>`);
     parts.push(sec('Result on the toy', `<div class="res">
       ${d.mapPng ? `<img class="map" src="${esc(d.mapPng)}" alt="Decision map of this recipe on the toy" />` : ''}
       <div><table>${row(['Task', 'Merged', 'Expert alone', 'Base'], 'th')}${res.tasks.map((t) => row([esc(t.name), `<b>${pct(t.merged)}</b>`, pct(t.expert), pct(t.base)])).join('')}</table>
@@ -182,6 +189,7 @@
   .stab { font-size: 12.5px; } .stab.stable { color: #047857; } .stab.mostly { color: #92400e; } .stab.unstable { color: #b91c1c; }
   .tv { font-size: 11.5px; border-radius: 999px; padding: 0 7px; border: 1px solid; white-space: nowrap; }
   .tv.moves, .tv.narrow { color: #92400e; border-color: #fde68a; background: #fffbeb; } .tv.transfers, .tv.holds { color: #047857; border-color: #a7f3d0; background: #ecfdf5; }
+  .before { margin: 20px 0 0; padding: 10px 14px; border-radius: 10px; border: 1px solid #fde68a; background: #fffbeb; font-size: 13.5px; line-height: 1.55; }
   footer { margin-top: 32px; color: #6b7280; font-size: 12px; }
   @media (max-width: 600px) { .res, .two { grid-template-columns: 1fr; } dl { grid-template-columns: 1fr; } }
   @media print { body { padding: 0; } a { color: inherit; } h2 { break-after: avoid; } section { break-inside: avoid; } }
