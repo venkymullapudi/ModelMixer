@@ -5615,6 +5615,21 @@ ${parts.join('\n')}
       : `Anything from <b>${knobFmt(knob, pick.range[0])}</b> to <b>${knobFmt(knob, pick.range[1])}</b> stays within 2 pts`;
     // with several seeds: does the best value itself hold from seed to seed?
     let transfer = '';
+    // one seed only: if the shipped snapshot measured this knob on this exact toy, say up front whether its best holds
+    let pre = '';
+    if (n === 1 && labIsSnapshotToy()) {
+      const kname = knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, '');
+      const sr = (snapshotRows(S.scenario, m.id) || []).find((r) => r.knob === kname);
+      const atDefaults = JSON.stringify(MM.withKnob(S.params[m.id], knob, knob.min)) === JSON.stringify(MM.withKnob(MM.defaultParams(m, T.K), knob, knob.min));
+      if (sr) {
+        const where = `pre-measured on ${MM.TRANSFER_SNAPSHOT.seeds} seeds${atDefaults ? '' : ' at default settings for the other knobs'}`;
+        pre = sr.kind === 'moves'
+          ? `<span class="seed-best moves">Careful: ${where}, this knob’s best moves with the seed (${esc(sr.lo)} to ${esc(sr.hi)}).</span> Read the best above as one seed’s answer, not a value to copy.`
+          : sr.kind === 'narrow'
+            ? `<span class="seed-best moves">Careful: ${where}, the best sits near ${esc(sr.best)} on every seed but the peak is narrow (${(sr.regret * 100).toFixed(1)} pts on the worst seed).</span>`
+            : `<span class="seed-best holds">${where[0].toUpperCase()}${where.slice(1)}, ${esc(sr.best)} ${sr.kind === 'transfers' ? 'transfers' : 'holds'} across seeds.</span>`;
+      }
+    }
     if (n > 1) {
       const tv = MM.knobTransfer(xs, curves.map((c) => c.map((q) => q.avg)));
       const vals = tv.bests.map((x) => knobFmt(knob, x)).join(', ');
@@ -5630,7 +5645,7 @@ ${parts.join('\n')}
     $('#sweepSum').innerHTML = `<p>Best ${esc(kname)} is <b>${knobFmt(knob, pick.best)}</b> (${pct(pick.bestVal)}${n > 1 ? `, mean of ${n} seeds` : ''}). ${span}, so this knob is <b class="sens ${pick.rangeFrac > 0.35 ? 'good' : pick.rangeFrac > 0.12 ? 'mid' : 'bad'}">${forgiving}</b>. ${transfer}
       ${gap > 0.01 ? `Your setting (${knobFmt(knob, now)}) is ${(gap * 100).toFixed(1)} pts below the best.` : 'Your setting is at or near the best.'}
       ${pick.safe !== pick.best ? `The <span class="safe-word">safest</span> choice is ${knobFmt(knob, pick.safe)}: ${sd ? 'it has the best mean − 1 sd across seeds' : 'it has the best worst-case among neighbouring settings'}.` : ''}
-      ${!sd ? (pick.rangeFrac <= 0.12 ? `A sharp single-seed peak can be luck: turn on <b>± ${SWEEP_SEEDS} seeds</b> to check it.` : `This is one seed: turn on <b>± ${SWEEP_SEEDS} seeds</b> to see whether the best value holds.`) : ''}</p>
+      ${!sd ? (pre ? `${pre} Turn on <b>± ${SWEEP_SEEDS} seeds</b> to see it at your settings.` : pick.rangeFrac <= 0.12 ? `A sharp single-seed peak can be luck: turn on <b>± ${SWEEP_SEEDS} seeds</b> to check it.` : `This is one seed: turn on <b>± ${SWEEP_SEEDS} seeds</b> to see whether the best value holds.`) : ''}</p>
       <div class="row"><button class="btn sm" data-sweep-use="${pick.best}">Use best (${knobFmt(knob, pick.best)})</button>${pick.safe !== pick.best ? `<button class="btn ghost sm" data-sweep-use="${pick.safe}">Use safest (${knobFmt(knob, pick.safe)})</button>` : ''}</div>`;
   }
   $('#sweepPanel').addEventListener('click', (ev) => {
