@@ -2107,9 +2107,34 @@
     return { rows, knobs: ks.length };
   }
   /** YAML comments with the multi-seed sweep evidence for this recipe's knobs (only sweeps at this recipe's settings). */
+  /**
+   * 5-seed per-layer evidence for this recipe (heat-map grids already measured at these exact settings).
+   * One entry per layer pair: { pair, n, kind, cost, layer (the layer that matters on every seed, or null), sentence }.
+   */
+  function layerEvidence(id) {
+    const m = MM.METHOD_BY_ID[id], g = m.gradient, p = S.params[id];
+    if (!T || !T.experts || !g || !p.layerwise || (g.k2 && T.K !== 2)) return [];
+    const byT = gridCache.get(T);
+    const LN = MM.LAYER_NAMES, out = [];
+    for (const [pk, label] of PAIRS) {
+      const [la, lb] = pk.split('-').map(Number);
+      const e = byT && byT.get(JSON.stringify([S.align, id, MM.layerGridParams(p, la, lb, 0, 0), la, lb, true]));
+      if (!e || !e.gt) continue;
+      const gt = e.gt, n = gt.n, cost = `${(gt.regret * 100).toFixed(1)} pts`;
+      const ca = gt.layer.filter((x) => x === 'a').length, cb = gt.layer.filter((x) => x === 'b').length;
+      const layer = ca === n ? LN[la] : cb === n ? LN[lb] : null;
+      const which = layer ? `${layer} is the sensitive layer on every seed, so tune it first` : `which layer matters changes with the seed (${LN[la]} on ${ca}, ${LN[lb]} on ${cb} of ${n})`;
+      const cell = gt.kind === 'moves' ? `the best cell moves with the seed (${cost} on the worst seed)`
+        : gt.kind === 'narrow' ? `the best cell is a narrow peak (${cost} on the worst seed)`
+          : `the best cell ${gt.kind === 'transfers' ? 'transfers' : 'holds'} across seeds`;
+      out.push({ pair: label, n, kind: gt.kind, cost, layer, sentence: `${g.label} per layer (${label}, ${n} seeds): ${which}; ${cell}.` });
+    }
+    return out;
+  }
   function evidenceComments(id) {
     const { rows, knobs } = knobEvidence(id, { recipeOnly: true });
-    if (!rows.length) return { lines: [], swept: 0, knobs };
+    const layers = layerEvidence(id);
+    if (!rows.length && !layers.length) return { lines: [], swept: 0, knobs };
     const m = MM.METHOD_BY_ID[id], sc = MM.SCENARIOS.find((x) => x.id === S.scenario);
     const pts = (r) => `${(r.regret * 100).toFixed(1)} pts`;
     const lines = rows.map((r) => (r.kind === 'moves'
@@ -2119,8 +2144,10 @@
         : r.kind === 'narrow'
           ? `#   ${r.knob}: best sits near ${r.best} on every seed but the peak is narrow (${pts(r)} on the worst seed); tune it finely. This config: ${r.now}.`
           : `#   ${r.knob}: best ${r.best} holds across seeds. This config: ${r.now}.`));
+    lines.push(...layers.map((l) => `#   ${l.sentence}`));
+    const n = rows.length ? rows[0].n : layers[0].n;
     return {
-      lines: [`# ModelMixer toy evidence: ${m.name} on ${sc ? sc.name : 'a custom'} toy, knob sweeps over ${rows[0].n} seeds.`, ...lines, '# Toy-scale evidence only: confirm on a sample of your real data.'],
+      lines: [`# ModelMixer toy evidence: ${m.name} on ${sc ? sc.name : 'a custom'} toy, ${rows.length ? 'knob sweeps' : 'per-layer maps'} over ${n} seeds.`, ...lines, '# Toy-scale evidence only: confirm on a sample of your real data.'],
       swept: rows.length, knobs,
     };
   }
@@ -2464,6 +2491,7 @@ dtype: bfloat16
       mapPng,
       sensitivity: !$('#sweepPanel').hidden ? text('#sweepSum p') : null,
       transfer: ((ev) => (ev.rows.length ? { rows: ev.rows, knobs: ev.knobs, seeds: ev.rows[0].n } : null))(knobEvidence(S.method)),
+      layers: ((ls) => (ls.length ? ls.map((l) => ({ pair: l.pair, layer: l.layer, kind: l.kind, cost: l.cost, n: l.n, sentence: l.sentence })) : null))(layerEvidence(S.method)),
       layerMap: !$('#layerPanel').hidden ? text('#heatSum p') : null,
       robust, compare, saliency,
       method: { tagline: m.tagline, how: m.how, pros: m.pros, cons: m.cons, realWorld: m.realWorld || '', paper: m.paper, oss: m.oss },

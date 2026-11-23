@@ -327,6 +327,9 @@ parameters:
       const pre = MM.buildReport(Object.assign({}, base, { transfer: { seeds: 5, knobs: 2, rows: [
         { knob: 'Density k', kind: 'moves', lo: '0.08', hi: '0.39', best: '0.33', regret: 0.024, now: '0.20', basis: 'snapshot' }] } }));
       assert(pre.markdown.includes('pre-measured (default settings)') && pre.markdown.includes('(5-seed toy evidence, pre-measured)'), 'snapshot rows are labelled as pre-measured');
+      const ly = MM.buildReport(Object.assign({}, base, { layers: [{ pair: 'Hidden 1 × Output', layer: 'Hidden 1', kind: 'moves', cost: '2.5 pts', n: 5, sentence: 'λ per layer (Hidden 1 × Output, 5 seeds): Hidden 1 is the sensitive layer on every seed, so tune it first; the best cell moves with the seed (2.5 pts on the worst seed).' }] }));
+      assert(ly.markdown.includes('> **Before a real merge** (5-seed toy evidence): λ per layer (Hidden 1 × Output'), 'layer evidence alone opens the callout');
+      assert(ly.html.includes('Hidden 1 is the sensitive layer on every seed, so tune it first'), 'layer sentence in html');
       const b = MM.buildReport(Object.assign({}, base, {
         sensitivity: 'Best density 0.33.', layerMap: 'Hidden 1 matters.',
         robust: { seeds: 5, rows: [{ name: 'TIES-Merging', mean: 0.913, sd: 0.032, worst: 0.756, stability: 'some spread', current: true }], verdict: 'No clear winner.', h2h: 'leans ahead' },

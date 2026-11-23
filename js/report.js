@@ -40,7 +40,7 @@
    * d = { title, date, link,
    *   recipe: { method, family, label, scenario, experts:[...], lineage, aligned, width, ftSteps, seed },
    *   result: { tasks:[{ name, merged, expert, base }], avg, retention, cost, storage, warnings:[] }, mapPng,
-   *   sensitivity?, layerMap?, transfer?: { rows: [{ knob, kind, lo, hi, best, regret, now, basis }], knobs, seeds }, robust?: { seeds, rows:[{ name, mean, sd, worst, stability, current }], verdict, h2h },
+   *   sensitivity?, layerMap?, layers?: [{ pair, layer, kind, cost, n, sentence }], transfer?: { rows: [{ knob, kind, lo, hi, best, regret, now, basis }], knobs, seeds }, robust?: { seeds, rows:[{ name, mean, sd, worst, stability, current }], verdict, h2h },
    *   compare?: { pinned, now, changes?: [{ what, a, b, delta? }], attribution?: { total, interaction, seed }, summary, edge },
    *   saliency?: { tasks:[{ name, match, merged, expert, expertPng?, mergedPng?, seeds? }], mean, router? },
    *     (seeds = a saliencySeedSummary entry, present only if the multi-seed check was run) method: { tagline, how:[], pros:[], cons:[], realWorld, paper, oss:[{name,url}] },
@@ -73,7 +73,10 @@
       ? `${tune.length ? `Tune on your own models: ${tune.map((x) => `${x.knob} (${TRANSFER_TXT[x.kind]})`).join(', ')}.` : 'Every measured knob value carried over from seed to seed.'}${keep.length ? ` Can be copied: ${keep.map((x) => `${x.knob} ${x.best}`).join(', ')}.` : ''}${d.transfer.rows.length < d.transfer.knobs ? ` ${d.transfer.knobs - d.transfer.rows.length} knob${d.transfer.knobs - d.transfer.rows.length > 1 ? 's' : ''} not measured.` : ''}`
       : null;
     const preOnly = d.transfer && d.transfer.rows.every((x) => x.basis === 'snapshot');
-    if (before) md.push(`> **Before a real merge** (${d.transfer.seeds}-seed toy evidence${preOnly ? ', pre-measured' : ''}): ${before}`, '');
+    const layerTxt = (d.layers || []).map((l) => l.sentence).join(' ');
+    const beforeAll = [before, layerTxt].filter(Boolean).join(' ');
+    const seedsN = d.transfer ? d.transfer.seeds : d.layers ? d.layers[0].n : 0;
+    if (beforeAll) md.push(`> **Before a real merge** (${seedsN}-seed toy evidence${preOnly && !layerTxt ? ', pre-measured' : ''}): ${beforeAll}`, '');
     md.push('## Result on the toy', '');
     md.push('| Task | Merged | Expert alone | Base |', '| --- | --- | --- | --- |');
     res.tasks.forEach((t) => md.push(`| ${mdCell(t.name)} | ${pct(t.merged)} | ${pct(t.expert)} | ${pct(t.base)} |`));
@@ -141,7 +144,7 @@
       <dt>Toy scenario</dt><dd>${esc(r.scenario)}: ${r.experts.map(esc).join(', ')}</dd>
       <dt>Lineage</dt><dd>${esc(r.lineage)}${r.aligned ? ', neurons aligned (Git Re-Basin)' : ''}</dd>
       <dt>Training</dt><dd>width ${esc(r.width)}, ${esc(r.ftSteps)} fine-tune steps, seed ${esc(r.seed)}</dd></dl>`));
-    if (before) parts.push(`<div class="before"><b>Before a real merge</b> <span class="muted">(${d.transfer.seeds}-seed toy evidence${preOnly ? ', pre-measured' : ''})</span><br/>${esc(before)}</div>`);
+    if (beforeAll) parts.push(`<div class="before"><b>Before a real merge</b> <span class="muted">(${seedsN}-seed toy evidence${preOnly && !layerTxt ? ', pre-measured' : ''})</span><br/>${esc(beforeAll)}</div>`);
     parts.push(sec('Result on the toy', `<div class="res">
       ${d.mapPng ? `<img class="map" src="${esc(d.mapPng)}" alt="Decision map of this recipe on the toy" />` : ''}
       <div><table>${row(['Task', 'Merged', 'Expert alone', 'Base'], 'th')}${res.tasks.map((t) => row([esc(t.name), `<b>${pct(t.merged)}</b>`, pct(t.expert), pct(t.base)])).join('')}</table>
