@@ -1031,7 +1031,9 @@
         ? `<span class="seed-best moves">The best value moves with the seed: ${vals} on the ${n} seeds.</span> Treat ${knobFmt(knob, pick.best)} as one point in a range and tune this knob on your own data; on the worst seed it is ${cost} below that seed’s own best.`
         : tv.kind === 'transfers'
           ? `<span class="seed-best holds">${knobFmt(knob, pick.best)} transfers across seeds:</span> each seed’s best differs (${vals}), but the curve is flat enough that ${knobFmt(knob, pick.best)} is within ${cost} of every seed’s best.`
-          : `<span class="seed-best holds">The best value holds across seeds (${vals}).</span>${tv.regret > 0.01 ? ` On the worst seed it is ${cost} below that seed’s own best.` : ''}`;
+          : tv.kind === 'narrow'
+            ? `<span class="seed-best moves">Same spot on every seed (${vals}), but a narrow peak:</span> the small seed-to-seed shift already costs ${cost} on the worst seed, so tune it finely on your own data.`
+            : `<span class="seed-best holds">The best value holds across seeds (${vals}).</span>`;
     }
     $('#sweepSum').innerHTML = `<p>Best ${esc(kname)} is <b>${knobFmt(knob, pick.best)}</b> (${pct(pick.bestVal)}${n > 1 ? `, mean of ${n} seeds` : ''}). ${span}, so this knob is <b class="sens ${pick.rangeFrac > 0.35 ? 'good' : pick.rangeFrac > 0.12 ? 'mid' : 'bad'}">${forgiving}</b>. ${transfer}
       ${gap > 0.01 ? `Your setting (${knobFmt(knob, now)}) is ${(gap * 100).toFixed(1)} pts below the best.` : 'Your setting is at or near the best.'}
@@ -1708,7 +1710,88 @@
   }
 
   // ---------------- ATLAS ----------------
+  // ---------------- ATLAS: which knobs transfer across seeds ----------------
+  const transferCache = new Map(); // trainKey + align -> rows
+  let transferToken = 0;
+  const transferKey = () => JSON.stringify([trainKey(S), S.align]);
+  const TRANSFER_TXT = { moves: 'moves with the seed', narrow: 'same spot, narrow peak', transfers: 'transfers', holds: 'holds' };
+  function transferMethods() {
+    // trained methods are left out: every sweep point would be a training run
+    return MM.METHODS.filter((m) => !m.req.training && !(m.req.base && S.init !== 'shared') && MM.sweepKnobs(m.id, T.K, MM.defaultParams(m, T.K)).length);
+  }
+  function renderTransfer() {
+    const el = $('#transfer');
+    if (!el) return;
+    const sc = MM.SCENARIOS.find((x) => x.id === S.scenario);
+    const where = `${sc ? sc.name : 'the custom'} toy${S.align ? ', aligned' : ''}`;
+    if (!T || !T.experts) { el.innerHTML = '<p class="muted small">Train the experts in the Lab first.</p>'; return; }
+    const rows = transferCache.get(transferKey());
+    if (!rows) {
+      const ms = transferMethods();
+      const nk = ms.reduce((a, m) => a + MM.sweepKnobs(m.id, T.K, MM.defaultParams(m, T.K)).length, 0);
+      el.innerHTML = `<div class="tr-head"><p class="muted small">Measures ${nk} knobs across ${ms.length} methods on ${where}, about 5–15 s. Uses the same seeds and cache as the Lab’s checks.</p>
+        <button class="btn sm" id="runTransfer">Measure on ${SWEEP_SEEDS} seeds</button><span class="muted small" id="transferMsg" aria-live="polite"></span></div>`;
+      return;
+    }
+    const moving = rows.filter((r) => r.kind === 'moves'), narrow = rows.filter((r) => r.kind === 'narrow');
+    const steady = rows.filter((r) => r.kind === 'holds' || r.kind === 'transfers');
+    const lead = `<p class="tr-lead"><b>${moving.length} of ${rows.length}</b> knobs on ${esc(where)} have a best value that <b>moves with the seed</b>${narrow.length ? `, and ${narrow.length} more ${narrow.length > 1 ? 'have' : 'has'} a peak so narrow that the small shift still costs over a point` : ''}. Plan a small tuning sweep on your own models instead of copying a toy-optimal value.${steady.length ? ` Values that carry over: ${steady.map((r) => `${esc(r.method)} ${esc(r.knob)}`).join(', ')}.` : ' None of the defaults carry over.'}</p>`;
+    const body = rows.map((r, i) => `<tr data-tr="${i}" tabindex="0" title="Open ${esc(r.method)} in the Lab with this knob swept on ${SWEEP_SEEDS} seeds">
+        <td><b>${esc(r.method)}</b></td><td>${esc(r.knob)}</td>
+        <td><span class="tr-tag ${r.kind}">${TRANSFER_TXT[r.kind]}</span></td>
+        <td class="mono">${esc(r.lo)} – ${esc(r.hi)}</td><td class="mono">${esc(r.best)}</td><td class="mono">${(r.regret * 100).toFixed(1)} pts</td></tr>`).join('');
+    el.innerHTML = `${lead}<div class="board-wrap"><table class="board tr-table"><thead><tr><th>Method</th><th>Knob</th><th>Across ${SWEEP_SEEDS} seeds</th><th>Per-seed best</th><th>Best on average</th><th>Cost on the worst seed</th></tr></thead><tbody>${body}</tbody></table></div>
+      <p class="muted small">“Cost on the worst seed” is how far the best-on-average value falls below that seed’s own best. Default settings for the other knobs; click a row to open it in the Lab.</p>`;
+  }
+  async function runTransfer() {
+    const token = ++transferToken, key = transferKey(), Tnow = T;
+    const cancelled = () => token !== transferToken || T !== Tnow || transferKey() !== key;
+    const msg = (t) => { const el = $('#transferMsg'); if (el && !cancelled()) el.textContent = t; };
+    const btn = $('#runTransfer');
+    if (btn) btn.disabled = true;
+    let byT = sweepCache.get(Tnow);
+    if (!byT) { byT = new Map(); sweepCache.set(Tnow, byT); }
+    const rows = [];
+    for (const m of transferMethods()) {
+      const params = MM.defaultParams(m, Tnow.K);
+      for (const knob of MM.sweepKnobs(m.id, Tnow.K, params)) {
+        const k = sweepKey(m.id, params, knob, true);
+        let res = byT.get(k);
+        if (!res) {
+          res = await seededSweep(m.id, knob, params, cancelled, (t) => msg(`${m.short}: ${t}`));
+          if (!res) return;
+          byT.set(k, res);
+        }
+        if (res.curves.some((c) => c.some((q) => q.blocked))) continue;
+        const tv = MM.knobTransfer(res.xs, res.curves.map((c) => c.map((q) => q.avg)));
+        const f = (x) => knobFmt(knob, x);
+        rows.push({ id: m.id, method: m.short, knobKey: knob.key, knob: knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, ''),
+          kind: tv.kind, lo: f(Math.min(...tv.bests)), hi: f(Math.max(...tv.bests)), best: f(tv.best), regret: tv.regret });
+      }
+    }
+    transferCache.set(key, rows);
+    if (!cancelled()) renderTransfer();
+  }
+  $('#transfer').addEventListener('click', (ev) => {
+    if (ev.target.closest('#runTransfer')) { runTransfer(); return; }
+    const tr = ev.target.closest('[data-tr]');
+    if (tr) openTransferRow(+tr.dataset.tr);
+  });
+  $('#transfer').addEventListener('keydown', (ev) => {
+    const tr = ev.target.closest('[data-tr]');
+    if (tr && (ev.key === 'Enter' || ev.key === ' ')) { ev.preventDefault(); openTransferRow(+tr.dataset.tr); }
+  });
+  function openTransferRow(i) {
+    const r = (transferCache.get(transferKey()) || [])[i];
+    if (!r) return;
+    S.params[r.id] = MM.defaultParams(MM.METHOD_BY_ID[r.id], T.K); // the row was measured at default settings
+    S.sweepKnob[r.id] = r.knobKey; S.sweepSeeds = true;
+    setTab('lab'); selectMethod(r.id);
+    setTimeout(() => { const p = $('#sweepPanel'); if (p && !p.hidden) p.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 300);
+  }
+
   function renderAtlas() {
+    renderTransfer();
     $('#gallery').innerHTML = MM.GALLERY.map((g) => {
       const sc = MM.SCENARIOS.find((s) => s.id === g.scenario);
       // same method on both sides: show the settings, since that is what the card is about
@@ -1864,7 +1947,9 @@
         ? `#   ${name}: best moves with the seed (${lo} to ${hi}); tune it on your own models. This config: ${now}.`
         : tv.kind === 'transfers'
           ? `#   ${name}: ${f(tv.best)} transfers (within ${(tv.regret * 100).toFixed(1)} pts of every seed's best). This config: ${now}.`
-          : `#   ${name}: best ${f(tv.best)} holds across seeds. This config: ${now}.`);
+          : tv.kind === 'narrow'
+            ? `#   ${name}: best sits near ${f(tv.best)} on every seed but the peak is narrow (${(tv.regret * 100).toFixed(1)} pts on the worst seed); tune it finely. This config: ${now}.`
+            : `#   ${name}: best ${f(tv.best)} holds across seeds. This config: ${now}.`);
     }
     if (!lines.length) return { lines: [], swept: 0, knobs: ks.length };
     const sc = MM.SCENARIOS.find((x) => x.id === S.scenario);

@@ -342,7 +342,8 @@
    * One verdict for "does this knob's best setting transfer across seeds?", shared by the sensitivity panel and the
    * exported config. curves = per-seed average-accuracy arrays over xs (2+ seeds).
    * kind: 'moves' (per-seed bests spread > 15% of the range AND the mean-best costs > 1 pt on some seed),
-   * 'transfers' (bests spread out but the curve is flat enough), 'holds' (bests agree).
+   * 'transfers' (bests spread out but the curve is flat enough), 'holds' (bests agree and it costs ≤ 1 pt),
+   * 'narrow' (bests sit in the same spot but the peak is so sharp that the small shift costs > 1 pt somewhere).
    */
   function knobTransfer(xs, curves, tol) {
     const n = curves.length;
@@ -350,7 +351,7 @@
     const sd = n > 1 ? xs.map((_, i) => Math.sqrt(curves.reduce((a, c) => a + (c[i] - mean[i]) ** 2, 0) / (n - 1))) : null;
     const pick = pickSettings(xs, mean, sd, tol == null ? 0.02 : tol);
     const sb = seedBests(xs, curves, pick.best);
-    const kind = sb.moves && sb.regret > 0.01 ? 'moves' : sb.moves ? 'transfers' : 'holds';
+    const kind = sb.regret > 0.01 ? (sb.moves ? 'moves' : 'narrow') : sb.moves ? 'transfers' : 'holds';
     return { kind, n, best: pick.best, bestVal: pick.bestVal, bests: sb.bests.map((b) => b.x), regret: sb.regret, spread: sb.spread };
   }
 

@@ -474,6 +474,11 @@ parameters:
       assert(flat.kind === 'transfers' && flat.regret < 0.01, JSON.stringify(flat));
       const mv = MM.knobTransfer(xs, [[0.95, 0.85, 0.8, 0.8, 0.8], [0.8, 0.8, 0.82, 0.85, 0.95], [0.8, 0.9, 0.85, 0.8, 0.8]]);
       assert(mv.kind === 'moves' && mv.n === 3 && mv.bests.join() === '0,1,0.25', JSON.stringify(mv));
+      // same spot on every seed, but a cliff next to it: the small shift costs a lot
+      const x9 = [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1];
+      const peak = (i) => x9.map((_, j) => (j === i ? 0.95 : 0.6));
+      const nr = MM.knobTransfer(x9, [peak(4), peak(5), peak(4)]);
+      assert(nr.kind === 'narrow' && nr.regret > 0.3 && nr.spread <= 0.15, JSON.stringify(nr));
     });
     test('Two skills: each expert masters its own task, base does not', () => {
       T.expertAccs.forEach((a, i) => assert(a[i] > 0.9, `expert ${i} only ${pct(a[i])} on own task`));
