@@ -248,6 +248,18 @@ parameters:
       assert(lw.length === 1 && lw[0].what === 'λ per layer' && lw[0].a === 'off' && lw[0].b === '0.50 → 1.00 → 1.50', `scalar λ hidden when per-layer: ${JSON.stringify(lw)}`);
       return `${k[0].what} ${k[0].a} → ${k[0].b}`;
     });
+    test('makeLRU: caps size, evicts least recently used, never evicts kept keys', () => {
+      const c = MM.makeLRU(3, (k) => k === 'lab');
+      ['lab', 'a', 'b'].forEach((k) => c.set(k, k));
+      c.get('a'); // a is now most recent: b is the oldest evictable
+      c.set('d', 'd');
+      assert(c.size === 3 && c.has('lab') && c.has('a') && c.has('d') && !c.has('b') && c.evicted === 1, c.keys().join());
+      c.set('e', 'e'); // oldest evictable is a (lab is kept even though it is older)
+      assert(!c.has('a') && c.has('lab') && c.keys().join() === 'lab,d,e', c.keys().join());
+      const k = MM.makeLRU(1, () => true);
+      k.set('x', 1); k.set('y', 2);
+      assert(k.size === 2, 'when everything is kept the cache grows instead of dropping kept entries');
+    });
     test('makeHistory: push, coalesce drags, undo/redo, redo cleared by a new change, limit', () => {
       const h = MM.makeHistory(4, 500);
       h.record('a', 0, null);

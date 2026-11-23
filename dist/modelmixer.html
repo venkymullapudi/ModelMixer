@@ -3260,6 +3260,32 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
    * per slider drag). undo()/redo() return the snapshot to restore, or null.
    */
   /**
+   * A least-recently-used map with a size cap. keep(key) marks entries that must never be evicted (e.g. the
+   * Lab's current models); if only kept entries are left, the cache may grow past the cap rather than drop them.
+   */
+  function makeLRU(limit, keep) {
+    const m = new Map();
+    let evicted = 0;
+    return {
+      get(k) { if (!m.has(k)) return undefined; const v = m.get(k); m.delete(k); m.set(k, v); return v; },
+      has: (k) => m.has(k),
+      set(k, v) {
+        m.delete(k); m.set(k, v);
+        while (m.size > limit) {
+          let victim;
+          for (const key of m.keys()) if (!(keep && keep(key))) { victim = key; break; }
+          if (victim === undefined) break;
+          m.delete(victim); evicted++;
+        }
+      },
+      delete: (k) => m.delete(k),
+      get size() { return m.size; },
+      get evicted() { return evicted; },
+      keys: () => Array.from(m.keys()),
+    };
+  }
+
+  /**
    * Undo coalescing keys. Knob edits get a key (method, alignment, pin), so a quick run of them merges into one step.
    * An edit that changes the method, alignment or pin gets null, so it is always its own step and the knob edit
    * after it can't overwrite it.
@@ -3293,7 +3319,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     };
   }
 
-  Object.assign(MM, { seedBests, knobTransfer, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { makeLRU, seedBests, knobTransfer, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();
 
 </script>
@@ -5973,10 +5999,14 @@ ${parts.join('\n')}
   });
 
   // ---------------- ROBUSTNESS (multi-seed) ----------------
-  const seedCache = new Map(); // trainKey -> bundles for seeds S.seed + 101·i (i ≥ 1)
   // Every extra-seed bundle, keyed by its full training config (seed included). The lab's seed checks and the
   // advisor's evidence both look here first, so the same config and seed are trained once and give one answer.
-  const bundleCache = new Map();
+  // The single holder of trained models, capped (least recently used goes first). The Lab's current models and its
+  // 5 check seeds are never evicted. Everything else (sweep results, checks) hangs off these bundles via WeakMaps,
+  // so it is freed with them.
+  const BUNDLE_CAP = 40;
+  const labSeedKeys = () => { const base = { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps }; return new Set([0, 1, 2, 3, 4].map((i) => trainKey({ ...base, seed: S.seed + 101 * i }))); };
+  const bundleCache = MM.makeLRU(BUNDLE_CAP, (k) => labSeedKeys().has(k));
   const cachedBundle = (cfg) => (T && T.experts && !training && trainKey(S) === trainKey(cfg) ? T : bundleCache.get(trainKey(cfg)) || null);
   async function trainCached(cfg, opt) {
     const hit = cachedBundle(cfg);
@@ -5988,8 +6018,7 @@ ${parts.join('\n')}
   /** Bundles for seed indices 0..n-1 (0 = the lab's experts); missing ones train in parallel workers. */
   async function seedBundles(n, cancelled, msg) {
     const tk = trainKey(S);
-    if (!seedCache.has(tk)) seedCache.set(tk, []);
-    const arr = seedCache.get(tk);
+    const arr = [];
     const missing = [];
     const base = { experts: S.experts, init: S.init, hidden: S.hidden, ftSteps: S.ftSteps };
     for (let i = 1; i < n; i++) if (!arr[i - 1]) {
@@ -6927,7 +6956,8 @@ dtype: bfloat16
   function closeAdvisor() { evToken++; if (advDlg.open) { if (typeof advDlg.close === 'function') advDlg.close(); else advDlg.removeAttribute('open'); } }
   // ---- measured evidence: each top pick, run on the closest toy scenario over EV_SEEDS seeds ----
   const EV_SEEDS = checkSeeds(); // the lab's 5 check seeds (7, 108 … 411), shared via bundleCache
-  const evBundles = {}; // toyKey -> trained bundles (one per seed)
+  /** A toy's 5 check seeds, from the shared bundle cache (training only what is missing). */
+  const toySeedBundles = (t, cancelled) => Promise.all(EV_SEEDS.map((seed) => trainCached(Object.assign(MM.toyConfig(t.scenario, seed), { init: t.init || 'shared' }), { cancelled })));
   const evCache = {}; // evKey -> seed summary
   const evSeeds = {}; // evKey -> per-seed results, for the paired re-ranking
   let evToken = 0;
@@ -6975,12 +7005,9 @@ dtype: bfloat16
     const ids = r.recs.slice(0, 3).map((x) => x.id);
     for (const t of toysOf(r)) {
       const sc = toySc(t);
-      // the advisor's evidence already trained this toy's 5 seeds; train them here if it hasn't finished yet
-      let bundles = evBundles[toyKey(t)];
-      if (!bundles) {
-        bundles = await Promise.all(EV_SEEDS.map((seed) => trainCached(Object.assign(MM.toyConfig(t.scenario, seed), { init: t.init || 'shared' }), { cancelled })));
-        if (cancelled() || bundles.some((b) => !b)) return;
-      }
+      // usually already trained by the advisor's evidence (cache hits); trains whatever is missing
+      const bundles = await toySeedBundles(t, cancelled);
+      if (cancelled() || bundles.some((b) => !b)) return;
       let byT = sweepCache.get(bundles[0]);
       if (!byT) { byT = new Map(); sweepCache.set(bundles[0], byT); }
       for (const id of ids) {
@@ -7045,21 +7072,15 @@ dtype: bfloat16
     const ids = r.recs.slice(0, 3).map((x) => x.id);
     if (toys.every((t) => ids.every((id) => evCache[evKey(t, r.align, id)]))) return;
     await frame();
-    // train every toy's seeds at once (parallel workers when available)
-    const need = toys.filter((t) => !evBundles[toyKey(t)]);
-    const trained = await Promise.all(need.map((t) => Promise.all(EV_SEEDS.map((seed) => {
-      const cfg = Object.assign(MM.toyConfig(t.scenario, seed), { init: t.init || 'shared' });
-      // the lab's experts or any bundle already trained for this exact config and seed (lab seed checks included)
-      return trainCached(cfg, { cancelled: () => token !== evToken });
-    }))));
+    // every toy's seeds at once (parallel workers when available; cache hits for anything trained before)
+    const trained = await Promise.all(toys.map((t) => toySeedBundles(t, () => token !== evToken)));
     if (token !== evToken || trained.some((bs) => bs.some((b) => !b))) return;
-    need.forEach((t, i) => (evBundles[toyKey(t)] = trained[i]));
-    for (const t of toys) {
+    for (const [ti, t] of toys.entries()) {
       for (const id of ids) {
         if (evCache[evKey(t, r.align, id)]) continue;
         await frame();
         if (token !== evToken) return;
-        const runs = MM.seedRuns(evBundles[toyKey(t)], [id], r.align, (mid, K) => MM.defaultParams(MM.METHOD_BY_ID[mid], K));
+        const runs = MM.seedRuns(trained[ti], [id], r.align, (mid, K) => MM.defaultParams(MM.METHOD_BY_ID[mid], K));
         evCache[evKey(t, r.align, id)] = MM.summarizeSeeds(runs, [id])[0];
         evSeeds[evKey(t, r.align, id)] = runs.map((run) => run[id]);
         const el = $(`#advRecs [data-ev="${id}"]`);
@@ -7253,7 +7274,7 @@ dtype: bfloat16
   train();
   if (sharedMsg) toast(sharedMsg);
 
-  window.ModelMixer = { state: S, get trained() { return T; }, compute, getCtx, recipeLink, openRecipe, trainAsync, scoreAsync, get usesWorker() { return workerOK; } };
+  window.ModelMixer = { state: S, get trained() { return T; }, compute, getCtx, recipeLink, openRecipe, trainAsync, scoreAsync, get usesWorker() { return workerOK; }, get cachedModels() { return { size: bundleCache.size, evicted: bundleCache.evicted, cap: BUNDLE_CAP }; } };
 })();
 
 </script>

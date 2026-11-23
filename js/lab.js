@@ -510,6 +510,32 @@
    * per slider drag). undo()/redo() return the snapshot to restore, or null.
    */
   /**
+   * A least-recently-used map with a size cap. keep(key) marks entries that must never be evicted (e.g. the
+   * Lab's current models); if only kept entries are left, the cache may grow past the cap rather than drop them.
+   */
+  function makeLRU(limit, keep) {
+    const m = new Map();
+    let evicted = 0;
+    return {
+      get(k) { if (!m.has(k)) return undefined; const v = m.get(k); m.delete(k); m.set(k, v); return v; },
+      has: (k) => m.has(k),
+      set(k, v) {
+        m.delete(k); m.set(k, v);
+        while (m.size > limit) {
+          let victim;
+          for (const key of m.keys()) if (!(keep && keep(key))) { victim = key; break; }
+          if (victim === undefined) break;
+          m.delete(victim); evicted++;
+        }
+      },
+      delete: (k) => m.delete(k),
+      get size() { return m.size; },
+      get evicted() { return evicted; },
+      keys: () => Array.from(m.keys()),
+    };
+  }
+
+  /**
    * Undo coalescing keys. Knob edits get a key (method, alignment, pin), so a quick run of them merges into one step.
    * An edit that changes the method, alignment or pin gets null, so it is always its own step and the knob edit
    * after it can't overwrite it.
@@ -543,5 +569,5 @@
     };
   }
 
-  Object.assign(MM, { seedBests, knobTransfer, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { makeLRU, seedBests, knobTransfer, recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();
