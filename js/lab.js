@@ -191,6 +191,27 @@
     return { a: sa, b: sb, total: sb - sa, parts, interaction: (sb - sa) - known };
   }
 
+  /**
+   * Summarise attributeChanges results from several seeds (same A and B, so the same parts in the same order).
+   * Per change: mean / sd of the effect, and how many seeds move it up, down or barely (|Δ| < flat, default 0.2 pts).
+   * sign: 'up' | 'down' when every seed agrees, 'flat' when every seed is flat, else 'mixed'.
+   */
+  function summarizeAttributions(list, flat) {
+    flat = flat == null ? 0.002 : flat;
+    list = list.filter(Boolean);
+    const n = list.length;
+    const ms = (xs) => { const m = xs.reduce((a, b) => a + b, 0) / xs.length; return { mean: m, sd: xs.length > 1 ? Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / (xs.length - 1)) : 0 }; };
+    if (!n) return null;
+    const parts = list[0].parts.map((p0, i) => {
+      const ds = list.map((at) => at.parts[i].delta).filter((d) => d != null);
+      if (!ds.length) return { what: p0.what, a: p0.a, b: p0.b, n: 0, mean: null, sd: null, up: 0, down: 0, flat: 0, sign: 'none' };
+      const up = ds.filter((d) => d > flat).length, down = ds.filter((d) => d < -flat).length, fl = ds.length - up - down;
+      const sign = up === ds.length ? 'up' : down === ds.length ? 'down' : fl === ds.length ? 'flat' : 'mixed';
+      return Object.assign({ what: p0.what, a: p0.a, b: p0.b, n: ds.length, up, down, flat: fl, sign }, ms(ds));
+    });
+    return { n, parts, total: ms(list.map((at) => at.total)), interaction: ms(list.map((at) => at.interaction)) };
+  }
+
   function recipeLabel(id, params, align, K) {
     const m = MM.METHOD_BY_ID[id];
     const parts = [m.short];
@@ -488,5 +509,5 @@
     };
   }
 
-  Object.assign(MM, { recipeDiff, attributeChanges, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
+  Object.assign(MM, { recipeDiff, attributeChanges, summarizeAttributions, saliencyRun, saliencySeedSummary, makeHistory, editKeyTracker, digitSaliency, mapCosine, expertSaliency, saliencyRow, layerGridParams, layerGrid, pickGrid, recipeRuns, pairedDiff, seedRunsCSV, sweepKnobs, knobValue, withKnob, sweepValues, sweepMethod, pickSettings, toyConfig, seedRuns, recipeLabel, compareResults, bundleShape, BASE_STEPS, LR, FT_LR, trainBundle, trainBundleSync, bundleCtx, scoreMethod, summarizeSeeds });
 })();

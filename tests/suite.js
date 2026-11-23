@@ -450,6 +450,15 @@ parameters:
       assert(step.params.layerwise === true && step.params.lambda === 1.5 && step.params.grad.join() === '0.5,1,1.5' && step.align === false, JSON.stringify(step));
       return `Linear → TIES+aligned: method ${(rt.parts[0].delta * 100).toFixed(1)}, alignment ${(rt.parts[1].delta * 100).toFixed(1)}, interaction ${(rt.interaction * 100).toFixed(1)} pts`;
     });
+    test('summarizeAttributions: mean ± sd per change, sign agreement, flat and mixed', () => {
+      const mk = (d1, d2, total) => ({ total, interaction: total - d1 - (d2 == null ? 0 : d2), parts: [{ what: 'k', a: '0.2', b: '0.3', delta: d1 }, { what: 'λ', a: '1', b: '1.3', delta: d2 }] });
+      const s = MM.summarizeAttributions([mk(0.01, -0.02, -0.01), mk(0.02, 0.001, 0.02), mk(0.03, -0.001, 0.03), null]);
+      assert(s.n === 3 && Math.abs(s.parts[0].mean - 0.02) < 1e-12 && Math.abs(s.parts[0].sd - 0.01) < 1e-12 && s.parts[0].sign === 'up' && s.parts[0].up === 3, JSON.stringify(s.parts[0]));
+      assert(s.parts[1].sign === 'mixed' && s.parts[1].down === 1 && s.parts[1].flat === 2, JSON.stringify(s.parts[1]));
+      assert(MM.summarizeAttributions([mk(0.001, null, 0), mk(-0.001, null, 0)]).parts[0].sign === 'flat', 'all within 0.2 pts is flat');
+      assert(MM.summarizeAttributions([mk(0.01, null, 0)]).parts[1].sign === 'none', 'never runnable alone');
+      assert(Math.abs(s.total.mean - 0.04 / 3) < 1e-12, 'total mean');
+    });
     test('Two skills: each expert masters its own task, base does not', () => {
       T.expertAccs.forEach((a, i) => assert(a[i] > 0.9, `expert ${i} only ${pct(a[i])} on own task`));
       const baseAvg = T.baseAccs.reduce((a, b) => a + b, 0) / T.K;

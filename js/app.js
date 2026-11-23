@@ -1033,8 +1033,9 @@
   function changesHTML() {
     const diff = MM.recipeDiff(S.pin, nowRecipe(), T.K);
     if (!diff.length) return '<div class="cmp-changes"><b>What changed:</b> nothing yet. Change the method or a knob to compare.</div>';
-    const at = attrCache.get(edgeKey());
+    const at = attrCache.get(edgeKey()), ss = attrSeedCache.get(edgeKey());
     const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)}`;
+    if (ss) return attrSeedsHTML(diff, ss, pts);
     const scale = at ? Math.max(0.005, ...at.parts.map((p) => Math.abs(p.delta || 0)), Math.abs(at.interaction)) : 1;
     const bar = (d) => `<span class="attr-bar"><i style="${d >= 0 ? 'left:50%' : `right:50%`};width:${Math.min(50, (Math.abs(d) / scale) * 50).toFixed(1)}%" class="${d >= 0 ? 'up' : 'down'}"></i></span>`;
     const delta = (i) => { const p = at && at.parts[i]; return !p ? '' : p.delta == null ? '<span class="muted">can’t run alone</span>' : `${bar(p.delta)}<b class="attr-pts">${pts(p.delta)}</b>`; };
@@ -1042,8 +1043,54 @@
     const tail = diff.length < 2 ? '' : at
       ? `<div class="attr-foot">Each line is A with only that change, in pts of average accuracy (seed ${S.seed}). Together: ${pts(at.total)} pts; ${Math.abs(at.interaction) < 0.005 ? 'the changes roughly add up (within half a point).' : `${pts(at.interaction)} pts comes from changes interacting, not from any one alone.`}</div>`
       : '<button class="btn sm ghost" id="attrBtn">Which change mattered?</button>';
-    return `<div class="cmp-changes"><b>What changed</b><ul>${items}</ul>${tail}</div>`;
+    const again = at ? `<button class="btn sm ghost" id="attrSeedBtn">Repeat on ${EDGE_SEEDS} seeds</button><span class="muted small" id="attrSeedMsg" aria-live="polite"></span>` : '';
+    return `<div class="cmp-changes"><b>What changed</b><ul>${items}</ul>${tail}${again}</div>`;
   }
+  const SIGN_TXT = { up: (p) => `up on ${p.up}/${p.n}`, down: (p) => `down on ${p.down}/${p.n}`, flat: (p) => `under 0.2 pts on ${p.n}/${p.n}`, mixed: (p) => `mixed: ${[[p.up, 'up'], [p.down, 'down'], [p.flat, 'flat']].filter(([c]) => c).map(([c, w]) => `${c} ${w}`).join(', ')}`, none: () => 'can’t run alone' };
+  function attrSeedsHTML(diff, ss, pts) {
+    const scale = Math.max(0.005, ...ss.parts.map((p) => Math.abs(p.mean || 0) + (p.sd || 0)), Math.abs(ss.interaction.mean));
+    const bar = (p) => {
+      const w = (x) => Math.min(50, (Math.abs(x) / scale) * 50).toFixed(1);
+      const lo = p.mean - p.sd, hi = p.mean + p.sd; // whisker: mean ± sd
+      const wl = Math.max(0, Math.min(100, 50 + (lo / scale) * 50)), wh = Math.max(0, Math.min(100, 50 + (hi / scale) * 50));
+      return `<span class="attr-bar"><i style="${p.mean >= 0 ? 'left:50%' : 'right:50%'};width:${w(p.mean)}%" class="${p.sign === 'mixed' || p.sign === 'flat' ? 'mix' : p.mean >= 0 ? 'up' : 'down'}"></i><b class="whisk" style="left:${wl.toFixed(1)}%;width:${Math.max(0.5, wh - wl).toFixed(1)}%"></b></span>`;
+    };
+    const items = diff.map((x, i) => {
+      const p = ss.parts[i];
+      const right = !p || p.sign === 'none' ? '<span class="muted">can’t run alone</span>'
+        : `${bar(p)}<b class="attr-pts">${pts(p.mean)}</b><small class="attr-sd">± ${(p.sd * 100).toFixed(1)}</small><span class="attr-sign ${p.sign}">${SIGN_TXT[p.sign](p)}</span>`;
+      return `<li><span>${esc(x.what)}</span> <code>${esc(x.a)}</code> → <code>${esc(x.b)}</code><span class="attr">${right}</span></li>`;
+    }).join('');
+    const steady = ss.parts.filter((p) => p.sign === 'up' || p.sign === 'down').map((p) => p.what);
+    const ix = Math.abs(ss.interaction.mean) < 0.005 ? 'the changes roughly add up (within half a point).' : `${pts(ss.interaction.mean)} pts comes from changes interacting.`;
+    return `<div class="cmp-changes"><b>What changed</b> <span class="muted small">effect alone, mean ± sd over ${ss.n} seeds</span><ul>${items}</ul>
+      <div class="attr-foot">Together: ${pts(ss.total.mean)} ± ${(ss.total.sd * 100).toFixed(1)} pts; ${ix} ${steady.length ? `Same direction on every seed: ${steady.map(esc).join(', ')}.` : 'No change moves accuracy the same way on every seed, so read the per-change effects as tendencies, not facts.'}</div></div>`;
+  }
+  const attrSeedCache = new Map();
+  let attrSeedToken = 0;
+  async function runAttributionSeeds() {
+    const token = ++attrSeedToken, key = edgeKey(), A = S.pin, B = nowRecipe(), K = T.K;
+    const cancelled = () => token !== attrSeedToken || edgeKey() !== key;
+    const msg = (t) => { const el = $('#attrSeedMsg'); if (el && !cancelled()) el.textContent = t; };
+    const btn = $('#attrSeedBtn');
+    if (btn) btn.disabled = true;
+    const bundles = await seedBundles(EDGE_SEEDS, cancelled, msg);
+    if (!bundles) return;
+    const list = [];
+    for (let i = 0; i < bundles.length; i++) {
+      msg(`Scoring each change on seed ${i + 1}/${bundles.length}…`);
+      await frame();
+      if (cancelled()) return;
+      const Tb = bundles[i];
+      const score = (r) => { const res = MM.scoreMethod(Tb, MM.bundleCtx(Tb, r.align), r.method, r.params); return res.blocked ? null : res.avg; };
+      list.push(MM.attributeChanges(A, B, K, score));
+    }
+    const ss = MM.summarizeAttributions(list);
+    if (!ss) return;
+    attrSeedCache.set(key, ss);
+    refresh();
+  }
+  $('#metrics').addEventListener('click', (ev) => { if (ev.target.closest('#attrSeedBtn')) runAttributionSeeds(); });
   // "Which change mattered?": A with one change from B at a time, scored on the lab's experts
   const attrCache = new Map();
   async function runAttribution() {
@@ -2029,9 +2076,12 @@ dtype: bfloat16
         verdict: text('#robust .verdict'), h2h: text('#h2h .verdict'),
       };
     }
-    const at = S.pin ? attrCache.get(edgeKey()) : null;
-    const compare = S.pin ? { pinned: labelOf(S.pin), now: labelOf(nowRecipe()), changes: MM.recipeDiff(S.pin, nowRecipe(), T.K).map((x, i) => ({ what: x.what, a: x.a, b: x.b, delta: at && at.parts[i] ? at.parts[i].delta : undefined })),
-      attribution: at ? { total: at.total, interaction: at.interaction, seed: S.seed } : null, summary: text('.cmp-box > div:nth-child(2)'), edge: text('#edge .verdict') } : null;
+    const at = S.pin ? attrCache.get(edgeKey()) : null, ss = S.pin ? attrSeedCache.get(edgeKey()) : null;
+    const compare = S.pin ? { pinned: labelOf(S.pin), now: labelOf(nowRecipe()),
+      changes: MM.recipeDiff(S.pin, nowRecipe(), T.K).map((x, i) => ({ what: x.what, a: x.a, b: x.b,
+        delta: at && at.parts[i] ? at.parts[i].delta : undefined,
+        seeds: ss && ss.parts[i] && ss.parts[i].sign !== 'none' ? { mean: ss.parts[i].mean, sd: ss.parts[i].sd, sign: SIGN_TXT[ss.parts[i].sign](ss.parts[i]) } : undefined })),
+      attribution: ss ? { total: ss.total.mean, totalSd: ss.total.sd, interaction: ss.interaction.mean, seeds: ss.n } : at ? { total: at.total, interaction: at.interaction, seed: S.seed } : null, summary: text('.cmp-box > div:nth-child(2)'), edge: text('#edge .verdict') } : null;
     let mapPng = null;
     try {
       const cv = $('#mainCanvas'), c2 = document.createElement('canvas');

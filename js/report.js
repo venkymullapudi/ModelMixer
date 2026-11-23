@@ -47,8 +47,9 @@
    *   export: { file, yaml, cmd, note } }
    */
   const pts = (x) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(1)} pts`;
-  const attrTxt = (x) => (x.delta === undefined ? '' : x.delta === null ? ' (can’t run alone)' : ` (alone: ${pts(x.delta)})`);
-  const attrFoot = (a) => `"Alone" is A with only that change, on seed ${a.seed}. Together: ${pts(a.total)}; ${Math.abs(a.interaction) < 0.005 ? 'the changes roughly add up (within half a point).' : `${pts(a.interaction)} comes from the changes interacting.`}`;
+  const attrTxt = (x) => (x.seeds ? ` (alone: ${pts(x.seeds.mean)} ± ${(x.seeds.sd * 100).toFixed(1)}, ${x.seeds.sign})`
+    : x.delta === undefined ? '' : x.delta === null ? ' (can’t run alone)' : ` (alone: ${pts(x.delta)})`);
+  const attrFoot = (a) => `"Alone" is A with only that change, ${a.seeds ? `mean ± sd over ${a.seeds} seeds` : `on seed ${a.seed}`}. Together: ${pts(a.total)}${a.seeds ? ` ± ${(a.totalSd * 100).toFixed(1)}` : ''}; ${Math.abs(a.interaction) < 0.005 ? 'the changes roughly add up (within half a point).' : `${pts(a.interaction)} comes from the changes interacting.`}`;
   function buildReport(d) {
     const r = d.recipe, res = d.result, m = d.method;
     // ---------- Markdown ----------
