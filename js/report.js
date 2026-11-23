@@ -50,6 +50,7 @@
   const attrTxt = (x) => (x.seeds ? ` (alone: ${pts(x.seeds.mean)} ± ${(x.seeds.sd * 100).toFixed(1)}, ${x.seeds.sign})`
     : x.delta === undefined ? '' : x.delta === null ? ' (can’t run alone)' : ` (alone: ${pts(x.delta)})`);
   const attrFoot = (a) => `"Alone" is A with only that change, ${a.seeds ? `mean ± sd over ${a.seeds} seeds` : `on seed ${a.seed}`}. Together: ${pts(a.total)}${a.seeds ? ` ± ${(a.totalSd * 100).toFixed(1)}` : ''}; ${Math.abs(a.interaction) < 0.005 ? 'the changes roughly add up (within half a point).' : `${pts(a.interaction)} comes from the changes interacting.`}`;
+  const BASIS_TXT = { recipe: 'this recipe', defaults: 'default settings', snapshot: 'pre-measured (default settings)' };
   const TRANSFER_TXT = { moves: 'moves with the seed', narrow: 'same spot, narrow peak', transfers: 'transfers', holds: 'holds' };
   const transferNote = (t) => {
     const mv = t.rows.filter((r) => r.kind === 'moves' || r.kind === 'narrow').length;
@@ -71,7 +72,8 @@
     const before = d.transfer
       ? `${tune.length ? `Tune on your own models: ${tune.map((x) => `${x.knob} (${TRANSFER_TXT[x.kind]})`).join(', ')}.` : 'Every measured knob value carried over from seed to seed.'}${keep.length ? ` Can be copied: ${keep.map((x) => `${x.knob} ${x.best}`).join(', ')}.` : ''}${d.transfer.rows.length < d.transfer.knobs ? ` ${d.transfer.knobs - d.transfer.rows.length} knob${d.transfer.knobs - d.transfer.rows.length > 1 ? 's' : ''} not measured.` : ''}`
       : null;
-    if (before) md.push(`> **Before a real merge** (${d.transfer.seeds}-seed toy evidence): ${before}`, '');
+    const preOnly = d.transfer && d.transfer.rows.every((x) => x.basis === 'snapshot');
+    if (before) md.push(`> **Before a real merge** (${d.transfer.seeds}-seed toy evidence${preOnly ? ', pre-measured' : ''}): ${before}`, '');
     md.push('## Result on the toy', '');
     md.push('| Task | Merged | Expert alone | Base |', '| --- | --- | --- | --- |');
     res.tasks.forEach((t) => md.push(`| ${mdCell(t.name)} | ${pct(t.merged)} | ${pct(t.expert)} | ${pct(t.base)} |`));
@@ -82,7 +84,7 @@
     if (d.transfer) {
       md.push(`## Which knob values can be copied? (${d.transfer.seeds} seeds)`, '');
       md.push('| Knob | Across seeds | Per-seed best | Best on average | Worst-seed cost | This recipe | Measured at |', '| --- | --- | --- | --- | --- | --- | --- |');
-      d.transfer.rows.forEach((r) => md.push(`| ${mdCell(r.knob)} | ${TRANSFER_TXT[r.kind]} | ${r.lo} – ${r.hi} | ${r.best} | ${(r.regret * 100).toFixed(1)} pts | ${r.now} | ${r.basis === 'recipe' ? 'this recipe' : 'default settings'} |`));
+      d.transfer.rows.forEach((r) => md.push(`| ${mdCell(r.knob)} | ${TRANSFER_TXT[r.kind]} | ${r.lo} – ${r.hi} | ${r.best} | ${(r.regret * 100).toFixed(1)} pts | ${r.now} | ${BASIS_TXT[r.basis] || 'default settings'} |`));
       md.push('', transferNote(d.transfer), '');
     }
     if (d.layerMap) md.push('## Which layer matters?', '', d.layerMap, '');
@@ -139,7 +141,7 @@
       <dt>Toy scenario</dt><dd>${esc(r.scenario)}: ${r.experts.map(esc).join(', ')}</dd>
       <dt>Lineage</dt><dd>${esc(r.lineage)}${r.aligned ? ', neurons aligned (Git Re-Basin)' : ''}</dd>
       <dt>Training</dt><dd>width ${esc(r.width)}, ${esc(r.ftSteps)} fine-tune steps, seed ${esc(r.seed)}</dd></dl>`));
-    if (before) parts.push(`<div class="before"><b>Before a real merge</b> <span class="muted">(${d.transfer.seeds}-seed toy evidence)</span><br/>${esc(before)}</div>`);
+    if (before) parts.push(`<div class="before"><b>Before a real merge</b> <span class="muted">(${d.transfer.seeds}-seed toy evidence${preOnly ? ', pre-measured' : ''})</span><br/>${esc(before)}</div>`);
     parts.push(sec('Result on the toy', `<div class="res">
       ${d.mapPng ? `<img class="map" src="${esc(d.mapPng)}" alt="Decision map of this recipe on the toy" />` : ''}
       <div><table>${row(['Task', 'Merged', 'Expert alone', 'Base'], 'th')}${res.tasks.map((t) => row([esc(t.name), `<b>${pct(t.merged)}</b>`, pct(t.expert), pct(t.base)])).join('')}</table>
@@ -151,7 +153,7 @@
         <div><b>${esc(t.name)}</b> <span class="pill ${t.match > 0.9 ? 'good' : t.match > 0.7 ? 'mid' : 'bad'}">${Math.round(t.match * 100)}% match</span><br/><span class="muted">${pct(t.merged)} merged vs ${pct(t.expert)} expert.</span> ${esc(t.claim)}.${t.stab ? `<br/><span class="stab ${t.stab.level}">${t.stab.level === 'stable' ? '✓' : t.stab.level === 'mostly' ? '≈' : '⚠'} ${esc(t.stab.text.charAt(0).toUpperCase() + t.stab.text.slice(1))}.</span>` : ''}</div></div>`).join('')}</div>
       ${anySeeds ? '' : '<p class="muted">Readings near the 80% line can change with the seed: run the 5-seed check in the Lab before relying on one.</p>'}`));
     if (d.sensitivity) parts.push(sec('How forgiving is it?', `<p>${esc(d.sensitivity)}</p>`));
-    if (d.transfer) parts.push(sec(`Which knob values can be copied? (${d.transfer.seeds} seeds)`, `<table>${row(['Knob', 'Across seeds', 'Per-seed best', 'Best on average', 'Worst-seed cost', 'This recipe', 'Measured at'], 'th')}${d.transfer.rows.map((r) => row([esc(r.knob), `<span class="tv ${r.kind}">${TRANSFER_TXT[r.kind]}</span>`, `${esc(r.lo)} – ${esc(r.hi)}`, esc(r.best), `${(r.regret * 100).toFixed(1)} pts`, esc(r.now), r.basis === 'recipe' ? 'this recipe' : 'default settings'])).join('')}</table>
+    if (d.transfer) parts.push(sec(`Which knob values can be copied? (${d.transfer.seeds} seeds)`, `<table>${row(['Knob', 'Across seeds', 'Per-seed best', 'Best on average', 'Worst-seed cost', 'This recipe', 'Measured at'], 'th')}${d.transfer.rows.map((r) => row([esc(r.knob), `<span class="tv ${r.kind}">${TRANSFER_TXT[r.kind]}</span>`, `${esc(r.lo)} – ${esc(r.hi)}`, esc(r.best), `${(r.regret * 100).toFixed(1)} pts`, esc(r.now), BASIS_TXT[r.basis] || 'default settings'])).join('')}</table>
       <p class="muted">${esc(transferNote(d.transfer))}</p>`));
     if (d.layerMap) parts.push(sec('Which layer matters?', `<p>${esc(d.layerMap)}</p>`));
     if (d.robust) parts.push(sec(`Is the winner real? (${d.robust.seeds} seeds)`, `<table>${row(['Method', 'Mean ± sd', 'Worst task', 'Stability'], 'th')}${d.robust.rows.map((x) => `<tr class="${x.current ? 'cur' : ''}"><td>${esc(x.name)}${x.current ? ' <span class="tag">this recipe</span>' : ''}</td><td>${pct(x.mean)} ± ${(x.sd * 100).toFixed(1)}</td><td>${pct(x.worst)}</td><td>${esc(x.stability)}</td></tr>`).join('')}</table>

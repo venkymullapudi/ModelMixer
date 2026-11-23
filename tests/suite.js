@@ -315,6 +315,9 @@ parameters:
       assert(tr.markdown.includes('> **Before a real merge** (5-seed toy evidence): Tune on your own models: Density k (moves with the seed). Can be copied: Scaling λ 0.63. 1 knob not measured.'), 'before-a-real-merge summary in markdown');
       assert(tr.html.indexOf('Before a real merge') < tr.html.indexOf('Result on the toy'), 'summary comes first');
       assert(!a.html.includes('Before a real merge'), 'no summary without evidence');
+      const pre = MM.buildReport(Object.assign({}, base, { transfer: { seeds: 5, knobs: 2, rows: [
+        { knob: 'Density k', kind: 'moves', lo: '0.08', hi: '0.39', best: '0.33', regret: 0.024, now: '0.20', basis: 'snapshot' }] } }));
+      assert(pre.markdown.includes('pre-measured (default settings)') && pre.markdown.includes('(5-seed toy evidence, pre-measured)'), 'snapshot rows are labelled as pre-measured');
       const b = MM.buildReport(Object.assign({}, base, {
         sensitivity: 'Best density 0.33.', layerMap: 'Hidden 1 matters.',
         robust: { seeds: 5, rows: [{ name: 'TIES-Merging', mean: 0.913, sd: 0.032, worst: 0.756, stability: 'some spread', current: true }], verdict: 'No clear winner.', h2h: 'leans ahead' },

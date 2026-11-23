@@ -790,7 +790,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .rec-knobs:empty { display: none; }
 .rec-knobs { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
 .kv-line { font-size: 12px; line-height: 1.6; color: #cdd3e3; }
-.kv-lbl { color: var(--dim); }
+.kv-lbl { color: #b8c0d2; }
 .kv { display: inline-block; font-size: 11.5px; border-radius: 999px; padding: 0 7px; margin: 1px 2px; border: 1px solid var(--line2); white-space: nowrap; }
 .kv.moves, .kv.narrow { color: #fbbf24; border-color: rgba(251, 191, 36, 0.4); }
 .kv.transfers, .kv.holds { color: #34d399; border-color: rgba(52, 211, 153, 0.4); }
@@ -799,3 +799,4 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 /* ---------- atlas: pre-measured snapshot ---------- */
 .tr-snap { margin-top: 14px; }
 .tr-snap > summary { cursor: pointer; font-weight: 600; font-size: 13.5px; margin-bottom: 8px; }
+.kv-pre { color: #b8c0d2; font-size: 11px; }

@@ -1994,6 +1994,20 @@
    * Seed evidence for each knob of a method: from a 5-seed sweep at this recipe's settings if there is one, else at
    * default settings (as the Atlas transfer table measures). Rows: { knob, kind, lo, hi, best, regret, now, n, basis }.
    */
+  /**
+   * Pre-measured rows (js/transfer-snapshot.js) for a method on a toy, or null. Only valid for the toy exactly as the
+   * snapshot measured it: the scenario's own experts and lineage, default width/steps, seeds 7…411, no alignment.
+   */
+  function snapshotRows(scenarioId, methodId, init, align) {
+    const snap = MM.TRANSFER_SNAPSHOT;
+    const sc = MM.SCENARIOS.find((x) => x.id === scenarioId);
+    if (!snap || !sc || align || (init && init !== sc.init)) return null;
+    const e = snap.entries.find((x) => x.scenario === scenarioId);
+    if (!e) return null;
+    const short = MM.METHOD_BY_ID[methodId].short;
+    return e.rows.filter((r) => r.method === short);
+  }
+  const labIsSnapshotToy = () => !S.align && MM.SCENARIOS.some((sc) => sc.id === S.scenario) && trainKey(S) === trainKey(MM.toyConfig(S.scenario, checkSeeds()[0]));
   function knobEvidence(id, opts) {
     if (!T || !T.experts) return { rows: [], knobs: 0 };
     const m = MM.METHOD_BY_ID[id], params = S.params[id], defaults = MM.defaultParams(m, T.K);
@@ -2003,10 +2017,17 @@
     for (const knob of ks) {
       let basis = 'recipe', res = byT && byT.get(sweepKey(id, params, knob, true));
       if (!res && !(opts && opts.recipeOnly)) { basis = 'defaults'; res = byT && byT.get(sweepKey(id, defaults, knob, true)); }
+      const kname = knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, '');
+      const f = (x) => knobFmt(knob, x);
+      if (!res && !(opts && opts.recipeOnly) && labIsSnapshotToy()) {
+        // nothing measured live: fall back to the pre-measured snapshot for this exact toy
+        const sr = (snapshotRows(S.scenario, id) || []).find((r) => r.knob === kname);
+        if (sr) rows.push({ knob: kname, kind: sr.kind, n: MM.TRANSFER_SNAPSHOT.seeds, basis: 'snapshot', lo: sr.lo, hi: sr.hi, best: sr.best, regret: sr.regret, now: f(MM.knobValue(params, knob)) });
+        continue;
+      }
       if (!res || res.curves.length < 2 || res.curves.some((c) => c.some((q) => q.blocked))) continue;
       const tv = MM.knobTransfer(res.xs, res.curves.map((c) => c.map((q) => q.avg)));
-      const f = (x) => knobFmt(knob, x);
-      rows.push({ knob: knob.key === 'balance' ? 'A/B balance' : knob.label.replace(/\s*\(.*\)$/, ''), kind: tv.kind, n: tv.n, basis,
+      rows.push({ knob: kname, kind: tv.kind, n: tv.n, basis,
         lo: f(Math.min(...tv.bests)), hi: f(Math.max(...tv.bests)), best: f(tv.best), regret: tv.regret, now: f(MM.knobValue(params, knob)) });
     }
     return { rows, knobs: ks.length };
@@ -2432,14 +2453,14 @@ dtype: bfloat16
   const KV_TXT = { moves: 'moves with the seed', narrow: 'narrow peak', transfers: 'transfers', holds: 'holds' };
   function knobsHTML(id, r) {
     const toys = toysOf(r);
-    const got = toys.map((t) => kvCache[kvKey(t, r.align, id)]);
+    const got = toys.map((t) => kvCache[kvKey(t, r.align, id)] || ((rows) => (rows && rows.length ? { rows, pre: true } : null))(snapshotRows(t.scenario, id, t.init, r.align)));
     if (got.some((g) => !g)) return '';
     return toys.map((t, i) => {
       const g = got[i], sc = toySc(t);
       if (g.skipped) return `<div class="kv-line muted">Knobs on ${esc(sc.name)}: ${esc(g.skipped)}</div>`;
       if (!g.rows.length) return `<div class="kv-line muted">No knobs to tune on ${esc(sc.name)}.</div>`;
       const tune = g.rows.filter((x) => x.kind === 'moves' || x.kind === 'narrow');
-      return `<div class="kv-line"><span class="kv-lbl">Knobs on ${esc(sc.name)}:</span> ${g.rows.map((x) => `<span class="kv ${x.kind}">${esc(x.knob)} ${KV_TXT[x.kind]}${x.kind === 'moves' ? '' : ` (${esc(x.best)})`}</span>`).join(' ')}${tune.length ? ` <span class="kv-tune">→ tune ${tune.map((x) => esc(x.knob)).join(', ')} on your models</span>` : ' <span class="kv-ok">→ defaults carry over</span>'}</div>`;
+      return `<div class="kv-line"><span class="kv-lbl">Knobs on ${esc(sc.name)}${g.pre ? ' <span class="kv-pre" title="From the pre-measured Atlas snapshot: default settings, 5 seeds">(pre-measured)</span>' : ''}:</span> ${g.rows.map((x) => `<span class="kv ${x.kind}">${esc(x.knob)} ${KV_TXT[x.kind]}${x.kind === 'moves' ? '' : ` (${esc(x.best)})`}</span>`).join(' ')}${tune.length ? ` <span class="kv-tune">→ tune ${tune.map((x) => esc(x.knob)).join(', ')} on your models</span>` : ' <span class="kv-ok">→ defaults carry over</span>'}</div>`;
     }).join('');
   }
   function knobsButtonHTML(r) {
