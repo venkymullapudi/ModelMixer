@@ -56,6 +56,30 @@
     const mv = t.rows.filter((r) => r.kind === 'moves' || r.kind === 'narrow').length;
     return `${mv ? `${mv} of ${t.rows.length} measured knob${t.rows.length > 1 ? 's' : ''} should be tuned on your own models rather than copied.` : 'Every measured knob value carries over from seed to seed.'}${t.rows.length < t.knobs ? ` ${t.knobs - t.rows.length} knob${t.knobs - t.rows.length > 1 ? 's were' : ' was'} not measured.` : ''} "Worst-seed cost" is how far the best-on-average value falls below that seed's own best.`;
   };
+  /**
+   * Per-layer evidence sentences, merged. items = [{ knob, pair, layer (or null), kind, regret, n, sentence }], one per
+   * mapped layer pair. When every map names the same sensitive layer, say it once; otherwise keep one sentence per map.
+   */
+  function combineLayerEvidence(items) {
+    if (!items || !items.length) return [];
+    const KIND = { moves: 'moves with the seed', narrow: 'is a narrow peak', transfers: 'transfers across seeds', holds: 'holds across seeds' };
+    // maps that name the same sensitive layer are said once; the rest keep their own sentence
+    const groups = new Map();
+    items.forEach((x) => { if (x.layer) { if (!groups.has(x.layer)) groups.set(x.layer, []); groups.get(x.layer).push(x); } });
+    const merged = new Set(), out = [];
+    for (const [layer, g] of groups) {
+      if (g.length < 2) continue;
+      g.forEach((x) => merged.add(x));
+      const k = g.length, kinds = new Set(g.map((x) => x.kind)), one = kinds.size === 1 ? g[0].kind : null;
+      const worst = `${(Math.max(...g.map((x) => x.regret)) * 100).toFixed(1)} pts`;
+      const which = k === 2 ? 'both maps that include it' : `all ${k} maps that include it`;
+      const cell = one ? `the best cell ${KIND[one]} in ${k === 2 ? 'both' : `all ${k}`}${one === 'moves' || one === 'narrow' ? ` (up to ${worst} on the worst seed)` : ''}`
+        : `the best cell ${g.map((x) => `${KIND[x.kind]} in ${x.pair}`).join(', ')}`;
+      out.push(`${g[0].knob} per layer (${g.map((x) => x.pair).join(', ')}; ${g[0].n} seeds): ${layer} is the sensitive layer on every seed in ${which}, so tune it first; ${cell}.`);
+    }
+    items.forEach((x) => { if (!merged.has(x)) out.push(x.sentence); });
+    return out;
+  }
   function buildReport(d) {
     const r = d.recipe, res = d.result, m = d.method;
     // ---------- Markdown ----------
@@ -73,7 +97,7 @@
       ? `${tune.length ? `Tune on your own models: ${tune.map((x) => `${x.knob} (${TRANSFER_TXT[x.kind]})`).join(', ')}.` : 'Every measured knob value carried over from seed to seed.'}${keep.length ? ` Can be copied: ${keep.map((x) => `${x.knob} ${x.best}`).join(', ')}.` : ''}${d.transfer.rows.length < d.transfer.knobs ? ` ${d.transfer.knobs - d.transfer.rows.length} knob${d.transfer.knobs - d.transfer.rows.length > 1 ? 's' : ''} not measured.` : ''}`
       : null;
     const preOnly = d.transfer && d.transfer.rows.every((x) => x.basis === 'snapshot');
-    const layerTxt = (d.layers || []).map((l) => l.sentence).join(' ');
+    const layerTxt = combineLayerEvidence(d.layers).join(' ');
     const beforeAll = [before, layerTxt].filter(Boolean).join(' ');
     const seedsN = d.transfer ? d.transfer.seeds : d.layers ? d.layers[0].n : 0;
     if (beforeAll) md.push(`> **Before a real merge** (${seedsN}-seed toy evidence${preOnly && !layerTxt ? ', pre-measured' : ''}): ${beforeAll}`, '');
@@ -207,5 +231,5 @@ ${parts.join('\n')}
     return { markdown, html };
   }
 
-  Object.assign(MM, { buildReport, saliencyReading, seedStability, READING_KIND_LABEL });
+  Object.assign(MM, { combineLayerEvidence, buildReport, saliencyReading, seedStability, READING_KIND_LABEL });
 })();

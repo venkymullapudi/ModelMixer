@@ -353,6 +353,19 @@ parameters:
       assert(!s.html.includes('5-seed check'), 'no nudge once checked');
       assert(MM.seedStability(st({ same: 4, other: 1 }, 5)).level === 'mostly' && MM.seedStability(st({ same: 3, other: 2 }, 5)).level === 'unstable', '4/5 mostly, 3/5 unstable');
     });
+    test('combineLayerEvidence: one sentence when every map agrees on the layer, one per map otherwise', () => {
+      const it = (pair, layer, kind, regret) => ({ knob: 'λ', pair, layer, kind, regret, n: 5, sentence: `${pair}: ${layer || 'mixed'} ${kind}` });
+      const same = MM.combineLayerEvidence([it('Hidden 1 × Hidden 2', 'Hidden 1', 'moves', 0.015), it('Hidden 1 × Output', 'Hidden 1', 'moves', 0.025)]);
+      assert(same.length === 1 && same[0] === 'λ per layer (Hidden 1 × Hidden 2, Hidden 1 × Output; 5 seeds): Hidden 1 is the sensitive layer on every seed in both maps that include it, so tune it first; the best cell moves with the seed in both (up to 2.5 pts on the worst seed).', same[0]);
+      const partial = MM.combineLayerEvidence([it('Hidden 1 × Hidden 2', 'Hidden 1', 'moves', 0.015), it('Hidden 1 × Output', 'Hidden 1', 'moves', 0.025), it('Hidden 2 × Output', null, 'moves', 0.018)]);
+      assert(partial.length === 2 && /both maps that include it/.test(partial[0]) && partial[1] === 'Hidden 2 × Output: mixed moves', JSON.stringify(partial));
+      const mixedKind = MM.combineLayerEvidence([it('A × B', 'Hidden 1', 'moves', 0.02), it('A × C', 'Hidden 1', 'holds', 0.002)]);
+      assert(mixedKind.length === 1 && /moves with the seed in A × B, holds across seeds in A × C/.test(mixedKind[0]), mixedKind[0]);
+      const differ = MM.combineLayerEvidence([it('A × B', 'Hidden 1', 'moves', 0.02), it('B × C', 'Output', 'moves', 0.02)]);
+      assert(differ.length === 2, 'different layers stay separate');
+      assert(MM.combineLayerEvidence([it('A × B', null, 'moves', 0.02), it('A × C', null, 'moves', 0.02)]).length === 2, 'no single layer: separate');
+      assert(MM.combineLayerEvidence(null).length === 0 && MM.combineLayerEvidence([it('A × B', 'Hidden 1', 'holds', 0)]).length === 1, 'empty and single');
+    });
     test('saliencyReading: the four match × accuracy cases', () => {
       const r = (m, a) => MM.saliencyReading(m, a, 1).tone + ':' + MM.saliencyReading(m, a, 1).text.split(' ').slice(0, 3).join(' ');
       assert(MM.saliencyReading(0.95, 0.97, 1).tone === 'good', r(0.95, 0.97));

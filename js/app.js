@@ -2127,7 +2127,7 @@
       const cell = gt.kind === 'moves' ? `the best cell moves with the seed (${cost} on the worst seed)`
         : gt.kind === 'narrow' ? `the best cell is a narrow peak (${cost} on the worst seed)`
           : `the best cell ${gt.kind === 'transfers' ? 'transfers' : 'holds'} across seeds`;
-      out.push({ pair: label, n, kind: gt.kind, cost, layer, sentence: `${g.label} per layer (${label}, ${n} seeds): ${which}; ${cell}.` });
+      out.push({ knob: g.label, pair: label, n, kind: gt.kind, regret: gt.regret, cost, layer, sentence: `${g.label} per layer (${label}, ${n} seeds): ${which}; ${cell}.` });
     }
     return out;
   }
@@ -2144,7 +2144,7 @@
         : r.kind === 'narrow'
           ? `#   ${r.knob}: best sits near ${r.best} on every seed but the peak is narrow (${pts(r)} on the worst seed); tune it finely. This config: ${r.now}.`
           : `#   ${r.knob}: best ${r.best} holds across seeds. This config: ${r.now}.`));
-    lines.push(...layers.map((l) => `#   ${l.sentence}`));
+    lines.push(...MM.combineLayerEvidence(layers).map((t) => `#   ${t}`));
     const n = rows.length ? rows[0].n : layers[0].n;
     return {
       lines: [`# ModelMixer toy evidence: ${m.name} on ${sc ? sc.name : 'a custom'} toy, ${rows.length ? 'knob sweeps' : 'per-layer maps'} over ${n} seeds.`, ...lines, '# Toy-scale evidence only: confirm on a sample of your real data.'],
@@ -2491,7 +2491,7 @@ dtype: bfloat16
       mapPng,
       sensitivity: !$('#sweepPanel').hidden ? text('#sweepSum p') : null,
       transfer: ((ev) => (ev.rows.length ? { rows: ev.rows, knobs: ev.knobs, seeds: ev.rows[0].n } : null))(knobEvidence(S.method)),
-      layers: ((ls) => (ls.length ? ls.map((l) => ({ pair: l.pair, layer: l.layer, kind: l.kind, cost: l.cost, n: l.n, sentence: l.sentence })) : null))(layerEvidence(S.method)),
+      layers: ((ls) => (ls.length ? ls.map((l) => ({ knob: l.knob, pair: l.pair, layer: l.layer, kind: l.kind, regret: l.regret, cost: l.cost, n: l.n, sentence: l.sentence })) : null))(layerEvidence(S.method)),
       layerMap: !$('#layerPanel').hidden ? text('#heatSum p') : null,
       robust, compare, saliency,
       method: { tagline: m.tagline, how: m.how, pros: m.pros, cons: m.cons, realWorld: m.realWorld || '', paper: m.paper, oss: m.oss },

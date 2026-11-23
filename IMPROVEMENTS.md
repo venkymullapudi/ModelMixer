@@ -18,10 +18,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Merge duplicate layer sentences:** with two or three layer pairs mapped, the export and the callout repeat "Hidden 1 is the sensitive layer on every seed" once per pair. Combine them into one line per verdict ("Hidden 1 matters most in both maps that include it") and keep the per-pair cost detail in the report table.
+1. **Gallery card: "Which layer, not which value".** Measured on 5 seeds, TIES and SLERP on Two skills have a best per-layer cell that moves, but Hidden 1 is the sensitive layer on every seed. Make it a test-guarded card (new lesson kind: same sensitive layer on N seeds) that opens the Lab on the per-layer map.
 2. **Seed stability for the gallery lessons:** the "Conflicting skills have a ceiling" card is already checked on seeds by a test; add a Digits-conflict card only if its saliency reading holds on most seeds (today it does not: TIES flips between "conflict" and "lost").
 
 ## Done
+
+- 2026-11-24: **One sentence per layer verdict, not per map.** When several per-layer maps name the same sensitive layer, the export comments and the report callout now say it once: "λ per layer (Hidden 1 × Hidden 2, Hidden 1 × Output; 5 seeds): Hidden 1 is the sensitive layer on every seed in both maps that include it, so tune it first; the best cell moves with the seed in both (up to 2.5 pts on the worst seed)." Maps that disagree, or have no single sensitive layer, keep their own sentence (Hidden 2 × Output: "which layer matters changes with the seed …"). The first version only merged when every map agreed, so the third map made it repeat everything. It now merges whatever agrees. Pure `combineLayerEvidence` in `js/report.js` (outside the engine, so the snapshot stays valid), 1 test with five cases (78 total). axe 0, keyboard and phone gates pass.
 
 - 2026-11-23: **"Tune this layer first" in the export and the report.** When a per-layer recipe's heat map has been run on 5 seeds, the exported config gets one comment per mapped layer pair and the report's "Before a real merge" callout carries the same sentence: "λ per layer (Hidden 1 × Output, 5 seeds): Hidden 1 is the sensitive layer on every seed, so tune it first; the best cell moves with the seed (2.5 pts on the worst seed)." Layer evidence alone is enough to open the callout. It is keyed to the recipe's exact settings, like the knob evidence (`layerEvidence()` in app.js). Verified on TIES / Two skills with two pairs mapped (Hidden 1 sensitive on every seed in both; 1.5 and 2.5 pts). Caught before shipping: capitalising the sentence turned "λ" into "Λ". Report test extended (77). axe 0, keyboard and phone gates pass, snapshot unchanged.
 
