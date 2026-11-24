@@ -3435,7 +3435,14 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
       else if (a.base === 'unsure') bump(m.id, -1, 'Only valid if every model was fine-tuned from the same base. Check each model card or config.');
       else bump(m.id, 1, 'Shared base: task vectors are meaningful');
     });
-    if (a.base === 'no') {
+    if (a.base === 'no' && a.goal === 'same') {
+      // runs of one skill from different inits: the case alignment is built for (Twin runs toy, 10 seeds, default knobs:
+      // Linear 72.7 → 97.0, SLERP 75.0 → 97.2, Karcher 77.3 → 96.9, Stitch 49.5 → 98.8 once aligned)
+      WEIGHT_SPACE.forEach((id) => bump(id, 0, 'Same skill from different inits: align neurons first (Git Re-Basin). On the Twin runs toy that took plain averaging from about 73% to 97%'));
+      bump('stitch', 3, 'Once aligned, runs of one skill agree layer by layer: stitching scored 98.8% on the Twin runs toy (49.5% without alignment)');
+      ['ensemble', 'moe', 'distill'].forEach((id) => bump(id, 1, 'Works across different inits without alignment'));
+      notes.push('Runs of the same skill from different inits are the case neuron alignment is built for: on the Twin runs toy, aligned averaging reached about 97% (unaligned about 73%) and aligned stitching 98.8%. Always align first; the mergekit configs assume it has been done.');
+    } else if (a.base === 'no') {
       WEIGHT_SPACE.forEach((id) => bump(id, -2, 'Different inits: align neurons first (Git Re-Basin), and still expect a loss barrier'));
       ['ensemble', 'moe', 'distill'].forEach((id) => bump(id, 2, 'Works across different bases and inits'));
       notes.push('Without a shared base, weight-space merges need neuron alignment (Git Re-Basin), which assumes the models learned the same functions. On the toys it was hit-or-miss: about +3 pts for narrow models with different skills, −17 for wider ones, and worse still when the same skill covers different inputs. Output-space methods and distillation avoid the problem.');

@@ -381,6 +381,9 @@ parameters:
     test('Advisor without a shared base: the alignment note states what was measured', () => {
       const r = advise({ base: 'no' });
       assert(r.scenario === 'strangers' && advise({ base: 'no', goal: 'same' }).scenario === 'twins', 'same-skill runs without a base are checked on Twin runs');
+      const tw = advise({ base: 'no', goal: 'same' });
+      assert(tw.notes.some((t) => /built for/.test(t)) && !tw.notes.some((t) => /hit-or-miss/.test(t)), 'same-skill runs get the Twin runs note, not hit-or-miss');
+      assert(tw.recs.slice(0, 4).map((x) => x.id).includes('stitch') && !tw.recs.some((x) => x.caveats.some((c) => /expect a loss barrier/.test(c))), `aligned stitching near the top, no barrier caveat: ${top(tw, 5)}`);
       assert(r.notes.some((t) => /hit-or-miss/.test(t) && /same functions/.test(t)), r.notes.join(' | '));
       assert(MM.SCENARIOS.find((s) => s.id === 'strangers').desc.startsWith('Two different skills'), 'Strangers describes different skills');
     });
