@@ -4056,9 +4056,11 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
       : null;
     const preOnly = d.transfer && d.transfer.rows.every((x) => x.basis === 'snapshot');
     const layerTxt = combineLayerEvidence(d.layers).join(' ');
-    const beforeAll = [before, layerTxt].filter(Boolean).join(' ');
+    const alignTxt = r.aligned ? 'Align first: this recipe was measured with neuron alignment on, so permute your checkpoints into register (Git Re-Basin) before running the config; mergekit does not do it.' : '';
+    const beforeAll = [alignTxt, before, layerTxt].filter(Boolean).join(' ');
     const seedsN = d.transfer ? d.transfer.seeds : d.layers ? d.layers[0].n : 0;
-    if (beforeAll) md.push(`> **Before a real merge** (${seedsN}-seed toy evidence${preOnly && !layerTxt ? ', pre-measured' : ''}): ${beforeAll}`, '');
+    const evLabel = seedsN ? ` (${seedsN}-seed toy evidence${preOnly && !layerTxt ? ', pre-measured' : ''})` : '';
+    if (beforeAll) md.push(`> **Before a real merge**${evLabel}: ${beforeAll}`, '');
     md.push('## Result on the toy', '');
     md.push('| Task | Merged | Expert alone | Base |', '| --- | --- | --- | --- |');
     res.tasks.forEach((t) => md.push(`| ${mdCell(t.name)} | ${pct(t.merged)} | ${pct(t.expert)} | ${pct(t.base)} |`));
@@ -4126,7 +4128,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
       <dt>Toy scenario</dt><dd>${esc(r.scenario)}: ${r.experts.map(esc).join(', ')}</dd>
       <dt>Lineage</dt><dd>${esc(r.lineage)}${r.aligned ? ', neurons aligned (Git Re-Basin)' : ''}</dd>
       <dt>Training</dt><dd>width ${esc(r.width)}, ${esc(r.ftSteps)} fine-tune steps, seed ${esc(r.seed)}</dd></dl>`));
-    if (beforeAll) parts.push(`<div class="before"><b>Before a real merge</b> <span class="muted">(${seedsN}-seed toy evidence${preOnly && !layerTxt ? ', pre-measured' : ''})</span><br/>${esc(beforeAll)}</div>`);
+    if (beforeAll) parts.push(`<div class="before"><b>Before a real merge</b>${evLabel ? ` <span class="muted">${esc(evLabel.trim())}</span>` : ''}<br/>${esc(beforeAll)}</div>`);
     parts.push(sec('Result on the toy', `<div class="res">
       ${d.mapPng ? `<img class="map" src="${esc(d.mapPng)}" alt="Decision map of this recipe on the toy" />` : ''}
       <div><table>${row(['Task', 'Merged', 'Expert alone', 'Base'], 'th')}${res.tasks.map((t) => row([esc(t.name), `<b>${pct(t.merged)}</b>`, pct(t.expert), pct(t.base)])).join('')}</table>
@@ -6899,6 +6901,16 @@ ${parts.join('\n')}
     }
     return { rows, knobs: ks.length };
   }
+  /** YAML header when the recipe was measured with neuron alignment: the real checkpoints need the same pre-step. */
+  function alignComments() {
+    if (!S.align) return [];
+    return [
+      '# ALIGN FIRST: this recipe was measured with neuron alignment on (Git Re-Basin weight matching: expert B\'s neurons',
+      '# permuted to match expert A before merging). mergekit does not do this. Permute your checkpoints into register',
+      `# before running this config, e.g. with ${MM.OSS.rebasin.name} (${MM.OSS.rebasin.url}).`,
+      '# Alignment assumes the models learned the same function (runs of one skill); fine-tunes of one shared base need none.',
+    ];
+  }
   /** YAML comments with the multi-seed sweep evidence for this recipe's knobs (only sweeps at this recipe's settings). */
   /**
    * 5-seed per-layer evidence for this recipe (heat-map grids already measured at these exact settings).
@@ -6980,7 +6992,8 @@ ${parts.join('\n')}
     const notes = $('#exportNotes');
     if (y) {
       const ev = evidenceComments(id);
-      $('#yaml').textContent = ev.lines.length ? `${ev.lines.join('\n')}\n${y.yaml}` : y.yaml;
+      const head = [...alignComments(), ...ev.lines];
+      $('#yaml').textContent = head.length ? `${head.join('\n')}\n${y.yaml}` : y.yaml;
       $('#exportFile').textContent = y.file || 'config.yml';
       $('#cmd').textContent = `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`;
       const evNote = ev.knobs && ev.swept < ev.knobs
@@ -7224,7 +7237,7 @@ dtype: bfloat16
     const taskName = (t) => `${MM.TASKS[t.spec.task].name}${t.spec.flip ? ' (inv)' : ''}${t.kind === 'plane' ? ` · ${MM.REGIONS[t.spec.region].name}` : ''}`;
     const y = yamlFor(S.method), nm = NOT_MK[S.method];
     const exp = y
-      ? { file: y.file || 'config.yml', yaml: ((ev) => (ev.length ? `${ev.join('\n')}\n` : ''))(evidenceComments(S.method).lines) + y.yaml, cmd: `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`, note: y.note || '' }
+      ? { file: y.file || 'config.yml', yaml: ((ev) => (ev.length ? `${ev.join('\n')}\n` : ''))([...alignComments(), ...evidenceComments(S.method).lines]) + y.yaml, cmd: `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`, note: y.note || '' }
       : { file: 'notes', yaml: nm ? nm.code || `# ${nm.title}\n# ${nm.body}` : '', cmd: 'See the linked open-source implementations.', note: nm ? `${nm.title}. ${nm.body}` : '' };
     const text = (sel) => { const el = $(sel); return el ? el.innerText.trim() || null : null; };
     let robust = null;

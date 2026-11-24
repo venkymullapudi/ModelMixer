@@ -98,9 +98,11 @@
       : null;
     const preOnly = d.transfer && d.transfer.rows.every((x) => x.basis === 'snapshot');
     const layerTxt = combineLayerEvidence(d.layers).join(' ');
-    const beforeAll = [before, layerTxt].filter(Boolean).join(' ');
+    const alignTxt = r.aligned ? 'Align first: this recipe was measured with neuron alignment on, so permute your checkpoints into register (Git Re-Basin) before running the config; mergekit does not do it.' : '';
+    const beforeAll = [alignTxt, before, layerTxt].filter(Boolean).join(' ');
     const seedsN = d.transfer ? d.transfer.seeds : d.layers ? d.layers[0].n : 0;
-    if (beforeAll) md.push(`> **Before a real merge** (${seedsN}-seed toy evidence${preOnly && !layerTxt ? ', pre-measured' : ''}): ${beforeAll}`, '');
+    const evLabel = seedsN ? ` (${seedsN}-seed toy evidence${preOnly && !layerTxt ? ', pre-measured' : ''})` : '';
+    if (beforeAll) md.push(`> **Before a real merge**${evLabel}: ${beforeAll}`, '');
     md.push('## Result on the toy', '');
     md.push('| Task | Merged | Expert alone | Base |', '| --- | --- | --- | --- |');
     res.tasks.forEach((t) => md.push(`| ${mdCell(t.name)} | ${pct(t.merged)} | ${pct(t.expert)} | ${pct(t.base)} |`));
@@ -168,7 +170,7 @@
       <dt>Toy scenario</dt><dd>${esc(r.scenario)}: ${r.experts.map(esc).join(', ')}</dd>
       <dt>Lineage</dt><dd>${esc(r.lineage)}${r.aligned ? ', neurons aligned (Git Re-Basin)' : ''}</dd>
       <dt>Training</dt><dd>width ${esc(r.width)}, ${esc(r.ftSteps)} fine-tune steps, seed ${esc(r.seed)}</dd></dl>`));
-    if (beforeAll) parts.push(`<div class="before"><b>Before a real merge</b> <span class="muted">(${seedsN}-seed toy evidence${preOnly && !layerTxt ? ', pre-measured' : ''})</span><br/>${esc(beforeAll)}</div>`);
+    if (beforeAll) parts.push(`<div class="before"><b>Before a real merge</b>${evLabel ? ` <span class="muted">${esc(evLabel.trim())}</span>` : ''}<br/>${esc(beforeAll)}</div>`);
     parts.push(sec('Result on the toy', `<div class="res">
       ${d.mapPng ? `<img class="map" src="${esc(d.mapPng)}" alt="Decision map of this recipe on the toy" />` : ''}
       <div><table>${row(['Task', 'Merged', 'Expert alone', 'Base'], 'th')}${res.tasks.map((t) => row([esc(t.name), `<b>${pct(t.merged)}</b>`, pct(t.expert), pct(t.base)])).join('')}</table>

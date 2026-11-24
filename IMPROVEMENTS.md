@@ -18,10 +18,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Export: say "align first" in the config:** for recipes with alignment on (no shared base), the mergekit YAML is only valid after the models have been permuted into register. Add a header comment naming the step and an open-source tool for it, and say so in the report's "Before a real merge" callout.
+1. **Ship an alignment helper:** the Lab already does weight matching with the Hungarian algorithm. Add an Export button that writes a small, dependency-light Python script (NumPy + safetensors) that permutes model B's MLP neurons to match model A for simple MLP blocks, clearly scoped and labelled as a starting point, so "align first" has a concrete next step.
 2. **Seed stability for the gallery lessons:** the "Conflicting skills have a ceiling" card is already checked on seeds by a test; add a Digits-conflict card only if its saliency reading holds on most seeds (today it does not: TIES flips between "conflict" and "lost").
 
 ## Done
+
+- 2026-11-24: **"Align first" travels with the config.** When a recipe is measured with neuron alignment on, the exported mergekit YAML (Export tab and report) starts with an "ALIGN FIRST" header. It says the toy measurements permuted expert B's neurons to match expert A, that mergekit does not do this, which open-source tool can (git-re-basin, linked), and that fine-tunes of one shared base need no alignment. The report's "Before a real merge" callout opens with the same instruction, and alignment alone is enough to show it. Without alignment nothing is added (verified on Two skills). Report test extended (83). axe 0, keyboard and phone gates pass; no engine change.
 
 - 2026-11-24: **Advisor: same-skill runs without a shared base get the Twin runs evidence, not a barrier warning.** Measured on Twin runs, 10 seeds, default knobs, aligned: Linear 97.0%, SLERP 97.2%, Karcher 96.9%, layer stitching 98.8% (unaligned 72.7 / 75.0 / 77.3 / 49.5). The advisor used to tell every no-base case to "still expect a loss barrier". For "no shared base + runs of the same skill" it now drops that penalty: weight-space picks carry the measured reason ("align neurons first … took plain averaging from about 73% to 97%"), stitching gets +3, and the note says this is the case alignment is built for. The different-skills case keeps its "hit-or-miss" note. Result: Karcher, Linear and SLERP stay on top (the evidence calls them too close to call at ~98.5%), and stitching moves from last to 4th. It isn't pushed higher, because its 1–2 pt edge on the toy doesn't justify promoting a riskier recipe. Test extended (both branches). 83 tests, axe 0, keyboard and phone gates pass; no engine change.
 

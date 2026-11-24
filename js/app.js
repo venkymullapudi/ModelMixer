@@ -2133,6 +2133,16 @@
     }
     return { rows, knobs: ks.length };
   }
+  /** YAML header when the recipe was measured with neuron alignment: the real checkpoints need the same pre-step. */
+  function alignComments() {
+    if (!S.align) return [];
+    return [
+      '# ALIGN FIRST: this recipe was measured with neuron alignment on (Git Re-Basin weight matching: expert B\'s neurons',
+      '# permuted to match expert A before merging). mergekit does not do this. Permute your checkpoints into register',
+      `# before running this config, e.g. with ${MM.OSS.rebasin.name} (${MM.OSS.rebasin.url}).`,
+      '# Alignment assumes the models learned the same function (runs of one skill); fine-tunes of one shared base need none.',
+    ];
+  }
   /** YAML comments with the multi-seed sweep evidence for this recipe's knobs (only sweeps at this recipe's settings). */
   /**
    * 5-seed per-layer evidence for this recipe (heat-map grids already measured at these exact settings).
@@ -2214,7 +2224,8 @@
     const notes = $('#exportNotes');
     if (y) {
       const ev = evidenceComments(id);
-      $('#yaml').textContent = ev.lines.length ? `${ev.lines.join('\n')}\n${y.yaml}` : y.yaml;
+      const head = [...alignComments(), ...ev.lines];
+      $('#yaml').textContent = head.length ? `${head.join('\n')}\n${y.yaml}` : y.yaml;
       $('#exportFile').textContent = y.file || 'config.yml';
       $('#cmd').textContent = `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`;
       const evNote = ev.knobs && ev.swept < ev.knobs
@@ -2458,7 +2469,7 @@ dtype: bfloat16
     const taskName = (t) => `${MM.TASKS[t.spec.task].name}${t.spec.flip ? ' (inv)' : ''}${t.kind === 'plane' ? ` · ${MM.REGIONS[t.spec.region].name}` : ''}`;
     const y = yamlFor(S.method), nm = NOT_MK[S.method];
     const exp = y
-      ? { file: y.file || 'config.yml', yaml: ((ev) => (ev.length ? `${ev.join('\n')}\n` : ''))(evidenceComments(S.method).lines) + y.yaml, cmd: `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`, note: y.note || '' }
+      ? { file: y.file || 'config.yml', yaml: ((ev) => (ev.length ? `${ev.join('\n')}\n` : ''))([...alignComments(), ...evidenceComments(S.method).lines]) + y.yaml, cmd: `pip install mergekit\n${y.cmd || 'mergekit-yaml config.yml ./merged --cuda'}`, note: y.note || '' }
       : { file: 'notes', yaml: nm ? nm.code || `# ${nm.title}\n# ${nm.body}` : '', cmd: 'See the linked open-source implementations.', note: nm ? `${nm.title}. ${nm.body}` : '' };
     const text = (sel) => { const el = $(sel); return el ? el.innerText.trim() || null : null; };
     let robust = null;
