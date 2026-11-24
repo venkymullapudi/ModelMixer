@@ -116,6 +116,10 @@
     const imbalanced = a.imbalance === 'yes' && a.base !== 'no';
     if (imbalanced) {
       ['task_arithmetic', 'ties', 'dare', 'della', 'sce', 'breadcrumbs'].forEach((id) => st[id].caveats.push('One model’s update dwarfs the others’: keep the output-layer λ at or below 1. Doubling it collapsed Hard + easy merges on 3 of 5 seeds.'));
+      // measured on Hard + easy, 10 seeds, default knobs: DELLA 90.6% (hard skill 82%), DARE 79.5% (63%), TIES 85.0%;
+      // on balanced Two skills the order flips (DELLA loses to DARE on 9/10), so this only applies under imbalance
+      bump('della', 3, 'Magnitude-aware dropping keeps the large updates of the model that changed most: on the imbalanced toy it beat DARE on 9 of 10 seeds (+11 pts) and kept the hard skill 19 pts higher');
+      bump('dare', -1, 'Uniform random dropping thins the big model’s updates as much as the small one’s: the hard skill suffers most');
       notes.push('When one model changed much more than the others, the output layer is where merges break. Scale it gently and check the easy skill first: it is the one that collapses.');
     }
 

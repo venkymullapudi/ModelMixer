@@ -68,6 +68,16 @@
       expect: { kind: 'b-beats-a', by: 0.2 },
     },
     {
+      id: 'imbalance-della', title: 'Imbalanced skills: drop by size, not at random',
+      lesson: 'When one expert changed much more than the other (Hard + easy), DELLA, which drops small updates and keeps large ones, beat DARE’s uniform random dropping on 9 of 10 seeds (+11 pts on average) and kept the hard skill at 82% against 63%. On balanced skills (Two skills) the order flips: DELLA lost to DARE on 9 of 10. Pick by your situation, not by a leaderboard.',
+      hint: 'The Recipe advisor asks about this: answer “One changed much more” to see DELLA move up.',
+      scenario: 'hard',
+      A: { method: 'dare', params: p('dare'), align: false },
+      B: { method: 'della', params: p('della'), align: false },
+      // the test seed (7) is near the low end of the 10 measured (+1.4 pts; mean +11.1, min −0.4), so the guard is modest
+      expect: { kind: 'b-beats-a', by: 0.01 },
+    },
+    {
       id: 'conflict-ceiling', title: 'Conflicting skills have a ceiling',
       lesson: 'When two skills disagree on the same inputs, no merge gets close to the experts. Even a Mixture of Experts, which beats TIES here, stays far below them: you need a task signal or retraining, not a better merge.',
       scenario: 'overlap',

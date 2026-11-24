@@ -378,11 +378,12 @@ parameters:
     // ---------- recipe advisor ----------
     const advise = (o) => MM.adviseRecipe(o);
     const top = (r, n) => r.recs.slice(0, n || 3).map((x) => x.id);
-    test('Advisor imbalance question: caveat on λ-scaled picks and the Hard + easy toy, nothing changes by default', () => {
+    test('Advisor imbalance question: DELLA first, output-layer caveat, Hard + easy toy; nothing changes by default', () => {
       const d = advise({}), u = advise({ imbalance: 'unknown' }), n = advise({ imbalance: 'no' });
       assert(JSON.stringify(top(d, 5)) === JSON.stringify(top(u, 5)) && JSON.stringify(top(d, 5)) === JSON.stringify(top(n, 5)) && d.scenario === 'two', 'unchecked or balanced: same advice');
       const y = advise({ imbalance: 'yes' });
-      assert(JSON.stringify(top(y, 5)) === JSON.stringify(top(d, 5)), 'ranking unchanged: it is a caveat, not a rule');
+      assert(y.recs[0].id === 'della' && y.recs[0].reasons.some((t) => /9 of 10 seeds/.test(t)), `imbalance should put DELLA first, got ${top(y, 3)}`);
+      assert(y.recs.find((x) => x.id === 'dare').caveats.some((t) => /hard skill suffers/.test(t)), 'DARE caveat');
       assert(y.scenario === 'hard', `evidence toy should be Hard + easy, got ${y.scenario}`);
       const ties = y.recs.find((x) => x.id === 'ties');
       assert(ties && ties.caveats.some((c) => /output-layer λ at or below 1/.test(c)) && y.notes.some((t) => /output layer is where merges break/.test(t)), 'caveat and note');

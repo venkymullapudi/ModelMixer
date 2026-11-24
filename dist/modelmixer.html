@@ -3501,6 +3501,10 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
     const imbalanced = a.imbalance === 'yes' && a.base !== 'no';
     if (imbalanced) {
       ['task_arithmetic', 'ties', 'dare', 'della', 'sce', 'breadcrumbs'].forEach((id) => st[id].caveats.push('One model’s update dwarfs the others’: keep the output-layer λ at or below 1. Doubling it collapsed Hard + easy merges on 3 of 5 seeds.'));
+      // measured on Hard + easy, 10 seeds, default knobs: DELLA 90.6% (hard skill 82%), DARE 79.5% (63%), TIES 85.0%;
+      // on balanced Two skills the order flips (DELLA loses to DARE on 9/10), so this only applies under imbalance
+      bump('della', 3, 'Magnitude-aware dropping keeps the large updates of the model that changed most: on the imbalanced toy it beat DARE on 9 of 10 seeds (+11 pts) and kept the hard skill 19 pts higher');
+      bump('dare', -1, 'Uniform random dropping thins the big model’s updates as much as the small one’s: the hard skill suffers most');
       notes.push('When one model changed much more than the others, the output layer is where merges break. Scale it gently and check the easy skill first: it is the one that collapses.');
     }
 
@@ -4245,6 +4249,16 @@ ${parts.join('\n')}
       A: { method: 'task_arithmetic', params: p('task_arithmetic', { layerwise: true, grad: [1, 1, 2] }), align: false },
       B: { method: 'task_arithmetic', params: p('task_arithmetic', { layerwise: true, grad: [1, 1, 1] }), align: false },
       expect: { kind: 'b-beats-a', by: 0.2 },
+    },
+    {
+      id: 'imbalance-della', title: 'Imbalanced skills: drop by size, not at random',
+      lesson: 'When one expert changed much more than the other (Hard + easy), DELLA, which drops small updates and keeps large ones, beat DARE’s uniform random dropping on 9 of 10 seeds (+11 pts on average) and kept the hard skill at 82% against 63%. On balanced skills (Two skills) the order flips: DELLA lost to DARE on 9 of 10. Pick by your situation, not by a leaderboard.',
+      hint: 'The Recipe advisor asks about this: answer “One changed much more” to see DELLA move up.',
+      scenario: 'hard',
+      A: { method: 'dare', params: p('dare'), align: false },
+      B: { method: 'della', params: p('della'), align: false },
+      // the test seed (7) is near the low end of the 10 measured (+1.4 pts; mean +11.1, min −0.4), so the guard is modest
+      expect: { kind: 'b-beats-a', by: 0.01 },
     },
     {
       id: 'conflict-ceiling', title: 'Conflicting skills have a ceiling',
