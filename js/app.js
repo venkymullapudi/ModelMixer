@@ -2139,7 +2139,7 @@
     return [
       '# ALIGN FIRST: this recipe was measured with neuron alignment on (Git Re-Basin weight matching: expert B\'s neurons',
       '# permuted to match expert A before merging). mergekit does not do this. Permute your checkpoints into register',
-      `# before running this config, e.g. with ${MM.OSS.rebasin.name} (${MM.OSS.rebasin.url}).`,
+      `# before running this config: for plain MLPs, Export -> "Download align_mlp.py"; otherwise e.g. ${MM.OSS.rebasin.name} (${MM.OSS.rebasin.url}).`,
       '# Alignment assumes the models learned the same function (runs of one skill); fine-tunes of one shared base need none.',
     ];
   }
@@ -2231,7 +2231,10 @@
       const evNote = ev.knobs && ev.swept < ev.knobs
         ? `<div class="note muted ev-note">${ev.swept ? `The config is annotated with seed evidence for ${ev.swept} of ${ev.knobs} knobs.` : 'Annotate the config with which knobs transfer across seeds?'}
             <button class="btn sm" id="annotateAll">Sweep ${ev.swept ? 'the rest' : ev.knobs > 1 ? `all ${ev.knobs} knobs` : 'the knob'} on ${SWEEP_SEEDS} seeds</button><span class="muted small" id="annotateMsg" aria-live="polite"></span></div>` : '';
-      notes.innerHTML = (y.note ? `<div class="note">${y.note}</div>` : '') + evNote;
+      const alignNote = S.align && MM.ALIGN_PY
+        ? `<div class="note align-dl"><b>Align first.</b> This recipe was measured with neuron alignment. For plain MLP checkpoints, this script permutes model B's hidden units to match model A (weight matching, Hungarian algorithm; numpy, scipy optional). It self-tests with <code>--self-test</code>. Transformers need model-specific tools such as <a href="${MM.OSS.rebasin.url}" target="_blank" rel="noopener">${MM.OSS.rebasin.name}</a>.
+            <button class="btn sm" id="dlAlign">Download align_mlp.py</button></div>` : '';
+      notes.innerHTML = (y.note ? `<div class="note">${y.note}</div>` : '') + alignNote + evNote;
     } else {
       const n = NOT_MK[id];
       $('#yaml').textContent = n.code || `# ${n.title}\n# ${n.body}`;
@@ -2291,6 +2294,15 @@
   }
   $('#copyYaml').addEventListener('click', () => copy($('#yaml').textContent));
   $('#copyCmd').addEventListener('click', () => copy($('#cmd').textContent));
+  $('#exportNotes').addEventListener('click', (ev) => {
+    if (!ev.target.closest('#dlAlign') || !MM.ALIGN_PY) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([MM.ALIGN_PY], { type: 'text/x-python' }));
+    a.download = 'align_mlp.py';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast('Saved align_mlp.py (run it with --self-test first)');
+  });
   $('#dlYaml').addEventListener('click', () => {
     const blob = new Blob([$('#yaml').textContent], { type: 'text/plain' });
     const a = document.createElement('a');

@@ -15,12 +15,19 @@ jobs:
           node-version: 20
       - name: Engine tests
         run: node tests/run.js
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Alignment helper self-test (align_mlp.py)
+        run: |
+          python3 -m pip install --quiet numpy
+          python3 scripts/align_mlp.py --self-test
       - name: Atlas transfer snapshot matches the engine
         run: python3 scripts/transfer_snapshot.py --check
       - name: Bundle is up to date
         run: |
           python3 scripts/bundle.py
-          git diff --exit-code dist/ || (echo "dist/modelmixer.html is stale: run python3 scripts/bundle.py and commit" && exit 1)
+          git diff --exit-code dist/ js/align-py.js || (echo "dist/modelmixer.html or js/align-py.js is stale: run python3 scripts/bundle.py and commit" && exit 1)
 
   browser:
     # accessibility (axe-core, every view), keyboard-only use and phone layout (375 px) can't silently regress

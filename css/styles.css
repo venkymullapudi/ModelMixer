@@ -815,3 +815,4 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .mini-table th { color: var(--dim); font-weight: 600; }
 .mini-table .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; }
 .gal-card .gal-ev { font-size: 11.5px; color: #34d399; }
+.align-dl .btn { margin-top: 6px; display: block; }

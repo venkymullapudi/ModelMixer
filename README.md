@@ -107,6 +107,7 @@ Locally they use your Google Chrome (`pip install playwright`). No Node? Run `py
 
 - **GitHub Pages:** `.github/workflows/pages.yml` rebuilds the single-file app on every push to `main` and publishes it as
   the site's `index.html`. One-time setup: *Settings → Pages → Build and deployment → Source: GitHub Actions*.
+- **Neuron alignment for real checkpoints:** `python3 scripts/align_mlp.py A.safetensors B.safetensors B_aligned.safetensors --layers fc1.weight,fc1.bias fc2.weight,fc2.bias` permutes B's hidden units to match A for plain MLP stacks (`--self-test` checks it). It is also downloadable from the Export tab when a recipe uses alignment. Transformers need model-specific tools.
 - **Screenshots:** `python3 scripts/screenshots.py` (needs `pip install playwright pillow` and Google Chrome)
   re-captures `docs/screenshots/*.webp` from `dist/modelmixer.html`.
 

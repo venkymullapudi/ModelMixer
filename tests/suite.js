@@ -274,6 +274,11 @@ parameters:
       const s = MM.transferSummary([e('A', { λ: 'transfers', k: 'moves', ε: 'holds' }), e('B', { λ: 'holds', k: 'narrow', ε: 'moves' })]);
       assert(s.everywhere.join() === 'TIES|λ' && s.split.join() === 'TIES|ε' && s.keys.length === 3, JSON.stringify(s));
     });
+    test('Alignment helper ships with the app and states its scope', () => {
+      const py = MM.ALIGN_PY;
+      assert(typeof py === 'string' && py.startsWith('#!/usr/bin/env python3'), 'script embedded');
+      for (const s of ['def weight_matching', 'def apply_permutations', '--self-test', 'Plain MLP stacks only', 'Not for transformers']) assert(py.includes(s), `missing: ${s}`);
+    });
     test('makeLRU: caps size, evicts least recently used, never evicts kept keys', () => {
       const c = MM.makeLRU(3, (k) => k === 'lab');
       ['lab', 'a', 'b'].forEach((k) => c.set(k, k));
