@@ -18,10 +18,12 @@ errors, no horizontal scroll at 375px) and moves it to *Done* with the date.
 
 ## Next up (highest value first)
 
-1. **Gallery card "seed evidence" line:** each card states how many seeds its lesson was measured on (e.g. "9 of 10 seeds") in prose. Show it as a small badge under each card ("checked on 3 seeds in CI", "measured on 10"), so readers can weigh a card at a glance.
+1. **Strengthen the 3-seed cards:** four cards (SLERP gradient, RegMean data, align strangers, AdaMerging on images) and the conflict ceiling were measured on only 3 seeds. Re-measure each on 10 seeds; update the text and badge, and add `expect.seeds` where the test seed is near the low end.
 2. **Seed stability for the gallery lessons:** the "Conflicting skills have a ceiling" card is already checked on seeds by a test; add a Digits-conflict card only if its saliency reading holds on most seeds (today it does not: TIES flips between "conflict" and "lost").
 
 ## Done
+
+- 2026-11-24: **Seed-evidence badge on every gallery card.** Each card now shows how many seeds its lesson was measured on before it was written, and what CI re-checks: "✓ Measured on 10 seeds · CI re-checks 3 seeds" (DELLA under imbalance), "Measured on 7 seeds (6 toys × 5 seeds for the layer) · CI re-checks seed 7" (which layer), down to "Measured on 3 seeds" for the oldest cards. A tooltip explains what a seed is and that CI fails if a lesson stops holding. Data: `measured` on each `GALLERY` entry, text from `evidenceBadge()`. A test requires every card to declare at least 3 measured seeds. The badges show that five cards rest on only 3 seeds, which is the new top backlog item. 82 tests, axe 0, no overflow at 375 px, keyboard and phone gates pass; no engine change.
 
 - 2026-11-24: **Multi-seed guards for gallery lessons.** A lesson can now declare `expect.seeds` (and `meanBy`). The test suite then re-checks it on each of those seeds and requires B to lead by `meanBy` on average and win on at least two thirds of them (`checkLessonSeeds` in `js/gallery.js`, with a stubbed unit test). Used for "Imbalanced skills: drop by size, not at random", whose test seed was near the low end (+1.4 pts). On seeds 7, 108 and 209 DELLA now leads by +6.3 pts on average and wins 3/3, a much stronger guard than the old single-seed "+1 pt". A first version called the local `checkLesson` directly, so the unit test's stub never ran; it now goes through `MM.checkLesson`. The suite takes about 7 s longer (2 extra Hard + easy trainings). 81 tests, axe 0, keyboard and phone gates pass; no engine change.
 

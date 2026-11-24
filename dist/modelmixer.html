@@ -826,6 +826,7 @@ kbd { display: inline-block; min-width: 22px; text-align: center; font-family: v
 .mini-table th:first-child, .mini-table td:first-child { text-align: left; font-family: inherit; }
 .mini-table th { color: var(--dim); font-weight: 600; }
 .mini-table .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 4px; }
+.gal-card .gal-ev { font-size: 11.5px; color: #34d399; }
 
 </style>
 </head>
@@ -4192,7 +4193,7 @@ ${parts.join('\n')}
 
   const GALLERY = [
     {
-      id: 'slerp-gradient', title: 'One t per layer beats one global t',
+      id: 'slerp-gradient', measured: { seeds: 3 }, title: 'One t per layer beats one global t',
       lesson: 'SLERP with a per-layer t (a mergekit gradient) lets early layers lean to one expert and late layers to the other. On the toy it beats a flat t = 0.5 by a wide margin.',
       scenario: 'two',
       A: { method: 'slerp', params: p('slerp', { t: 0.5 }), align: false },
@@ -4200,7 +4201,7 @@ ${parts.join('\n')}
       expect: { kind: 'b-beats-a', by: 0.03 },
     },
     {
-      id: 'regmean-data', title: 'A little data goes a long way',
+      id: 'regmean-data', measured: { seeds: 3 }, title: 'A little data goes a long way',
       lesson: 'RegMean only needs layer inputs from a few hundred examples per task and no training, and it keeps both skills almost perfectly where task arithmetic loses ground.',
       scenario: 'two',
       A: { method: 'task_arithmetic', params: p('task_arithmetic'), align: false },
@@ -4208,7 +4209,7 @@ ${parts.join('\n')}
       expect: { kind: 'b-beats-a', by: 0.05 },
     },
     {
-      id: 'align-strangers', title: 'Align before you average strangers',
+      id: 'align-strangers', measured: { seeds: 3 }, title: 'Align before you average strangers',
       lesson: 'Models trained from different random inits store the same features in different neurons. Plain averaging scrambles them; Git Re-Basin alignment re-orders neurons first and recovers accuracy.',
       scenario: 'strangers',
       A: { method: 'linear', params: p('linear'), align: false },
@@ -4216,7 +4217,7 @@ ${parts.join('\n')}
       expect: { kind: 'b-beats-a', by: 0.005 },
     },
     {
-      id: 'adamerging-images', title: 'On image inputs, learn the coefficients',
+      id: 'adamerging-images', measured: { seeds: 3 }, title: 'On image inputs, learn the coefficients',
       lesson: 'On the image-like Digits toy, AdaMerging tunes task-arithmetic coefficients on unlabeled inputs and clearly beats hand-set task arithmetic, in line with the paper’s vision results.',
       scenario: 'digits',
       A: { method: 'task_arithmetic', params: p('task_arithmetic'), align: false },
@@ -4224,7 +4225,7 @@ ${parts.join('\n')}
       expect: { kind: 'b-beats-a', by: 0.03 },
     },
     {
-      id: 'ties-lambda-first', title: 'On TIES, tune λ before density',
+      id: 'ties-lambda-first', measured: { seeds: 7 }, title: 'On TIES, tune λ before density',
       lesson: 'Going from k 0.30, λ 1.4 to k 0.20, λ 0.8, the λ change alone helped on all 7 seeds we tried (+0.6 to +4.5 pts), while the density change alone went up on 3 seeds and down on 4 (the best density differs by seed). Scaling λ is the knob that transfers; check density on your own data.',
       hint: 'In the Lab, press “Which change mattered?”, then “Repeat on 5 seeds”.',
       scenario: 'two',
@@ -4233,7 +4234,7 @@ ${parts.join('\n')}
       expect: { kind: 'change-helps', what: 'Scaling λ', by: 0.01 },
     },
     {
-      id: 'ties-which-layer', title: 'Which layer, not which value',
+      id: 'ties-which-layer', measured: { seeds: 7, also: '6 toys × 5 seeds for the layer' }, title: 'Which layer, not which value',
       lesson: 'With a λ per layer, TIES on Two skills is sensitive to Hidden 1 on all 7 seeds we tried (a 14–27 pt swing, against at most 9.5 for the other layers). But the best Hidden 1 value is not stable: λ 0.65 there helped on 5 of the 7 seeds and hurt on 2. Across 6 toys × 5 seeds, Hidden 1 was the most sensitive layer in 26 of 30 cases; the 4 exceptions were Output (on Three skills, Overlapping skills and Hard + easy). So start tuning at Hidden 1, map the layers on your own models, and don’t copy the number.',
       hint: 'In the Lab’s per-layer map, turn on “± 5 seeds”: the best cell moves, the sensitive layer doesn’t.',
       scenario: 'two',
@@ -4242,7 +4243,7 @@ ${parts.join('\n')}
       expect: { kind: 'layer-sensitive', layer: 0, ratio: 2 },
     },
     {
-      id: 'imbalance-output', title: 'Imbalanced skills: go easy on the output layer',
+      id: 'imbalance-output', measured: { seeds: 5 }, title: 'Imbalanced skills: go easy on the output layer',
       lesson: 'On Hard + easy the hard expert changes the output layer 1.5–8× more than the easy one (on Two skills the two are within 0.4–1.4× of each other). Doubling the output λ of a task-arithmetic merge then collapsed it on 3 of 5 seeds (the easy skill fell to 1% on one) and cost points on a 4th; on Two skills it never collapsed. You can spot this before merging: compare each expert’s per-layer update size.',
       hint: 'In the Lab, the insight panel’s “Update size per layer” table shows the imbalance and warns about it.',
       scenario: 'hard',
@@ -4251,7 +4252,7 @@ ${parts.join('\n')}
       expect: { kind: 'b-beats-a', by: 0.2 },
     },
     {
-      id: 'imbalance-della', title: 'Imbalanced skills: drop by size, not at random',
+      id: 'imbalance-della', measured: { seeds: 10 }, title: 'Imbalanced skills: drop by size, not at random',
       lesson: 'When one expert changed much more than the other (Hard + easy), DELLA, which drops small updates and keeps large ones, beat DARE’s uniform random dropping on 9 of 10 seeds (+11 pts on average) and kept the hard skill at 82% against 63%. On balanced skills (Two skills) the order flips: DELLA lost to DARE on 9 of 10. Pick by your situation, not by a leaderboard.',
       hint: 'The Recipe advisor asks about this: answer “One changed much more” to see DELLA move up.',
       scenario: 'hard',
@@ -4262,7 +4263,7 @@ ${parts.join('\n')}
       expect: { kind: 'b-beats-a', by: 0.01, seeds: [7, 108, 209], meanBy: 0.05 },
     },
     {
-      id: 'conflict-ceiling', title: 'Conflicting skills have a ceiling',
+      id: 'conflict-ceiling', measured: { seeds: 3 }, title: 'Conflicting skills have a ceiling',
       lesson: 'When two skills disagree on the same inputs, no merge gets close to the experts. Even a Mixture of Experts, which beats TIES here, stays far below them: you need a task signal or retraining, not a better merge.',
       scenario: 'overlap',
       A: { method: 'ties', params: p('ties'), align: false },
@@ -4270,6 +4271,12 @@ ${parts.join('\n')}
       expect: { kind: 'both-below-experts', by: 0.08 },
     },
   ];
+
+  /** Short evidence line for a card: how many seeds the lesson was measured on, and what CI re-checks. */
+  function evidenceBadge(g) {
+    const ci = g.expect.seeds ? `CI re-checks ${g.expect.seeds.length} seeds` : 'CI re-checks seed 7';
+    return `Measured on ${g.measured.seeds} seeds${g.measured.also ? ` (${g.measured.also})` : ''} · ${ci}`;
+  }
 
   /** A gallery entry as a full lab recipe (B is the current recipe, A is pinned), ready for encodeRecipe. */
   function galleryRecipe(g) {
@@ -4324,7 +4331,7 @@ ${parts.join('\n')}
     return { ok: mean >= (g.expect.meanBy || 0) && wins >= Math.ceil((2 * diffs.length) / 3), mean, wins, n: diffs.length, diffs };
   }
 
-  Object.assign(MM, { GALLERY, galleryRecipe, checkLesson, checkLessonSeeds });
+  Object.assign(MM, { GALLERY, galleryRecipe, checkLesson, checkLessonSeeds, evidenceBadge });
 })();
 
 </script>
@@ -6703,6 +6710,7 @@ ${parts.join('\n')}
         <h3>${esc(g.title)}</h3>
         <p>${esc(g.lesson)}</p>${g.hint ? `<p class="gal-hint">${esc(g.hint)}</p>` : ''}
         <div class="gal-meta"><span class="mini-tag">${esc(sc.name)}</span><span class="gal-vs"><b>A</b> ${esc(side(g.A))} <span class="muted">vs</span> <b>B</b> ${esc(side(g.B))}</span></div>
+        <div class="gal-ev" title="Seeds = independent retrainings of the experts. A lesson is only written after it holds on the measured seeds, and CI fails if it stops holding.">✓ ${esc(MM.evidenceBadge(g))}</div>
         <button class="btn sm primary" data-gallery="${g.id}">Open in the Lab</button>
       </div>`;
     }).join('');

@@ -1965,6 +1965,7 @@
         <h3>${esc(g.title)}</h3>
         <p>${esc(g.lesson)}</p>${g.hint ? `<p class="gal-hint">${esc(g.hint)}</p>` : ''}
         <div class="gal-meta"><span class="mini-tag">${esc(sc.name)}</span><span class="gal-vs"><b>A</b> ${esc(side(g.A))} <span class="muted">vs</span> <b>B</b> ${esc(side(g.B))}</span></div>
+        <div class="gal-ev" title="Seeds = independent retrainings of the experts. A lesson is only written after it holds on the measured seeds, and CI fails if it stops holding.">✓ ${esc(MM.evidenceBadge(g))}</div>
         <button class="btn sm primary" data-gallery="${g.id}">Open in the Lab</button>
       </div>`;
     }).join('');

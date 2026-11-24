@@ -906,6 +906,14 @@ parameters:
     });
 
     // ---------- recipe gallery: every lesson must still be true ----------
+    test('Gallery: every card says how many seeds it was measured on, and CI checks at least one', () => {
+      for (const g of MM.GALLERY) {
+        assert(g.measured && g.measured.seeds >= 3, `${g.id}: measured on at least 3 seeds`);
+        const b = MM.evidenceBadge(g);
+        assert(b.startsWith(`Measured on ${g.measured.seeds} seeds`) && /CI re-checks (seed 7|\d+ seeds)/.test(b), `${g.id}: ${b}`);
+      }
+      return MM.GALLERY.map((g) => `${g.id}: ${g.measured.seeds}`).join(', ');
+    });
     test('checkLessonSeeds: mean lead and two-thirds wins', () => {
       const g = { A: {}, B: {}, expect: { kind: 'b-beats-a', meanBy: 0.05 } };
       const fakeCheck = MM.checkLesson;
