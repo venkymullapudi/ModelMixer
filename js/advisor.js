@@ -47,7 +47,7 @@
     if (a.base === 'no') {
       WEIGHT_SPACE.forEach((id) => bump(id, -2, 'Different inits: align neurons first (Git Re-Basin), and still expect a loss barrier'));
       ['ensemble', 'moe', 'distill'].forEach((id) => bump(id, 2, 'Works across different bases and inits'));
-      notes.push('Without a shared base, weight-space merges only work after neuron alignment, and only for same-architecture models. Output-space methods and distillation avoid the problem.');
+      notes.push('Without a shared base, weight-space merges need neuron alignment (Git Re-Basin), which assumes the models learned the same functions. On the toys it was hit-or-miss: about +3 pts for narrow models with different skills, −17 for wider ones, and worse still when the same skill covers different inputs. Output-space methods and distillation avoid the problem.');
     }
 
     // --- data / training / deployment hard constraints ---

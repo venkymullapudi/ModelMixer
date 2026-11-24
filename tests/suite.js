@@ -378,6 +378,11 @@ parameters:
     // ---------- recipe advisor ----------
     const advise = (o) => MM.adviseRecipe(o);
     const top = (r, n) => r.recs.slice(0, n || 3).map((x) => x.id);
+    test('Advisor without a shared base: the alignment note states what was measured', () => {
+      const r = advise({ base: 'no' });
+      assert(r.notes.some((t) => /hit-or-miss/.test(t) && /same functions/.test(t)), r.notes.join(' | '));
+      assert(MM.SCENARIOS.find((s) => s.id === 'strangers').desc.startsWith('Two different skills'), 'Strangers describes different skills');
+    });
     test('Advisor imbalance question: DELLA first, output-layer caveat, Hard + easy toy; nothing changes by default', () => {
       const d = advise({}), u = advise({ imbalance: 'unknown' }), n = advise({ imbalance: 'no' });
       assert(JSON.stringify(top(d, 5)) === JSON.stringify(top(u, 5)) && JSON.stringify(top(d, 5)) === JSON.stringify(top(n, 5)) && d.scenario === 'two', 'unchecked or balanced: same advice');

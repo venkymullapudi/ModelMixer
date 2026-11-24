@@ -25,8 +25,8 @@
       expect: { kind: 'b-beats-a', by: 0.05 },
     },
     {
-      id: 'align-strangers', measured: { seeds: 10 }, title: 'Align before you average strangers',
-      lesson: 'Models trained from different random inits store the same features in different neurons, so plain averaging mixes unrelated units. Git Re-Basin alignment re-orders neurons first. On this small toy it helped on 7 of 10 seeds, but only by 1.1 pts on average (−4.5 to +5.1), and both versions stay 7–20 pts below the experts. Align, but don’t expect it to close the gap: with no shared base, output-space methods are the safer bet.',
+      id: 'align-strangers', measured: { seeds: 10, also: 'plus 6 seeds × widths 32–128 and same-skill controls' }, title: 'Alignment assumes the same functions',
+      lesson: 'Git Re-Basin re-orders one model’s neurons to match another’s before averaging. It is built for models that learned the same function from different inits, and on this toy those average fine without it (99.9%). Here the experts learned different skills: alignment helped this narrow Linear merge on 7 of 10 seeds, but by only 1.1 pts (−4.5 to +5.1). At width 128 it cost 17 pts, and with the same skill on different inputs it cost 8 to 35. Measure before you trust it, or use output-space methods.',
       scenario: 'strangers',
       A: { method: 'linear', params: p('linear'), align: false },
       B: { method: 'linear', params: p('linear'), align: true },

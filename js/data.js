@@ -223,7 +223,7 @@
     },
     {
       id: 'strangers', name: 'Strangers', tag: 'no shared base',
-      desc: 'Same skills, but each expert is trained from its own random init. Weight averaging breaks (permutation symmetry) unless neurons are aligned first.',
+      desc: 'Two different skills (Moons and Circles), each expert trained from its own random init: no shared base, so no task vectors. Neuron alignment (Git Re-Basin) re-orders units before averaging; it assumes the experts learned the same functions, so here it helps only a little and can hurt in wider networks.',
       experts: [{ task: 'moons', region: 'left' }, { task: 'circles', region: 'right' }], init: 'independent',
     },
     {
