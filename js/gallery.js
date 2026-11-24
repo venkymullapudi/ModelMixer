@@ -1,5 +1,5 @@
 /* ModelMixer — recipe gallery: curated A-vs-B examples, each with a one-line lesson.
- * Every lesson was checked on 3 seeds and is guarded by a test (tests/suite.js) via `expect`, so a card can't
+ * Every lesson was measured on several seeds (see `measured`) and is guarded by a test (tests/suite.js) via `expect`, so a card can't
  * quietly start teaching something false if the engine or a default changes. */
 (function () {
   const root = typeof window !== 'undefined' ? window : globalThis;
@@ -9,32 +9,32 @@
 
   const GALLERY = [
     {
-      id: 'slerp-gradient', measured: { seeds: 3 }, title: 'One t per layer beats one global t',
-      lesson: 'SLERP with a per-layer t (a mergekit gradient) lets early layers lean to one expert and late layers to the other. On the toy it beats a flat t = 0.5 by a wide margin.',
+      id: 'slerp-gradient', measured: { seeds: 10 }, title: 'One t per layer beats one global t',
+      lesson: 'SLERP with a per-layer t (a mergekit gradient) lets early layers lean to one expert and late layers to the other. On the toy, t 0.25 → 0.50 → 0.75 beat a flat t = 0.5 on all 10 seeds we tried, by 8.6 pts on average (1.7 to 17.5).',
       scenario: 'two',
       A: { method: 'slerp', params: p('slerp', { t: 0.5 }), align: false },
       B: { method: 'slerp', params: p('slerp', { layerwise: true, grad: [0.25, 0.5, 0.75] }), align: false },
       expect: { kind: 'b-beats-a', by: 0.03 },
     },
     {
-      id: 'regmean-data', measured: { seeds: 3 }, title: 'A little data goes a long way',
-      lesson: 'RegMean only needs layer inputs from a few hundred examples per task and no training, and it keeps both skills almost perfectly where task arithmetic loses ground.',
+      id: 'regmean-data', measured: { seeds: 10 }, title: 'A little data goes a long way',
+      lesson: 'RegMean only needs layer inputs from a few hundred examples per task and no training. On all 10 seeds it kept both skills at 99–100% (within 0.2 pts of the experts), while task arithmetic scored 78–98%: 14 pts lower on average.',
       scenario: 'two',
       A: { method: 'task_arithmetic', params: p('task_arithmetic'), align: false },
       B: { method: 'regmean', params: p('regmean'), align: false },
       expect: { kind: 'b-beats-a', by: 0.05 },
     },
     {
-      id: 'align-strangers', measured: { seeds: 3 }, title: 'Align before you average strangers',
-      lesson: 'Models trained from different random inits store the same features in different neurons. Plain averaging scrambles them; Git Re-Basin alignment re-orders neurons first and recovers accuracy.',
+      id: 'align-strangers', measured: { seeds: 10 }, title: 'Align before you average strangers',
+      lesson: 'Models trained from different random inits store the same features in different neurons, so plain averaging mixes unrelated units. Git Re-Basin alignment re-orders neurons first. On this small toy it helped on 7 of 10 seeds, but only by 1.1 pts on average (−4.5 to +5.1), and both versions stay 7–20 pts below the experts. Align, but don’t expect it to close the gap: with no shared base, output-space methods are the safer bet.',
       scenario: 'strangers',
       A: { method: 'linear', params: p('linear'), align: false },
       B: { method: 'linear', params: p('linear'), align: true },
       expect: { kind: 'b-beats-a', by: 0.005 },
     },
     {
-      id: 'adamerging-images', measured: { seeds: 3 }, title: 'On image inputs, learn the coefficients',
-      lesson: 'On the image-like Digits toy, AdaMerging tunes task-arithmetic coefficients on unlabeled inputs and clearly beats hand-set task arithmetic, in line with the paper’s vision results.',
+      id: 'adamerging-images', measured: { seeds: 10 }, title: 'On image inputs, learn the coefficients',
+      lesson: 'On the image-like Digits toy, AdaMerging tunes task-arithmetic coefficients on unlabeled inputs. It beat hand-set task arithmetic on 9 of 10 seeds, by 9.2 pts on average (up to 15.8), in line with the paper’s vision results.',
       scenario: 'digits',
       A: { method: 'task_arithmetic', params: p('task_arithmetic'), align: false },
       B: { method: 'adamerging', params: p('adamerging'), align: false },
@@ -79,8 +79,8 @@
       expect: { kind: 'b-beats-a', by: 0.01, seeds: [7, 108, 209], meanBy: 0.05 },
     },
     {
-      id: 'conflict-ceiling', measured: { seeds: 3 }, title: 'Conflicting skills have a ceiling',
-      lesson: 'When two skills disagree on the same inputs, no merge gets close to the experts. Even a Mixture of Experts, which beats TIES here, stays far below them: you need a task signal or retraining, not a better merge.',
+      id: 'conflict-ceiling', measured: { seeds: 10 }, title: 'Conflicting skills have a ceiling',
+      lesson: 'When two skills disagree on the same inputs, no merge gets close to the experts. A Mixture of Experts beat TIES on all 10 seeds (+11 pts on average), yet stayed 12–18 pts below the experts on every one: you need a task signal or retraining, not a better merge.',
       scenario: 'overlap',
       A: { method: 'ties', params: p('ties'), align: false },
       B: { method: 'moe', params: p('moe'), align: false },
