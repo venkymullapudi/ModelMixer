@@ -906,6 +906,19 @@ parameters:
     });
 
     // ---------- recipe gallery: every lesson must still be true ----------
+    test('checkLessonSeeds: mean lead and two-thirds wins', () => {
+      const g = { A: {}, B: {}, expect: { kind: 'b-beats-a', meanBy: 0.05 } };
+      const fakeCheck = MM.checkLesson;
+      const runs = [[0.8, 0.9], [0.8, 0.95], [0.85, 0.83]];
+      let k = 0;
+      MM.checkLesson = () => { const [a, b] = runs[k++]; return { a, b }; };
+      try {
+        const r = MM.checkLessonSeeds(g, [1, 2, 3]);
+        assert(r.ok && r.wins === 2 && Math.abs(r.mean - (0.1 + 0.15 - 0.02) / 3) < 1e-12, JSON.stringify(r));
+        k = 0; runs[1] = [0.8, 0.79];
+        assert(!MM.checkLessonSeeds(g, [1, 2, 3]).ok, 'one win of three fails');
+      } finally { MM.checkLesson = fakeCheck; }
+    });
     test('Gallery: every card encodes to a valid link, and its lesson holds on seed 7', () => {
       const bundles = { two: T, strangers: Ts, digits: Td };
       const out = [];
@@ -915,7 +928,15 @@ parameters:
         if (!bundles[g.scenario]) bundles[g.scenario] = MM.trainBundleSync(scenario(g.scenario));
         const c = MM.checkLesson(g, bundles[g.scenario]);
         assert(c.ok, `${g.id}: lesson no longer holds (A ${pct(c.a)}, B ${pct(c.b)}, experts ${pct(c.experts)}${c.change !== undefined ? `, change alone ${c.change == null ? 'n/a' : pct(c.change)}` : ''})`);
-        out.push(`${g.id} A ${pct(c.a)} → B ${pct(c.b)}${c.change != null ? ` (${g.expect.what} alone ${c.change >= 0 ? '+' : ''}${(c.change * 100).toFixed(1)} pts)` : ''}${c.ratio != null ? ` (layer swing ×${c.ratio.toFixed(1)})` : ''}`);
+        let multi = '';
+        if (g.expect.seeds) {
+          // lessons whose test seed sits near the low end are also checked on several seeds
+          const bs = g.expect.seeds.map((sd) => (sd === 7 ? bundles[g.scenario] : MM.trainBundleSync(MM.toyConfig(g.scenario, sd))));
+          const m = MM.checkLessonSeeds(g, bs);
+          assert(m.ok, `${g.id}: multi-seed lesson no longer holds (mean ${(m.mean * 100).toFixed(1)} pts, wins ${m.wins}/${m.n}: ${m.diffs.map((x) => (x * 100).toFixed(1)).join(', ')})`);
+          multi = ` (${m.n} seeds: mean +${(m.mean * 100).toFixed(1)} pts, wins ${m.wins}/${m.n})`;
+        }
+        out.push(`${g.id} A ${pct(c.a)} → B ${pct(c.b)}${c.change != null ? ` (${g.expect.what} alone ${c.change >= 0 ? '+' : ''}${(c.change * 100).toFixed(1)} pts)` : ''}${c.ratio != null ? ` (layer swing ×${c.ratio.toFixed(1)})` : ''}${multi}`);
       }
       return out.join('; ');
     });

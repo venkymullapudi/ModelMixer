@@ -4257,8 +4257,9 @@ ${parts.join('\n')}
       scenario: 'hard',
       A: { method: 'dare', params: p('dare'), align: false },
       B: { method: 'della', params: p('della'), align: false },
-      // the test seed (7) is near the low end of the 10 measured (+1.4 pts; mean +11.1, min −0.4), so the guard is modest
-      expect: { kind: 'b-beats-a', by: 0.01 },
+      // the test seed (7) is near the low end of the 10 measured (+1.4 pts; mean +11.1, min −0.4), so this lesson is
+      // also checked on 3 seeds: B must lead on average by `meanBy` and win on at least 2 of them
+      expect: { kind: 'b-beats-a', by: 0.01, seeds: [7, 108, 209], meanBy: 0.05 },
     },
     {
       id: 'conflict-ceiling', title: 'Conflicting skills have a ceiling',
@@ -4311,7 +4312,19 @@ ${parts.join('\n')}
     return { ok, a, b, experts };
   }
 
-  Object.assign(MM, { GALLERY, galleryRecipe, checkLesson });
+  /**
+   * Multi-seed check for 'b-beats-a' lessons with expect.seeds: bundles = one trained bundle per seed.
+   * ok when B leads by expect.meanBy on average and wins on at least two thirds of the seeds.
+   */
+  function checkLessonSeeds(g, bundles) {
+    const per = bundles.map((T) => MM.checkLesson(g, T));
+    const diffs = per.map((c) => c.b - c.a);
+    const mean = diffs.reduce((x, y) => x + y, 0) / diffs.length;
+    const wins = diffs.filter((d) => d > 0).length;
+    return { ok: mean >= (g.expect.meanBy || 0) && wins >= Math.ceil((2 * diffs.length) / 3), mean, wins, n: diffs.length, diffs };
+  }
+
+  Object.assign(MM, { GALLERY, galleryRecipe, checkLesson, checkLessonSeeds });
 })();
 
 </script>
