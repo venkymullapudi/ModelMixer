@@ -69,7 +69,8 @@ python3 scripts/bundle.py
 
 - **Two skills / Three skills**: experts fine-tuned from one shared base, each learning a skill in its own region.
 - **Overlapping skills**: two skills in the same place that disagree. No mix can satisfy both, and a router can't tell them apart.
-- **Strangers**: experts trained from different random inits. Task-vector methods are unavailable and plain averaging breaks until you turn on neuron alignment.
+- **Strangers**: two different skills, each expert trained from its own random init. Task-vector methods are unavailable, and neuron alignment helps only a little here (it assumes the experts learned the same function).
+- **Twin runs**: two runs of the same Spiral skill from different random inits. Plain averaging scrambles them (~71%); neuron alignment (Git Re-Basin) puts them back in register (~96–98%).
 - **Hard + easy**: a hard spiral next to easy blobs, which shows how merges wash out large updates.
 - **Digits**: image-like inputs. Experts tell 0 from 1 and 2 from 3 on noisy 8×8 digits, with 64 pixels in instead of 2 coordinates. The map becomes a gallery of test digits, and the method ranking changes noticeably from the plane toys. The insight panel adds **pixel saliency**: which pixels each merge reads, compared with the expert.
 - **Digits conflict**: A tells 0 from 1 and B tells 1 from 7. Both see 1s and disagree on them, so even the best merges reach only about 73%.

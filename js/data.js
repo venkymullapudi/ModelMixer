@@ -227,6 +227,11 @@
       experts: [{ task: 'moons', region: 'left' }, { task: 'circles', region: 'right' }], init: 'independent',
     },
     {
+      id: 'twins', name: 'Twin runs', tag: 'same skill, own inits',
+      desc: 'Two runs of the same hard skill (Spiral), each from its own random init. Both learn the same function with their neurons in a different order, so plain averaging scrambles them; neuron alignment (Git Re-Basin) puts them back in register first.',
+      experts: [{ task: 'spiral', region: 'left' }, { task: 'spiral', region: 'left' }], init: 'independent',
+    },
+    {
       id: 'hard', name: 'Hard + easy', tag: 'imbalance',
       desc: 'A hard Spiral expert next to an easy Blobs expert. The hard skill needs large weight changes that easy merges tend to wash out.',
       experts: [{ task: 'spiral', region: 'left' }, { task: 'blobs', region: 'right' }], init: 'shared',

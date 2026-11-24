@@ -380,6 +380,7 @@ parameters:
     const top = (r, n) => r.recs.slice(0, n || 3).map((x) => x.id);
     test('Advisor without a shared base: the alignment note states what was measured', () => {
       const r = advise({ base: 'no' });
+      assert(r.scenario === 'strangers' && advise({ base: 'no', goal: 'same' }).scenario === 'twins', 'same-skill runs without a base are checked on Twin runs');
       assert(r.notes.some((t) => /hit-or-miss/.test(t) && /same functions/.test(t)), r.notes.join(' | '));
       assert(MM.SCENARIOS.find((s) => s.id === 'strangers').desc.startsWith('Two different skills'), 'Strangers describes different skills');
     });

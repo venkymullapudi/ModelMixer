@@ -128,7 +128,7 @@
     const excluded = all.filter((s) => s.out).map((s) => ({ id: s.id, why: s.out }));
     // closest toy(s) for the measured evidence: plane scenarios and/or the digit (image) scenarios
     const init = a.base === 'no' ? 'independent' : 'shared'; // the digit toys default to a shared base, so override
-    const plane = { scenario: a.base === 'no' ? 'strangers' : a.conflict === 'yes' ? 'overlap' : a.count === '3+' ? 'three' : imbalanced ? 'hard' : 'two', init };
+    const plane = { scenario: a.base === 'no' ? (a.goal === 'same' ? 'twins' : 'strangers') : a.conflict === 'yes' ? 'overlap' : a.count === '3+' ? 'three' : imbalanced ? 'hard' : 'two', init };
     const digit = { scenario: a.conflict === 'yes' ? 'digits-conflict' : 'digits', init };
     const toys = a.toy === 'digits' ? [digit] : a.toy === 'both' ? [plane, digit] : [plane];
     if (a.toy !== 'plane' && a.count === '3+') notes.push('The digit toys use two experts, so the measurements compare pairs.');

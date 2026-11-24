@@ -33,6 +33,15 @@
       expect: { kind: 'b-beats-a', by: 0.005 },
     },
     {
+      id: 'align-twins', measured: { seeds: 5 }, title: 'Same function, new init? Align first',
+      lesson: 'Two runs of the same Spiral skill from different random inits each score ~100%, but plain averaging gives 70.6% because their neurons sit in different orders. Aligning neurons first (Git Re-Basin) brings the average to 98.6%: better on 5 of 5 seeds. This is the case alignment is built for; see “Alignment assumes the same functions” for where it is not.',
+      hint: 'In the Lab, flip “Align neurons” and watch the weight similarity jump in the insight panel.',
+      scenario: 'twins',
+      A: { method: 'linear', params: p('linear'), align: false },
+      B: { method: 'linear', params: p('linear'), align: true },
+      expect: { kind: 'b-beats-a', by: 0.15, seeds: [7, 108, 209], meanBy: 0.15 },
+    },
+    {
       id: 'adamerging-images', measured: { seeds: 10 }, title: 'On image inputs, learn the coefficients',
       lesson: 'On the image-like Digits toy, AdaMerging tunes task-arithmetic coefficients on unlabeled inputs. It beat hand-set task arithmetic on 9 of 10 seeds, by 9.2 pts on average (up to 15.8), in line with the paper’s vision results.',
       scenario: 'digits',
